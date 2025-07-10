@@ -1,0 +1,389 @@
+@import "tailwindcss";
+
+:root {
+  /* Axiom Dark Theme Colors */
+  --axiom-bg-primary: #000000;
+  --axiom-bg-secondary: #0a0a0a;
+  --axiom-bg-tertiary: #111111;
+  --axiom-bg-elevated: #161616;
+  --axiom-bg-overlay: #1a1a1a;
+  
+  /* Surface Colors */
+  --axiom-surface-100: #1e1e1e;
+  --axiom-surface-200: #242424;
+  --axiom-surface-300: #2a2a2a;
+  --axiom-surface-400: #303030;
+  
+  /* Border Colors */
+  --axiom-border-primary: #2a2a2a;
+  --axiom-border-secondary: #333333;
+  --axiom-border-accent: #404040;
+  --axiom-border-focus: #4a9eff;
+  
+  /* Text Colors */
+  --axiom-text-primary: #ffffff;
+  --axiom-text-secondary: #b3b3b3;
+  --axiom-text-tertiary: #808080;
+  --axiom-text-muted: #666666;
+  --axiom-text-disabled: #4d4d4d;
+  
+  /* Accent Colors */
+  --axiom-green: #00ff88;
+  --axiom-green-hover: #00e67a;
+  --axiom-green-dark: #00cc6a;
+  --axiom-green-bg: rgba(0, 255, 136, 0.1);
+  
+  --axiom-red: #ff4757;
+  --axiom-red-hover: #ff3838;
+  --axiom-red-dark: #e63946;
+  --axiom-red-bg: rgba(255, 71, 87, 0.1);
+  
+  --axiom-blue: #4a9eff;
+  --axiom-blue-hover: #3b8ae6;
+  --axiom-blue-dark: #2c7bd4;
+  --axiom-blue-bg: rgba(74, 158, 255, 0.1);
+  
+  --axiom-orange: #ff9500;
+  --axiom-orange-hover: #e6850e;
+  --axiom-orange-dark: #cc7700;
+  
+  --axiom-purple: #8b5cf6;
+  --axiom-purple-hover: #7c3aed;
+  --axiom-purple-dark: #6d28d9;
+  
+  /* Status Colors */
+  --axiom-success: var(--axiom-green);
+  --axiom-error: var(--axiom-red);
+  --axiom-warning: var(--axiom-orange);
+  --axiom-info: var(--axiom-blue);
+  
+  /* Chart Colors */
+  --axiom-chart-bull: #00ff88;
+  --axiom-chart-bear: #ff4757;
+  --axiom-chart-volume: #4a9eff;
+  --axiom-chart-grid: #2a2a2a;
+  --axiom-chart-text: #808080;
+  
+  /* Interactive States */
+  --axiom-hover-overlay: rgba(255, 255, 255, 0.05);
+  --axiom-active-overlay: rgba(255, 255, 255, 0.1);
+  --axiom-focus-ring: rgba(74, 158, 255, 0.3);
+  
+  /* Shadows */
+  --axiom-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --axiom-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --axiom-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --axiom-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  
+  /* Typography */
+  --axiom-font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace;
+  --axiom-font-sans: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  
+  /* Sizing */
+  --axiom-header-height: 56px;
+  --axiom-sidebar-width: 240px;
+  --axiom-panel-width: 320px;
+  
+  /* Animation */
+  --axiom-transition-fast: 150ms ease-in-out;
+  --axiom-transition-normal: 250ms ease-in-out;
+  --axiom-transition-slow: 350ms ease-in-out;
+}
+
+/* Global Styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--axiom-bg-primary);
+  color: var(--axiom-text-primary);
+  font-family: var(--axiom-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#__next {
+  height: 100%;
+  min-height: 100vh;
+}
+
+/* Typography Classes */
+.axiom-text-xs { font-size: 11px; line-height: 1.4; }
+.axiom-text-sm { font-size: 12px; line-height: 1.4; }
+.axiom-text-base { font-size: 14px; line-height: 1.5; }
+.axiom-text-lg { font-size: 16px; line-height: 1.5; }
+.axiom-text-xl { font-size: 18px; line-height: 1.5; }
+.axiom-text-2xl { font-size: 20px; line-height: 1.4; }
+.axiom-text-3xl { font-size: 24px; line-height: 1.3; }
+
+.axiom-font-mono { font-family: var(--axiom-font-mono); }
+.axiom-font-medium { font-weight: 500; }
+.axiom-font-semibold { font-weight: 600; }
+.axiom-font-bold { font-weight: 700; }
+
+/* Color Utility Classes */
+.axiom-text-primary { color: var(--axiom-text-primary); }
+.axiom-text-secondary { color: var(--axiom-text-secondary); }
+.axiom-text-tertiary { color: var(--axiom-text-tertiary); }
+.axiom-text-muted { color: var(--axiom-text-muted); }
+
+.axiom-text-green { color: var(--axiom-green); }
+.axiom-text-red { color: var(--axiom-red); }
+.axiom-text-blue { color: var(--axiom-blue); }
+.axiom-text-orange { color: var(--axiom-orange); }
+
+.axiom-bg-primary { background-color: var(--axiom-bg-primary); }
+.axiom-bg-secondary { background-color: var(--axiom-bg-secondary); }
+.axiom-bg-tertiary { background-color: var(--axiom-bg-tertiary); }
+.axiom-bg-elevated { background-color: var(--axiom-bg-elevated); }
+
+.axiom-border { border-color: var(--axiom-border-primary); }
+.axiom-border-secondary { border-color: var(--axiom-border-secondary); }
+
+/* Button Components */
+.axiom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: all var(--axiom-transition-fast);
+  cursor: pointer;
+  text-decoration: none;
+  outline: none;
+}
+
+.axiom-btn:focus {
+  box-shadow: 0 0 0 2px var(--axiom-focus-ring);
+}
+
+.axiom-btn-primary {
+  background-color: var(--axiom-blue);
+  color: white;
+  border-color: var(--axiom-blue);
+}
+
+.axiom-btn-primary:hover {
+  background-color: var(--axiom-blue-hover);
+  border-color: var(--axiom-blue-hover);
+}
+
+.axiom-btn-success {
+  background-color: var(--axiom-green);
+  color: black;
+  border-color: var(--axiom-green);
+}
+
+.axiom-btn-success:hover {
+  background-color: var(--axiom-green-hover);
+  border-color: var(--axiom-green-hover);
+}
+
+.axiom-btn-danger {
+  background-color: var(--axiom-red);
+  color: white;
+  border-color: var(--axiom-red);
+}
+
+.axiom-btn-danger:hover {
+  background-color: var(--axiom-red-hover);
+  border-color: var(--axiom-red-hover);
+}
+
+.axiom-btn-outline {
+  background-color: transparent;
+  color: var(--axiom-text-primary);
+  border-color: var(--axiom-border-secondary);
+}
+
+.axiom-btn-outline:hover {
+  background-color: var(--axiom-hover-overlay);
+  border-color: var(--axiom-border-accent);
+}
+
+.axiom-btn-ghost {
+  background-color: transparent;
+  color: var(--axiom-text-secondary);
+  border-color: transparent;
+}
+
+.axiom-btn-ghost:hover {
+  background-color: var(--axiom-hover-overlay);
+  color: var(--axiom-text-primary);
+}
+
+/* Input Components */
+.axiom-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  background-color: var(--axiom-bg-tertiary);
+  border: 1px solid var(--axiom-border-primary);
+  border-radius: 4px;
+  color: var(--axiom-text-primary);
+  outline: none;
+  transition: all var(--axiom-transition-fast);
+}
+
+.axiom-input:focus {
+  border-color: var(--axiom-border-focus);
+  box-shadow: 0 0 0 2px var(--axiom-focus-ring);
+}
+
+.axiom-input::placeholder {
+  color: var(--axiom-text-muted);
+}
+
+/* Card Components */
+.axiom-card {
+  background-color: var(--axiom-bg-secondary);
+  border: 1px solid var(--axiom-border-primary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.axiom-card-elevated {
+  background-color: var(--axiom-bg-elevated);
+  border: 1px solid var(--axiom-border-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--axiom-shadow-md);
+}
+
+/* Table Components */
+.axiom-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.axiom-table th,
+.axiom-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--axiom-border-primary);
+}
+
+.axiom-table th {
+  font-weight: 600;
+  color: var(--axiom-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.axiom-table tbody tr:hover {
+  background-color: var(--axiom-hover-overlay);
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--axiom-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--axiom-surface-400);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--axiom-text-muted);
+}
+
+/* Selection */
+::selection {
+  background-color: var(--axiom-blue-bg);
+  color: var(--axiom-blue);
+}
+
+/* Animation Classes */
+.axiom-fade-in {
+  animation: axiomFadeIn 0.3s ease-in-out;
+}
+
+@keyframes axiomFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.axiom-slide-up {
+  animation: axiomSlideUp 0.3s ease-out;
+}
+
+@keyframes axiomSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Price Movement Animations */
+.price-up {
+  animation: priceFlashGreen 0.5s ease-out;
+}
+
+.price-down {
+  animation: priceFlashRed 0.5s ease-out;
+}
+
+@keyframes priceFlashGreen {
+  0% { background-color: var(--axiom-green-bg); }
+  100% { background-color: transparent; }
+}
+
+@keyframes priceFlashRed {
+  0% { background-color: var(--axiom-red-bg); }
+  100% { background-color: transparent; }
+}
+
+/* Loading States */
+.axiom-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--axiom-surface-200) 25%,
+    var(--axiom-surface-300) 50%,
+    var(--axiom-surface-200) 75%
+  );
+  background-size: 200% 100%;
+  animation: axiomSkeleton 1.5s infinite;
+}
+
+@keyframes axiomSkeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Responsive Utilities */
+@media (max-width: 768px) {
+  body {
+    font-size: 13px;
+  }
+  
+  .axiom-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  
+  .axiom-input {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
