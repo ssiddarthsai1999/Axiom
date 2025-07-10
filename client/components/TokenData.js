@@ -14,6 +14,18 @@ const TokenData = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [fundingCountdown, setFundingCountdown] = useState('00:00:00');
 
+// Close dropdown when clicking outside
+useEffect(() => {
+  const handleClickOutside = (event) => {
+    if (isDropdownOpen && !event.target.closest('.token-dropdown')) {
+      setIsDropdownOpen(false);
+    }
+  };
+
+  document.addEventListener('mousedown', handleClickOutside);
+  return () => document.removeEventListener('mousedown', handleClickOutside);
+}, [isDropdownOpen]);
+
   // Calculate funding countdown
   const calculateFundingCountdown = () => {
     const now = new Date();
@@ -44,6 +56,8 @@ const TokenData = ({
     
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
+
+
 
   // Update countdown every second
   useEffect(() => {
@@ -105,23 +119,27 @@ const TokenData = ({
             onClick={() => navigateToken('prev')}
             className="p-1 hover:bg-gray-800 rounded transition-colors"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4 cursor-pointer" />
           </button>
           
           {/* Token Selector */}
           <div className="relative">
-            <button 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center space-x-2 hover:bg-gray-800 px-3 py-2 rounded transition-colors"
-            >
-              <span className="text-lg font-bold">{marketData.symbol}</span>
-              <span className="text-sm text-gray-400">{marketData.name}</span>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            </button>
+<button 
+ onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+ className="flex items-center space-x-2 hover:bg-gray-800 px-3 py-2 rounded cursor-pointer transition-colors"
+>
+ <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
+   <span className="text-xs font-bold text-white">
+     {marketData.symbol.charAt(0)}
+   </span>
+ </div>
+ <span className="text-lg font-bold">{marketData.symbol}</span>
+ <ChevronDown className="w-4 h-4 text-gray-400" />
+</button>
             
             {/* Dropdown */}
             {isDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+              <div className="absolute  token-dropdown top-full left-0 mt-1 w-80 bg-[#101015] border border-gray-700 rounded-lg shadow-lg z-50">
                 <div className="p-3 border-b border-gray-700">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -130,7 +148,7 @@ const TokenData = ({
                       placeholder="Search tokens..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-10 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[#181a20] border border-gray-600 rounded px-10 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -139,8 +157,8 @@ const TokenData = ({
                     <button
                       key={token.symbol}
                       onClick={() => handleTokenSelect(token.symbol)}
-                      className={`w-full flex items-center justify-between p-3 hover:bg-gray-700 transition-colors ${
-                        selectedSymbol === token.symbol ? 'bg-gray-700' : ''
+                      className={`w-full flex items-center justify-between p-3 hover:bg-[#2c303b] cursor-pointer transition-colors ${
+                        selectedSymbol === token.symbol ? 'bg-[#181a20]' : ''
                       }`}
                     >
                       <div className="flex items-center space-x-3">
@@ -176,7 +194,7 @@ const TokenData = ({
             onClick={() => navigateToken('next')}
             className="p-1 hover:bg-gray-800 rounded transition-colors"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4 cursor-pointer" />
           </button>
         </div>
 

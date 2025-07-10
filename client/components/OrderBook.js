@@ -39,7 +39,7 @@ const OrderBook = ({
   };
 
   return (
-    <div className={` h-full text-white ${className}`}>
+    <div className={`min-h-[600px] h-full text-white ${className} border-l border-l-white/20`}>
       {/* Header Tabs */}
       <div className="flex border-b border-white/20">
         <button 
@@ -53,7 +53,7 @@ const OrderBook = ({
           Order Book
         </button>
         <button 
-          className={`px-4 py-3 text-sm font-medium ${
+          className={`px-4 py-3 text-sm font-medium cursor-pointer ${
             activeTab === 'Trades' 
               ? 'border-b-2 border-white text-white' 
               : 'text-gray-400 hover:text-white'
@@ -80,7 +80,7 @@ const OrderBook = ({
               {orderBookData.asks.slice(0, 15).reverse().map((ask, index) => (
                 <div 
                   key={`ask-${index}`}
-                  className="grid grid-cols-3 gap-4 px-4 py-1 text-xs hover:bg-gray-900 transition-colors relative"
+                  className="grid grid-cols-3 gap-4 px-4 py-1 my-1 text-xs hover:bg-gray-900 transition-colors relative"
                 >
                   {/* Background bar for visual depth */}
                   <div 
@@ -125,7 +125,7 @@ const OrderBook = ({
               {orderBookData.bids.slice(0, 15).map((bid, index) => (
                 <div 
                   key={`bid-${index}`}
-                  className="grid grid-cols-3 gap-4 px-4 py-1 text-xs hover:bg-gray-900 transition-colors relative"
+                  className="grid grid-cols-3 gap-4 px-4 py-1 text-xs my-1 hover:bg-gray-900 transition-colors relative"
                 >
                   {/* Background bar for visual depth */}
                   <div 

@@ -68,7 +68,7 @@ const TradingPanel = ({
 
   return (
     <>
-      <div className={`bg-[#101015] text-white p-4 ${className}`}>
+      <div className={`bg-[#101015] text-white p-4 ${className} border-l border-l-white/20`}>
         {/* Long/Short Toggle */}
         <div className="flex mb-4">
           <button

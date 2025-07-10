@@ -4,6 +4,7 @@ import TradingViewChart from '@/components/TradingViewChart'
 import OrderBook from '@/components/OrderBook'
 import TokenData from '@/components/TokenData'
 import TradingPanel from '@/components/TradingPanel'
+
 function TradingPage() {
   // Centralized state
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
@@ -215,7 +216,7 @@ function TradingPage() {
 
   if (loading) {
     return (
-      <div className='min-h-screen  flex items-center justify-center'>
+      <div className='min-h-screen flex items-center justify-center'>
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
@@ -223,49 +224,57 @@ function TradingPage() {
 
   if (error) {
     return (
-      <div className='min-h-screen  flex items-center justify-center'>
+      <div className='min-h-screen flex items-center justify-center'>
         <div className="text-red-400">Error: {error}</div>
       </div>
     );
   }
 
   return (
-    <div className='min-h-screen k'>
-      {/* Token Data Bar */}
-      <TokenData 
-        marketData={marketData}
-        selectedSymbol={selectedSymbol}
-        availableTokens={availableTokens}
-        onSymbolChange={handleSymbolChange}
-        className="w-full"
-      />
+  <div className='min-h-screen bg-[#101015]'>
+    <div className='flex border border-white/20 items-stretch min-h-[600px]'>
       
-      {/* Main Trading Interface */}
-      <div className="flex">
-        {/* Chart Area */}
-        <div className="flex-1">
+      {/* Left Section: TokenData + TradingViewChart */}
+      <div className='flex flex-col w-full min-h-[600px] h-full'>
+        <TokenData 
+          marketData={marketData}
+          selectedSymbol={selectedSymbol}
+          availableTokens={availableTokens}
+          onSymbolChange={handleSymbolChange}
+          className="w-full "
+        />
+        <div className="flex flex-col  bg-red-200 flex-grow ">
           <TradingViewChart 
             symbol={`${selectedSymbol}USD`}
             onSymbolChange={handleSymbolChange}
+            className="flex-grow"
           />
         </div>
-        
-        {/* Order Book & Trades */}
+      </div>
+
+      {/* Middle Section: OrderBook */}
+      <div className="min-w-[300px] min-h-[600px] flex flex-col border-l border-white/20">
         <OrderBook 
           selectedSymbol={selectedSymbol}
           orderBookData={orderBookData}
           tradesData={tradesData}
-          className="w-[400px] h-[600px] border-l border-white/20"
+          className="flex-grow"
         />
-
-        <TradingPanel 
-  selectedSymbol={selectedSymbol}
-  marketData={marketData}
-  className="w-80 h-full"
-/>
       </div>
+
+      {/* Right Section: Trading Panel */}
+      <div className="min-w-[350px] min-h-[600px] flex flex-col border-l border-white/20">
+        <TradingPanel 
+          selectedSymbol={selectedSymbol}
+          marketData={marketData}
+          className="flex-grow"
+        />
+      </div>
+
     </div>
-  );
+  </div>
+);
+
 }
 
 export default TradingPage;
