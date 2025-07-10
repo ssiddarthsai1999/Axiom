@@ -39,11 +39,11 @@ const OrderBook = ({
   };
 
   return (
-    <div className={`bg-black h-full text-white ${className}`}>
+    <div className={` h-full text-white ${className}`}>
       {/* Header Tabs */}
-      <div className="flex border-b border-gray-800">
+      <div className="flex border-b border-white/20">
         <button 
-          className={`px-4 py-3 text-sm font-medium ${
+          className={`px-4 py-3 text-sm font-medium cursor-pointer ${
             activeTab === 'Order Book' 
               ? 'border-b-2 border-white text-white' 
               : 'text-gray-400 hover:text-white'
@@ -68,7 +68,7 @@ const OrderBook = ({
       {activeTab === 'Order Book' && (
         <div className="flex flex-col h-full">
           {/* Column Headers */}
-          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-gray-800">
+          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-white/20">
             <div className="text-left">Price</div>
             <div className="text-right">Amount (USD)</div>
             <div className="text-right">Total (USD)</div>
@@ -106,7 +106,7 @@ const OrderBook = ({
             </div>
 
             {/* Spread */}
-            <div className="px-4 py-2 border-y border-gray-800 bg-gray-900">
+            <div className="px-4 py-2  bg-[#181a20]">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-400">Spread:</span>
                 <div className="flex space-x-2">
@@ -157,7 +157,7 @@ const OrderBook = ({
       {activeTab === 'Trades' && (
         <div className="flex flex-col h-full">
           {/* Column Headers for Trades */}
-          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-gray-800">
+          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-white/20">
             <div className="text-left">Price</div>
             <div className="text-right">Size (USD)</div>
             <div className="text-right">Age</div>

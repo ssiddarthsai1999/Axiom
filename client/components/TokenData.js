@@ -86,7 +86,7 @@ const TokenData = ({
 
   if (!marketData) {
     return (
-      <div className={`bg-gray-900 text-white p-4 ${className}`}>
+      <div className={`bg-[#101015] text-white p-4 ${className}`}>
         <div className="flex items-center space-x-4">
           <div className="w-16 h-6 bg-gray-800 rounded animate-pulse"></div>
           <div className="w-24 h-6 bg-gray-800 rounded animate-pulse"></div>
@@ -97,8 +97,8 @@ const TokenData = ({
   }
 
   return (
-    <div className={`bg-gray-900 text-white p-4 border-b border-gray-800 ${className}`}>
-      <div className="flex items-center justify-between">
+    <div className={`bg-[#101015] text-white p-4 border-b border-white/20 ${className}`}>
+      <div className="flex items-center justify-start gap-10">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
           <button 

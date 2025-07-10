@@ -30,8 +30,8 @@ function TradingViewWidget({ symbol = 'BTCUSD' }) {
       symbol: symbol, // Use the passed symbol
       theme: "dark",
       timezone: "Etc/UTC",
-      backgroundColor: "#000000",
-      gridColor: "rgba(42, 42, 42, 0.06)",
+      backgroundColor: "#101015",
+      gridColor: "#181a20",
       watchlist: [],
       withdateranges: false,
       compareSymbols: [],
@@ -40,11 +40,11 @@ function TradingViewWidget({ symbol = 'BTCUSD' }) {
       ],
       autosize: true,
       overrides: {
-        "paneProperties.background": "#000000",
-        "paneProperties.backgroundType": "solid",
-        "paneProperties.backgroundGradientStartColor": "#000000",
-        "paneProperties.backgroundGradientEndColor": "#000000",
-        "paneProperties.vertGridProperties.color": "#2a2a2a",
+  "paneProperties.background": "#101015",
+  "paneProperties.backgroundType": "solid", 
+  "paneProperties.backgroundGradientStartColor": "#101015",
+  "paneProperties.backgroundGradientEndColor": "#101015",
+  "scalesProperties.backgroundColor": "#101015",
         "paneProperties.horzGridProperties.color": "#2a2a2a",
         "paneProperties.crossHairProperties.color": "#666666",
         "scalesProperties.textColor": "#b3b3b3",
@@ -75,10 +75,10 @@ function TradingViewWidget({ symbol = 'BTCUSD' }) {
   }, [symbol]); // Re-run when symbol changes
 
   return (
-    <div className="tradingview-widget-container h-[600px] bg-black">
+    <div className="tradingview-widget-container h-[600px] bg-[#101015] ">
       <div 
         ref={container}
-        className="tradingview-widget-container__widget h-full w-full"
+        className="tradingview-widget-container__widget h-full w-full bg-[#101015] "
       />
     </div>
   );

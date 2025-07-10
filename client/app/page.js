@@ -208,14 +208,14 @@ function TradingPage() {
       fetchMarketData();
       fetchOrderBook(); 
       fetchTrades();
-    }, 2000);
+    }, 200000);
     
     return () => clearInterval(interval);
   }, [fetchMarketData, fetchOrderBook, fetchTrades]);
 
   if (loading) {
     return (
-      <div className='min-h-screen bg-black flex items-center justify-center'>
+      <div className='min-h-screen  flex items-center justify-center'>
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
@@ -223,14 +223,14 @@ function TradingPage() {
 
   if (error) {
     return (
-      <div className='min-h-screen bg-black flex items-center justify-center'>
+      <div className='min-h-screen  flex items-center justify-center'>
         <div className="text-red-400">Error: {error}</div>
       </div>
     );
   }
 
   return (
-    <div className='min-h-screen bg-black'>
+    <div className='min-h-screen k'>
       {/* Token Data Bar */}
       <TokenData 
         marketData={marketData}
@@ -255,7 +255,7 @@ function TradingPage() {
           selectedSymbol={selectedSymbol}
           orderBookData={orderBookData}
           tradesData={tradesData}
-          className="w-[400px] h-[600px] border-l border-gray-800"
+          className="w-[400px] h-[600px] border-l border-white/20"
         />
 
         <TradingPanel 

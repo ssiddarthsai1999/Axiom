@@ -2,11 +2,11 @@
 
 :root {
   /* Axiom Dark Theme Colors */
-  --axiom-bg-primary: #000000;
-  --axiom-bg-secondary: #0a0a0a;
-  --axiom-bg-tertiary: #111111;
-  --axiom-bg-elevated: #161616;
-  --axiom-bg-overlay: #1a1a1a;
+  --axiom-bg-primary: #101015;
+  --axiom-bg-secondary: #101015;
+  --axiom-bg-tertiary: #101015;
+  --axiom-bg-elevated: #101015;
+  --axiom-bg-overlay: #101015;
   
   /* Surface Colors */
   --axiom-surface-100: #1e1e1e;

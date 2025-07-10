@@ -68,25 +68,25 @@ const TradingPanel = ({
 
   return (
     <>
-      <div className={`bg-gray-900 text-white p-4 ${className}`}>
+      <div className={`bg-[#101015] text-white p-4 ${className}`}>
         {/* Long/Short Toggle */}
         <div className="flex mb-4">
           <button
             onClick={() => setSide('Long')}
-            className={`flex-1 py-2 px-4 text-sm font-medium rounded-l-lg transition-colors ${
+            className={`flex-1 py-2 px-4 text-sm font-medium rounded-l-lg transition-colors border  cursor-pointer ${
               side === 'Long'
-                ? 'bg-green-500 text-black'
-                : 'bg-gray-700 text-white hover:bg-gray-600'
+                ? 'bg-[#2ee2ac] text-black border-white/20'
+                : 'bg-transparent text-white hover:bg-gray-600 border-white/20'
             }`}
           >
             Long
           </button>
           <button
             onClick={() => setSide('Short')}
-            className={`flex-1 py-2 px-4 text-sm font-medium rounded-r-lg transition-colors ${
+            className={`flex-1 py-2 px-4 text-sm font-medium rounded-r-lg transition-colors border cursor-pointer ${
               side === 'Short'
-                ? 'bg-red-500 text-white'
-                : 'bg-gray-700 text-white hover:bg-gray-600'
+                ? 'bg-[#ed397b] text-white border-white/20'
+                : 'bg-transparent text-white hover:bg-gray-600 border-white/20'
             }`}
           >
             Short
@@ -97,7 +97,7 @@ const TradingPanel = ({
         <div className="flex mb-4 space-x-4">
           <button
             onClick={() => setOrderType('Market')}
-            className={`text-sm font-medium pb-1 ${
+            className={`text-sm font-medium pb-1 cursor-pointer ${
               orderType === 'Market'
                 ? 'text-white border-b-2 border-white'
                 : 'text-gray-400 hover:text-white'
@@ -107,7 +107,7 @@ const TradingPanel = ({
           </button>
           <button
             onClick={() => setOrderType('Limit')}
-            className={`text-sm font-medium pb-1 ${
+            className={`text-sm font-medium pb-1 cursor-pointer ${
               orderType === 'Limit'
                 ? 'text-white border-b-2 border-white'
                 : 'text-gray-400 hover:text-white'
@@ -138,7 +138,7 @@ const TradingPanel = ({
               value={buyAmount}
               onChange={(e) => setBuyAmount(e.target.value)}
               placeholder="0.0"
-              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-lg font-mono focus:outline-none focus:border-blue-500"
+              className="w-full bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-lg font-mono focus:outline-none focus:border-blue-500"
             />
             <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
               <span className="text-blue-400 text-sm">💎</span>
@@ -153,7 +153,7 @@ const TradingPanel = ({
             <button
               key={percent}
               onClick={() => handlePercentageClick(percent)}
-              className={`flex-1 py-1 px-2 text-xs rounded transition-colors ${
+              className={`flex-1 py-1 px-2 text-xs rounded transition-colors cursor-pointer ${
                 percentage === percent
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -198,14 +198,14 @@ const TradingPanel = ({
                   value={tpPrice}
                   onChange={(e) => setTpPrice(e.target.value)}
                   placeholder="Enter TP price"
-                  className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  className="flex-1 bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                 />
                 <input
                   type="number"
                   value={tpPercentage}
                   onChange={(e) => setTpPercentage(e.target.value)}
                   placeholder="0.0"
-                  className="w-20 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  className="w-20 bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
@@ -222,14 +222,14 @@ const TradingPanel = ({
                   value={slPrice}
                   onChange={(e) => setSlPrice(e.target.value)}
                   placeholder="Enter SL price"
-                  className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  className="flex-1 bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                 />
                 <input
                   type="number"
                   value={slPercentage}
                   onChange={(e) => setSlPercentage(e.target.value)}
                   placeholder="0.0"
-                  className="w-20 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  className="w-20 bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
@@ -237,8 +237,15 @@ const TradingPanel = ({
         )}
 
         {/* Add More Funds Button */}
-        <button className="w-full bg-green-500 hover:bg-green-600 text-black font-medium py-3 rounded-lg mb-6 transition-colors">
-          Add More Funds
+         <button
+          onClick={handleTrade}
+          className={`w-full py-3 px-4 rounded-lg font-medium mt-3 mb-4 transition-colors cursor-pointer  ${
+            side === 'Long'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
+              : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-white'
+          }`}
+        >
+        Add more funds
         </button>
 
         {/* Account Information */}
@@ -268,10 +275,10 @@ const TradingPanel = ({
         {/* Trade Button */}
         <button
           onClick={handleTrade}
-          className={`w-full py-3 px-4 rounded-lg font-medium mt-6 transition-colors ${
+          className={`w-full py-3 px-4 rounded-lg font-medium mt-6 transition-colors cursor-pointer ${
             side === 'Long'
-              ? 'bg-green-500 hover:bg-green-600 text-black'
-              : 'bg-red-500 hover:bg-red-600 text-white'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
+              : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-white'
           }`}
         >
           {side} {selectedSymbol}
@@ -287,8 +294,8 @@ const TradingPanel = ({
 
       {/* Leverage Modal */}
       {showLeverageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-80 mx-4">
+        <div className="fixed inset-0 backdrop-blur-3xl bg-black/60 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-[101015] border rounded-lg p-6 w-80 mx-4">
             {/* Modal Header */}
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-semibold text-white">Set Leverage</h3>
@@ -296,7 +303,7 @@ const TradingPanel = ({
                 onClick={() => setShowLeverageModal(false)}
                 className="text-gray-400 hover:text-white"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5 cursor-pointer" />
               </button>
             </div>
 
@@ -335,10 +342,10 @@ const TradingPanel = ({
                 <button
                   key={lev}
                   onClick={() => setTempLeverage(lev)}
-                  className={`py-2 px-3 text-sm rounded transition-colors ${
+                  className={`py-2 px-3 text-sm rounded transition-colors cursor-pointer ${
                     tempLeverage === lev
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      : 'bg-[#181a20] text-gray-300 hover:bg-gray-600'
                   }`}
                 >
                   {lev}x
@@ -358,13 +365,13 @@ const TradingPanel = ({
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowLeverageModal(false)}
-                className="flex-1 py-2 px-4 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                className="flex-1 py-2 px-4 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleLeverageSet}
-                className="flex-1 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                className="flex-1 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors cursor-pointer"
               >
                 Set Leverage
               </button>
