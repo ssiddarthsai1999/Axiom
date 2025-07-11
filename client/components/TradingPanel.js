@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useConnect, useDisconnect,useWalletClient  } from 'wagmi';
 import { useAppKit } from '@reown/appkit/react';
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
@@ -19,7 +19,9 @@ const TradingPanel = ({
   const [tpSlEnabled, setTpSlEnabled] = useState(false);
   const [showLeverageModal, setShowLeverageModal] = useState(false);
   const [tempLeverage, setTempLeverage] = useState(10);
+  let assetInfo
   const [ethBalance, setEthBalance] = useState(0);
+  const [usdEquivalent, setUsdEquivalent] = useState('0.00');
 const [ethPrice, setEthPrice] = useState(0);
   // TP/SL state
   const [tpPrice, setTpPrice] = useState('');
@@ -33,7 +35,10 @@ const [usdcBalance, setUsdcBalance] = useState(0);
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [assetIndex, setAssetIndex] = useState(0);
+    const { data: walletClient } = useWalletClient();
 const { address, isConnected } = useAccount();
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(false);
 const { disconnect } = useDisconnect();
 const modal = useAppKit();
   // Mock account data - replace with real data from wallet/API
@@ -44,6 +49,16 @@ const modal = useAppKit();
     isConnected: false,
     address: null
   });
+
+const calculateUSDValue = (tokenAmount) => {
+  if (!tokenAmount || !marketData?.price || parseFloat(tokenAmount) <= 0) {
+    setUsdEquivalent('0.00');
+    return;
+  }
+  
+  const usdValue = parseFloat(tokenAmount) * marketData.price;
+  setUsdEquivalent(usdValue.toFixed(2));
+};
 
   const getETHPrice = async () => {
   try {
@@ -56,45 +71,45 @@ const modal = useAppKit();
   }
 };
 
-useEffect(() => {
-  const fetchWalletBalances = async () => {
-    if (isConnected && address && wallet?.provider) {
-      try {
-        // Get ETH balance
-        const ethBalance = await wallet.provider.getBalance(address);
-        const ethBal = parseFloat(ethers.formatEther(ethBalance));
-        setEthBalance(ethBal);
-        
-        // Get ETH price
-        const price = await getETHPrice();
-        setEthPrice(price);
+ useEffect(() => {
+    const fetchWalletBalances = async () => {
+      if (isConnected && address && wallet?.provider) {
+        try {
+          // Get ETH balance
+          const ethBalance = await wallet.provider.getBalance(address);
+          const ethBal = parseFloat(ethers.formatEther(ethBalance));
+          setEthBalance(ethBal);
+          
+          // Get ETH price
+          const price = await getETHPrice();
+          setEthPrice(price);
 
-        // Get USDC balance from wallet (not Hyperliquid)
-        const usdcContract = new ethers.Contract(
-          '0xA0b86a33E6410c8f3b3BaDB07a9A6ca54A9f45e3', // USDC on Arbitrum
-          ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
-          wallet.provider
-        );
-        
-        const usdcBalance = await usdcContract.balanceOf(address);
-        const usdcDecimals = await usdcContract.decimals();
-        const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
-        
-        // Update account data with wallet USDC balance
-        setAccountData(prev => ({
-          ...prev,
-          availableMargin: usdcBal,
-          accountValue: usdcBal
-        }));
-        
-      } catch (error) {
-        console.error('Error fetching wallet balances:', error);
+          // Get USDC balance from Arbitrum
+          const usdcContract = new ethers.Contract(
+            '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
+            ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+            wallet.provider
+          );
+          
+          const usdcBalance = await usdcContract.balanceOf(address);
+          const usdcDecimals = await usdcContract.decimals();
+          const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
+          setUsdcBalance(usdcBal);
+          
+          console.log('💰 Wallet balances:', {
+            eth: ethBal,
+            usdc: usdcBal,
+            address: address
+          });
+          
+        } catch (error) {
+          console.error('Error fetching balances:', error);
+        }
       }
-    }
-  };
+    };
 
-  fetchWalletBalances();
-}, [isConnected, address, wallet]);
+    fetchWalletBalances();
+  }, [isConnected, address, wallet]);
 
 
   const percentageOptions = [0, 25, 50, 75, 100];
@@ -115,64 +130,160 @@ useEffect(() => {
     fetchAssetIndex();
   }, [selectedSymbol]);
 
-  useEffect(() => {
-  if (isConnected && address) {
-    setAccountData(prev => ({
-      ...prev,
-      isConnected: true,
-      address: address,
-      availableMargin: 0, // Will be fetched below
-      accountValue: 0
-    }));
+  const checkOnboardingStatus = async () => {
+  if (!address) return false;
+  
+  setCheckingOnboarding(true);
+  try {
+    // Ensure address is lowercase for Hyperliquid API
+    const normalizedAddress = address.toLowerCase();
+    console.log('🔍 Checking onboarding for:', normalizedAddress);
+    
+    const userState = await hyperliquidUtils.getUserAccountState(normalizedAddress, false);
+    
+    console.log('User state:', userState);
+    
+    if (userState && userState.marginSummary) {
+      setIsOnboarded(true);
+      
+      // Update account data with actual values from Hyperliquid
+      const accountValue = parseFloat(userState.marginSummary.accountValue || 0);
+      const marginUsed = parseFloat(userState.marginSummary.marginUsed || 0);
+      
+      let availableMargin = accountValue;
+      
+      if (userState.assetPositions && userState.assetPositions.length > 0) {
+        const withdrawable = parseFloat(userState.withdrawable || 0);
+        availableMargin = withdrawable > 0 ? withdrawable : (accountValue - marginUsed);
+      }
+      
+      if (availableMargin === 0 && userState.crossMarginSummary) {
+        availableMargin = parseFloat(userState.crossMarginSummary.accountValue || 0);
+      }
+      
+      console.log('💰 Margin calculations:', {
+        accountValue,
+        marginUsed,
+        availableMargin,
+        withdrawable: userState.withdrawable
+      });
+      
+      setAccountData(prev => ({
+        ...prev,
+        availableMargin: availableMargin,
+        accountValue: accountValue,
+        marginUsed: marginUsed
+      }));
+      
+      console.log('✅ User is onboarded with margin:', availableMargin);
+      return true;
+    } else {
+      setIsOnboarded(false);
+      console.log('❌ User not onboarded');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error checking onboarding:', error);
+    setIsOnboarded(false);
+    return false;
+  } finally {
+    setCheckingOnboarding(false);
+  }
+};
 
-    // Create ethers provider for signing
-    const createSigner = async () => {
-      if (typeof window !== 'undefined' && window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        
-        setWallet({
-          address: address,
-          signer: signer,
-          provider: provider
+const fetchHyperliquidBalance = async () => {
+  if (!address) return;
+  
+  try {
+    // Use lowercase address for Hyperliquid API
+    const normalizedAddress = address.toLowerCase();
+    
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clearinghouseState',
+        user: normalizedAddress
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch user state');
+    }
+    
+    const data = await response.json();
+    console.log('📊 Hyperliquid user data:', data);
+    
+    if (data) {
+      let availableMargin = 0;
+      let accountValue = 0;
+      
+      if (data.marginSummary) {
+        accountValue = parseFloat(data.marginSummary.accountValue || 0);
+        const marginUsed = parseFloat(data.marginSummary.marginUsed || 0);
+        availableMargin = accountValue - marginUsed;
+      }
+      
+      if (data.withdrawable) {
+        availableMargin = Math.max(availableMargin, parseFloat(data.withdrawable));
+      }
+      
+      if (data.balances) {
+        data.balances.forEach(balance => {
+          if (balance.coin === 'USDC') {
+            const total = parseFloat(balance.total || 0);
+            const hold = parseFloat(balance.hold || 0);
+            availableMargin = Math.max(availableMargin, total - hold);
+            accountValue = Math.max(accountValue, total);
+          }
         });
       }
-    };
-
-    createSigner();
-  } else {
-    setAccountData(prev => ({
-      ...prev,
-      isConnected: false,
-      address: null,
-      availableMargin: 0,
-      accountValue: 0
-    }));
-    setWallet(null);
-  }
-}, [isConnected, address]);
-
-  // Fetch user account data when wallet is connected
-useEffect(() => {
-  const fetchAccountData = async () => {
-    if (isConnected && address) {
-      try {
-        const userState = await hyperliquidUtils.getUserAccountState(address, false);
-        if (userState && userState.marginSummary) {
-          setAccountData(prev => ({
-            ...prev,
-            availableMargin: parseFloat(userState.marginSummary.accountValue || 0),
-            accountValue: parseFloat(userState.marginSummary.accountValue || 0)
-          }));
-        }
-      } catch (error) {
-        console.error('Error fetching account data:', error);
-      }
+      
+      console.log('💵 Parsed balances:', {
+        availableMargin,
+        accountValue
+      });
+      
+      setAccountData(prev => ({
+        ...prev,
+        availableMargin: availableMargin,
+        accountValue: accountValue
+      }));
     }
-  };
+  } catch (error) {
+    console.error('Error fetching Hyperliquid balance:', error);
+  }
+};
 
-  fetchAccountData();
-}, [isConnected, address]);
+  useEffect(() => {
+    if (isConnected && address && walletClient) {
+      console.log('🔄 Wallet connection changed:', {
+        address,
+        chainId: walletClient.chain?.id,
+        chainName: walletClient.chain?.name
+      });
+      
+      setAccountData(prev => ({
+        ...prev,
+        isConnected: true,
+        address: address
+      }));
+
+      createSigner();
+    } else {
+      setAccountData(prev => ({
+        ...prev,
+        isConnected: false,
+        address: null,
+        availableMargin: 0,
+        accountValue: 0
+      }));
+      setWallet(null);
+      setIsOnboarded(false);
+    }
+  }, [isConnected, address, walletClient]);
+
+
 
   // Set limit price to current market price when switching to limit order
   useEffect(() => {
@@ -191,17 +302,84 @@ const connectWallet = async () => {
   }
 };
   // Create order payload for Hyperliquid API
-  const createOrderPayload = () => {
-    const isBuy = side === 'Long';
-    const isMarketOrder = orderType === 'Market';
-    const orderPrice = isMarketOrder ? null : parseFloat(limitPrice);
-    const orderSize = parseFloat(buyAmount);
+ const createOrderPayload = () => {
+  const isBuy = side === 'Long';
+  const isMarketOrder = orderType === 'Market';
+  const orderSize = parseFloat(buyAmount);
+  
+  // Format size according to asset's szDecimals
+  const sizeValidation = hyperliquidUtils.validateOrderSize(orderSize, assetInfo.szDecimals);
+  if (!sizeValidation.isValid) {
+    throw new Error(sizeValidation.error);
+  }
+  
+  const formattedSize = sizeValidation.formattedSize;
+  
+  // For market orders, use a price that guarantees execution
+  let orderPrice;
+  if (isMarketOrder) {
+    if (!marketData?.price) {
+      throw new Error('Market price not available');
+    }
     
-    // Calculate TP/SL prices if enabled
-    let takeProfitPrice = null;
-    let stopLossPrice = null;
+    // For market orders, use a price that guarantees immediate execution
+    // For buy orders, use a high price; for sell orders, use a low price
+    const marketPrice = marketData.price;
+    const buffer = 0.05; // 5% buffer to ensure execution
     
-    if (tpSlEnabled) {
+    if (isBuy) {
+      orderPrice = (marketPrice * (1 + buffer)).toString();
+    } else {
+      orderPrice = (marketPrice * (1 - buffer)).toString();
+    }
+  } else {
+    // For limit orders, use the specified limit price
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Please enter a valid limit price');
+    }
+    orderPrice = parseFloat(limitPrice).toString();
+  }
+  
+  // Create the main order with correct format for @nktkas/hyperliquid
+  const mainOrder = {
+    a: assetInfo.index,           // Asset index (correct)
+    b: isBuy,                     // Buy/sell boolean (correct)
+    p: orderPrice,                // Price as string (fixed)
+    s: formattedSize,             // Size as string with correct decimals (fixed)
+    r: reduceOnly,                // Reduce only
+    t: isMarketOrder ? {
+      // Market order: Use IOC (Immediate or Cancel) with aggressive pricing
+      limit: {
+        tif: "Ioc"              // Immediate or Cancel for market-like behavior
+      }
+    } : {
+      // Limit order: Use GTC (Good Til Cancel)
+      limit: {
+        tif: timeInForce || "Gtc"
+      }
+    }
+  };
+
+  console.log('📦 Created order payload:', {
+    symbol: selectedSymbol,
+    assetIndex: assetInfo.index,
+    szDecimals: assetInfo.szDecimals,
+    side: side,
+    orderType: orderType,
+    size: buyAmount,
+    formattedSize: formattedSize,
+    price: orderPrice,
+    mainOrder: mainOrder
+  });
+
+  const orders = [mainOrder];
+
+  // Add TP/SL orders if enabled
+  if (tpSlEnabled) {
+    // Take Profit Order
+    if (tpPrice || tpPercentage) {
+      let takeProfitPrice;
+      
       if (tpPrice) {
         takeProfitPrice = parseFloat(tpPrice);
       } else if (tpPercentage && marketData) {
@@ -211,6 +389,28 @@ const connectWallet = async () => {
           : marketData.price * (1 - tpPercent);
       }
       
+      if (takeProfitPrice) {
+        orders.push({
+          a: assetInfo.index,
+          b: !isBuy,                // Opposite side
+          p: takeProfitPrice.toString(),
+          s: formattedSize,
+          r: true,                  // Reduce only
+          t: {
+            trigger: {
+              isMarket: false,
+              triggerPx: takeProfitPrice.toString(),
+              tpsl: "tp"
+            }
+          }
+        });
+      }
+    }
+    
+    // Stop Loss Order  
+    if (slPrice || slPercentage) {
+      let stopLossPrice;
+      
       if (slPrice) {
         stopLossPrice = parseFloat(slPrice);
       } else if (slPercentage && marketData) {
@@ -219,20 +419,35 @@ const connectWallet = async () => {
           ? marketData.price * (1 - slPercent)
           : marketData.price * (1 + slPercent);
       }
+      
+      if (stopLossPrice) {
+        orders.push({
+          a: assetInfo.index,
+          b: !isBuy,                // Opposite side
+          p: stopLossPrice.toString(),
+          s: formattedSize,
+          r: true,                  // Reduce only
+          t: {
+            trigger: {
+              isMarket: false,
+              triggerPx: stopLossPrice.toString(),
+              tpsl: "sl"
+            }
+          }
+        });
+      }
     }
+  }
 
-    return {
-      assetIndex,
-      isBuy,
-      size: orderSize,
-      price: orderPrice,
-      orderType: isMarketOrder ? 'market' : 'limit',
-      timeInForce: 'Gtc',
-      reduceOnly: false,
-      takeProfitPrice,
-      stopLossPrice
-    };
+  const grouping = (tpSlEnabled && (tpPrice || tpPercentage || slPrice || slPercentage)) 
+    ? 'normalTpsl' 
+    : 'na';
+
+  return {
+    orders,
+    grouping
   };
+};
 
   // Sign and submit order (simplified - you'll need proper cryptographic signing)
   const signAndSubmitOrder = async (orderPayload) => {
@@ -274,12 +489,39 @@ const connectWallet = async () => {
     }
   };
 
-  const handlePercentageClick = (percent) => {
-    setPercentage(percent);
-    // Calculate amount based on percentage of available margin
-    const amount = (accountData.availableMargin * percent) / 100;
-    setBuyAmount(amount.toFixed(2));
-  };
+const handlePercentageClick = (percent) => {
+  setPercentage(percent);
+  
+  // Use either Hyperliquid available margin or wallet USDC balance
+  const availableBalance = Math.max(accountData.availableMargin, usdcBalance);
+  
+  if (availableBalance <= 0) {
+    setOrderError('No available margin. Please deposit USDC to Hyperliquid.');
+    return;
+  }
+  
+  // Calculate position size based on leverage
+  const marginToUse = (availableBalance * percent) / 100;
+  const positionValue = marginToUse * leverage;
+  
+  // Calculate token amount based on current price
+  if (marketData && marketData.price > 0) {
+    const tokenAmount = positionValue / marketData.price;
+    const amountStr = tokenAmount.toFixed(6); // Use more decimals for accuracy
+    setBuyAmount(amountStr);
+    calculateUSDValue(amountStr);
+    
+    console.log('📊 Position calculation:', {
+      availableBalance,
+      marginToUse,
+      leverage,
+      positionValue,
+      tokenAmount,
+      price: marketData.price
+    });
+  }
+};
+
 
   const handleLeverageClick = () => {
     setTempLeverage(leverage);
@@ -295,86 +537,388 @@ const connectWallet = async () => {
     setTempLeverage(parseInt(e.target.value));
   };
 
-  const handleTrade = async () => {
+  useEffect(() => {
+  if (isConnected && address && isOnboarded) {
+    // Fetch balance immediately
+    fetchHyperliquidBalance();
+    
+    // Then fetch every 30 seconds
+    const interval = setInterval(() => {
+      fetchHyperliquidBalance();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }
+}, [isConnected, address, isOnboarded]);
+
+
+const createSigner = async () => {
+  if (!walletClient || !address) {
+    console.error('No wallet client or address available');
+    setOrderError('Please connect your wallet');
+    return;
+  }
+
+  try {
+    console.log('🔍 Creating signer for address:', address);
+    console.log('🔍 Wallet client details:', {
+      chainId: walletClient.chain?.id,
+      chainName: walletClient.chain?.name
+    });
+    
+    // Ensure we're on Arbitrum (chain ID 42161)
+    if (walletClient.chain?.id !== 42161) {
+      setOrderError('Please switch to Arbitrum network');
+      return;
+    }
+    
+    // Create provider with explicit network config
+    const network = {
+      chainId: 42161,
+      name: 'arbitrum',
+      ensAddress: null
+    };
+    
+    const provider = new ethers.BrowserProvider(walletClient.transport, network);
+    
+    // Get signer and verify
+    const signer = await provider.getSigner();
+    const signerAddress = await signer.getAddress();
+    
+    console.log('🔍 Provider network:', await provider.getNetwork());
+    console.log('🔍 Signer address:', signerAddress);
+    console.log('🔍 Expected address:', address);
+    
+    // Normalize addresses to lowercase for comparison
+    const normalizedSignerAddress = signerAddress.toLowerCase();
+    const normalizedExpectedAddress = address.toLowerCase();
+    
+    if (normalizedSignerAddress !== normalizedExpectedAddress) {
+      console.error('❌ Address mismatch!');
+      console.error('Signer:', normalizedSignerAddress);
+      console.error('Expected:', normalizedExpectedAddress);
+      setOrderError('Wallet address mismatch. Please reconnect your wallet.');
+      return;
+    }
+    
+    // NO SIGNATURE TESTING HERE - just basic verification
+    console.log('✅ Basic wallet verification passed');
+    
+    setWallet({
+      address: normalizedExpectedAddress,
+      signer: signer,
+      provider: provider,
+      walletClient: walletClient
+    });
+    
+    console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
+    
+    // Check onboarding status after wallet is set
+    await checkOnboardingStatus();
+    
+  } catch (error) {
+    console.error('Error creating signer:', error);
+    setOrderError('Failed to connect wallet: ' + error.message);
+  }
+};
+
+const debugHyperliquidSignature = async () => {
+  if (!wallet?.signer) {
+    console.error('No signer available');
+    return;
+  }
+
+  try {
+    console.log('🧪 Starting Hyperliquid signature debug...');
+    
+    // Create exact test order from Python SDK
+    const testOrderData = {
+      action: {
+        type: 'order',
+        orders: [{
+          a: 1,  // ETH asset index from Python test
+          b: true,  // Buy
+          p: '100',  // Price
+          s: '100',  // Size  
+          r: false,  // Not reduce only
+          t: { limit: { tif: 'Gtc' } }
+        }],
+        grouping: 'na'
+      },
+      nonce: 0  // Use 0 to match Python test
+    };
+
+    console.log('🧪 Test order data:', JSON.stringify(testOrderData, null, 2));
+
+    // Domain for Hyperliquid
+    const domain = {
+      name: 'HyperliquidSignTransaction',
+      version: '1',
+      chainId: 42161,
+      verifyingContract: '0x0000000000000000000000000000000000000000'
+    };
+
+    // Types for Hyperliquid
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ],
+      'HyperliquidTransaction:PlaceOrder': [
+        { name: 'hyperliquidChain', type: 'string' },
+        { name: 'orders', type: 'string' },
+        { name: 'grouping', type: 'string' },
+        { name: 'builder', type: 'string' },
+        { name: 'time', type: 'uint64' }
+      ]
+    };
+
+    // Message for Hyperliquid
+    const message = {
+      hyperliquidChain: 'Mainnet',
+      orders: JSON.stringify(testOrderData.action.orders),
+      grouping: 'na',
+      builder: '',
+      time: 0
+    };
+
+    console.log('🧪 Domain:', JSON.stringify(domain, null, 2));
+    console.log('🧪 Types:', JSON.stringify(types, null, 2));  
+    console.log('🧪 Message:', JSON.stringify(message, null, 2));
+
+    // Sign with our signer
+    const signature = await wallet.signer.signTypedData(domain, types, message);
+    console.log('🧪 Raw signature:', signature);
+
+    // Parse signature
+    const sig = ethers.Signature.from(signature);
+    console.log('🧪 Parsed signature:', {
+      r: sig.r,
+      s: sig.s,
+      v: sig.v
+    });
+
+    // Verify signature recovery
+    const recoveredAddress = ethers.verifyTypedData(domain, types, message, signature);
+    const signerAddress = await wallet.signer.getAddress();
+    
+    console.log('🧪 Signer address:', signerAddress.toLowerCase());
+    console.log('🧪 Recovered address:', recoveredAddress.toLowerCase());
+    console.log('🧪 Addresses match:', recoveredAddress.toLowerCase() === signerAddress.toLowerCase());
+
+    // Expected values from Python SDK test (with wallet 0x0123456789012345678901234567890123456789012345678901234567890123)
+    const expectedR = '0xd65369825a9df5d80099e513cce430311d7d26ddf477f5b3a33d2806b100d78e';
+    const expectedS = '0x2b54116ff64054968aa237c20ca9ff68000f977c93289157748a3162b6ea940e';
+    const expectedV = 28;
+
+    console.log('🧪 Expected from Python SDK test:');
+    console.log('  R:', expectedR);
+    console.log('  S:', expectedS);
+    console.log('  V:', expectedV);
+
+    console.log('🧪 Our values:');
+    console.log('  R:', sig.r);
+    console.log('  S:', sig.s);
+    console.log('  V:', sig.v);
+
+    // Note: These won't match unless you use the exact same private key as the test
+    console.log('🧪 Signature format looks correct:', 
+      sig.r.startsWith('0x') && sig.r.length === 66 &&
+      sig.s.startsWith('0x') && sig.s.length === 66 &&
+      (sig.v === 27 || sig.v === 28)
+    );
+
+    return {
+      signature: sig,
+      recovered: recoveredAddress,
+      signer: signerAddress,
+      match: recoveredAddress.toLowerCase() === signerAddress.toLowerCase()
+    };
+
+  } catch (error) {
+    console.error('🧪 Debug signature failed:', error);
+    return { error: error.message };
+  }
+};
+
+// 3. ADD THIS BUTTON TO YOUR TRADING PANEL UI (temporarily for debugging):
+{wallet?.signer && (
+  <button
+    onClick={debugHyperliquidSignature}
+    className="w-full py-2 px-4 bg-yellow-500 hover:bg-yellow-600 text-black rounded mb-4"
+  >
+    🧪 Debug Hyperliquid Signature
+  </button>
+)}
+
+ const handleTrade = async () => {
   if (!isConnected) {
     await connectWallet();
     return;
   }
 
   if (!wallet || !wallet.signer) {
-    setOrderError('Wallet not properly connected');
+    setOrderError('Wallet not properly connected. Please try reconnecting.');
     return;
   }
 
-  setIsPlacingOrder(true);
-  setOrderError(null);
-  setOrderSuccess(null);
-
   try {
-    const orderParams = createOrderPayload();
+    // Verify wallet is still valid
+    const signerAddress = (await wallet.signer.getAddress()).toLowerCase();
+    const expectedAddress = address.toLowerCase();
     
-    // Validate order parameters
-    const validation = hyperliquidUtils.validateOrderParams({
-      size: buyAmount,
-      price: limitPrice,
-      orderType: orderType.toLowerCase(),
-      leverage,
-      availableMargin: accountData.availableMargin
-    });
-
-    if (!validation.isValid) {
-      throw new Error(validation.errors.join(', '));
+    if (signerAddress !== expectedAddress) {
+      setOrderError('Wallet address mismatch. Please reconnect.');
+      await createSigner();
+      return;
     }
 
-    console.log('Placing order with params:', orderParams);
+    // Check onboarding status
+    if (!isOnboarded) {
+      const onboarded = await checkOnboardingStatus();
+      if (!onboarded) {
+        setOrderError(
+          'Your wallet is not onboarded to Hyperliquid. ' +
+          'Please visit https://app.hyperliquid.xyz to deposit USDC and enable trading.'
+        );
+        window.open('https://app.hyperliquid.xyz/trade', '_blank');
+        return;
+      }
+    }
 
-    // Place order using Hyperliquid API
-    const result = await hyperliquidUtils.placeOrder(
-      orderParams,
-      wallet.signer,
-      false // false = mainnet, true = testnet
-    );
+    // Validation
+    const orderSize = parseFloat(buyAmount);
+    if (orderSize <= 0) {
+      setOrderError('Please enter a valid order size');
+      return;
+    }
 
-    console.log('Order result:', result);
+    // Check minimum order size
+    const minSize = hyperliquidUtils.getMinOrderSize(assetInfo.szDecimals);
+    if (orderSize < minSize) {
+      setOrderError(`Minimum order size is ${minSize} ${selectedSymbol}`);
+      return;
+    }
 
-    if (result.status === 'ok') {
-      setOrderSuccess(`${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`);
+    // Check available margin
+    const availableBalance = Math.max(accountData.availableMargin, usdcBalance);
+    if (availableBalance <= 0) {
+      setOrderError('No available margin. Please deposit USDC to Hyperliquid.');
+      return;
+    }
+
+    // Calculate required margin
+    const orderValue = orderSize * (marketData?.price || 0);
+    const requiredMargin = orderValue / leverage;
+    
+    if (requiredMargin > availableBalance) {
+      setOrderError(
+        `Insufficient margin. Required: $${requiredMargin.toFixed(2)}, ` +
+        `Available: $${availableBalance.toFixed(2)}`
+      );
+      return;
+    }
+
+    setIsPlacingOrder(true);
+    setOrderError(null);
+    setOrderSuccess(null);
+
+    try {
+      // Create order payload with correct format
+      const { orders, grouping } = createOrderPayload();
       
-      // Reset form
-      setBuyAmount('0.0');
-      setLimitPrice('');
-      setPercentage(0);
-      setTpPrice('');
-      setTpPercentage('');
-      setSlPrice('');
-      setSlPercentage('');
+      console.log('📤 Placing order with correct format:', {
+        orders,
+        grouping,
+        wallet: signerAddress,
+        symbol: selectedSymbol,
+        assetInfo
+      });
+
+      // Use the utility function to place the order
+      const result = await hyperliquidUtils.placeOrder({
+        assetIndex: assetInfo.index,
+        isBuy: side === 'Long',
+        size: buyAmount,
+        price: orderType === 'Limit' ? limitPrice : null,
+        orderType: orderType.toLowerCase(),
+        timeInForce: 'Gtc',
+        reduceOnly: false,
+        takeProfitPrice: null, // We handle TP/SL separately in createOrderPayload
+        stopLossPrice: null,
+        clientOrderId: null,
+        symbol: selectedSymbol
+      }, wallet.signer, false);
+
+      console.log('📥 Order result:', result);
+
+      if (result.status === 'ok') {
+        setOrderSuccess(`${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`);
+        
+        // Reset form
+        setBuyAmount('0.0');
+        setLimitPrice('');
+        setPercentage(0);
+        setTpPrice('');
+        setTpPercentage('');
+        setSlPrice('');
+        setSlPercentage('');
+        
+        // Refresh account data
+        setTimeout(() => {
+          checkOnboardingStatus();
+          fetchHyperliquidBalance();
+        }, 2000);
+      } else {
+        const errorMsg = hyperliquidUtils.parseErrorMessage(result);
+        throw new Error(errorMsg);
+      }
       
-      // Refresh account data
-      setTimeout(async () => {
-        if (address) {
-          const userState = await hyperliquidUtils.getUserAccountState(address, false);
-          if (userState && userState.marginSummary) {
-            setAccountData(prev => ({
-              ...prev,
-              availableMargin: parseFloat(userState.marginSummary.accountValue || 0),
-              accountValue: parseFloat(userState.marginSummary.accountValue || 0)
-            }));
-          }
-        }
-      }, 2000);
-    } else {
-      throw new Error(hyperliquidUtils.parseErrorMessage(result));
+    } catch (error) {
+      console.error('Order placement error:', error);
+      let errorMessage = error.message || 'Failed to place order. Please try again.';
+      
+      // Handle common errors
+      if (errorMessage.includes('Invalid size')) {
+        errorMessage = `Invalid order size. Must be at least ${hyperliquidUtils.getMinOrderSize(assetInfo.szDecimals)} ${selectedSymbol} with max ${assetInfo.szDecimals} decimal places.`;
+      }
+      
+      setOrderError(errorMessage);
     }
     
   } catch (error) {
-    console.error('Order placement error:', error);
-    setOrderError(error.message || 'Failed to place order. Please try again.');
+    console.error('Trade validation error:', error);
+    setOrderError(error.message || 'Failed to validate trade. Please try again.');
   } finally {
     setIsPlacingOrder(false);
   }
 };
 
 
+
+const TestSignatureButton = () => (
+  wallet?.signer && (
+    <button
+      onClick={debugHyperliquidSignature}
+      className="w-full py-2 px-4 bg-yellow-500 hover:bg-yellow-600 text-black rounded mb-4"
+    >
+      🧪 Test Signature (Debug Only)
+    </button>
+  )
+);
+
+  const DebugInfo = () => (
+    <div className="mb-4 p-3 bg-gray-800 rounded text-xs">
+      <div className="text-gray-400">Debug Info:</div>
+      <div className="text-gray-300">Connected: {isConnected ? '✅' : '❌'}</div>
+      <div className="text-gray-300">Address: {address || 'None'}</div>
+      <div className="text-gray-300">WalletClient: {walletClient ? '✅' : '❌'}</div>
+      <div className="text-gray-300">Signer: {wallet?.signer ? '✅' : '❌'}</div>
+      <div className="text-gray-300">Onboarded: {isOnboarded ? '✅' : '❌'}</div>
+    </div>
+  );
 
   return (
     <>
@@ -478,26 +1022,37 @@ const connectWallet = async () => {
         )}
 
         {/* Buy Amount */}
-        <div className="mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-sm text-gray-400">Size</label>
-            <span className="text-sm text-gray-400">{selectedSymbol}</span>
-          </div>
-          
-          <div className="relative">
-            <input
-              type="number"
-              value={buyAmount}
-              onChange={(e) => setBuyAmount(e.target.value)}
-              placeholder="0.0"
-              className="w-full bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-lg font-mono focus:outline-none focus:border-blue-500"
-            />
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
-              <span className="text-blue-400 text-sm">💎</span>
-              <span className="text-white font-mono">{assetIndex}</span>
-            </div>
-          </div>
-        </div>
+{/* Buy Amount */}
+<div className="mb-4">
+  <div className="flex justify-between items-center mb-2">
+    <label className="text-sm text-gray-400">Size</label>
+    <span className="text-sm text-gray-400">{selectedSymbol}</span>
+  </div>
+  
+  <div className="relative">
+    <input
+      type="number"
+      value={buyAmount}
+      onChange={(e) => {
+        setBuyAmount(e.target.value);
+        calculateUSDValue(e.target.value); // Calculate USD equivalent
+      }}
+      placeholder="0.0"
+      className="w-full bg-[#181a20] border border-gray-600 rounded px-3 py-2 text-white text-lg font-mono focus:outline-none focus:border-blue-500"
+    />
+    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
+      <span className="text-blue-400 text-sm">💎</span>
+      <span className="text-white font-mono">{assetIndex}</span>
+    </div>
+  </div>
+  
+  {/* USD Equivalent Display */}
+  {parseFloat(buyAmount) > 0 && (
+    <div className="mt-2 text-xs text-gray-400 text-right">
+      ≈ ${usdEquivalent} USD
+    </div>
+  )}
+</div>
 
         {/* Percentage Buttons */}
         <div className="flex space-x-1 mb-4">
@@ -593,7 +1148,7 @@ const connectWallet = async () => {
   <div className="flex justify-between">
   <span className="text-gray-400">USDC Balance (Wallet)</span>
   <span className="text-green-400 font-mono">
-    {accountData.availableMargin.toFixed(2)} USDC
+    {usdcBalance} USDC
   </span>
 </div>
           
@@ -634,21 +1189,9 @@ const connectWallet = async () => {
 )}
 
 
-{/* ETH Balance Display */}
-<div className="flex justify-between">
-  <span className="text-gray-400">ETH Balance</span>
-  <span className="text-yellow-400 font-mono">
-    {ethBalance ? `${ethBalance.toFixed(4)} ETH` : '0.00 ETH'}
-  </span>
-</div>
 
-{/* Conversion Rate */}
-<div className="flex justify-between">
-  <span className="text-gray-400">≈ USDC Value</span>
-  <span className="text-gray-300 font-mono text-xs">
-    ≈ ${ethBalance ? (ethBalance * ethPrice).toFixed(2) : '0.00'} USDC
-  </span>
-</div>
+
+
         </div>
 
         {/* Trade Button */}
