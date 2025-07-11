@@ -1,9 +1,6 @@
-// SOLUTION: Agent Wallet Implementation for Hyperliquid
-
-import * as hl from "@nktkas/hyperliquid";
+// utils/hyperLiquidTrading.js
 import { ethers } from 'ethers';
 
-// API endpoints for reference
 export const HYPERLIQUID_ENDPOINTS = {
   MAINNET_INFO: 'https://api.hyperliquid.xyz/info',
   MAINNET_EXCHANGE: 'https://api.hyperliquid.xyz/exchange',
@@ -12,175 +9,185 @@ export const HYPERLIQUID_ENDPOINTS = {
 };
 
 /**
- * Create an Agent Wallet for trading (solves chainId mismatch)
+ * Get asset information from Hyperliquid
  */
-export async function createAgentWallet(masterSigner, agentName = "TradingBot", isTestnet = false) {
+export async function getAssetInfo(symbol, isTestnet = false) {
   try {
-    console.log('🤖 Creating Agent Wallet...');
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_INFO : HYPERLIQUID_ENDPOINTS.MAINNET_INFO;
     
-    // Generate a new private key for the agent
-    const agentPrivateKey = ethers.Wallet.createRandom().privateKey;
-    const agentWallet = new ethers.Wallet(agentPrivateKey);
-    const agentAddress = agentWallet.address;
-    
-    console.log('🔑 Generated agent address:', agentAddress);
-    
-    // Create transport and exchange client with master signer
-    const transport = new hl.HttpTransport({ isTestnet });
-    const masterExchangeClient = new hl.ExchangeClient({ 
-      wallet: masterSigner, 
-      transport 
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'meta' })
     });
     
-    console.log('✍️ Approving agent with master wallet...');
-    
-    // Approve the agent wallet using the master account
-    const approveResult = await masterExchangeClient.approveAgent({
-      agentAddress: agentAddress,
-      agentName: agentName
-    });
-    
-    console.log('📝 Agent approval result:', approveResult);
-    
-    if (approveResult.status !== 'ok') {
-      throw new Error(`Failed to approve agent: ${approveResult.response}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch asset metadata');
     }
     
-    // Create exchange client with the agent wallet for trading
-    const agentExchangeClient = new hl.ExchangeClient({
-      wallet: agentWallet,
-      transport,
-      walletAddress: await masterSigner.getAddress() // Important: specify master address
-    });
+    const data = await response.json();
     
-    // Create info client
-    const infoClient = new hl.InfoClient({ transport });
-    
-    console.log('✅ Agent wallet created successfully!');
-    
-    return {
-      agentWallet,
-      agentAddress,
-      agentPrivateKey,
-      clients: {
-        info: infoClient,
-        exchange: agentExchangeClient,
-        masterExchange: masterExchangeClient
-      },
-      masterAddress: await masterSigner.getAddress()
-    };
-    
-  } catch (error) {
-    console.error('❌ Failed to create agent wallet:', error);
-    throw error;
-  }
-}
-
-/**
- * Alternative: Use a pre-existing agent wallet
- */
-export function createAgentClients(agentPrivateKey, masterAddress, isTestnet = false) {
-  try {
-    const agentWallet = new ethers.Wallet(agentPrivateKey);
-    const transport = new hl.HttpTransport({ isTestnet });
-    
-    const agentExchangeClient = new hl.ExchangeClient({
-      wallet: agentWallet,
-      transport,
-      walletAddress: masterAddress // Specify which account this agent trades for
-    });
-    
-    const infoClient = new hl.InfoClient({ transport });
-    
-    return {
-      info: infoClient,
-      exchange: agentExchangeClient,
-      agentAddress: agentWallet.address
-    };
-  } catch (error) {
-    console.error('Error creating agent clients:', error);
-    throw error;
-  }
-}
-
-/**
- * Store agent credentials securely (implement based on your storage solution)
- */
-export function storeAgentCredentials(masterAddress, agentData) {
-  // Store in localStorage for now (in production, use secure storage)
-  const key = `hyperliquid_agent_${masterAddress.toLowerCase()}`;
-  localStorage.setItem(key, JSON.stringify({
-    agentAddress: agentData.agentAddress,
-    agentPrivateKey: agentData.agentPrivateKey,
-    created: Date.now()
-  }));
-}
-
-/**
- * Retrieve stored agent credentials
- */
-export function getStoredAgentCredentials(masterAddress) {
-  try {
-    const key = `hyperliquid_agent_${masterAddress.toLowerCase()}`;
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : null;
-  } catch (error) {
-    console.error('Error retrieving agent credentials:', error);
-    return null;
-  }
-}
-
-/**
- * Get or create agent wallet for trading
- */
-export async function getOrCreateAgentWallet(masterSigner, isTestnet = false) {
-  try {
-    const masterAddress = await masterSigner.getAddress();
-    
-    // Check if we already have an agent for this master address
-    const storedAgent = getStoredAgentCredentials(masterAddress);
-    
-    if (storedAgent) {
-      console.log('🔄 Using existing agent wallet:', storedAgent.agentAddress);
-      
-      // Test if the agent is still valid
-      try {
-        const clients = createAgentClients(storedAgent.agentPrivateKey, masterAddress, isTestnet);
-        
-        // Test a simple API call to verify the agent works
-        const userState = await clients.info.clearinghouseState({ 
-          user: masterAddress.toLowerCase() 
-        });
-        
-        console.log('✅ Existing agent wallet is valid');
+    if (data?.universe) {
+      const asset = data.universe.find(token => token.name === symbol);
+      if (asset) {
         return {
-          ...storedAgent,
-          clients,
-          masterAddress
+          index: data.universe.indexOf(asset),
+          name: asset.name,
+          szDecimals: asset.szDecimals || 3,
+          ...asset
         };
-      } catch (error) {
-        console.log('⚠️ Existing agent wallet invalid, creating new one...');
-        // Fall through to create new agent
       }
     }
     
-    // Create new agent wallet
-    console.log('🆕 Creating new agent wallet...');
-    const agentData = await createAgentWallet(masterSigner, "TradingBot", isTestnet);
-    
-    // Store for future use
-    storeAgentCredentials(masterAddress, agentData);
-    
-    return agentData;
-    
+    throw new Error(`Asset ${symbol} not found`);
   } catch (error) {
-    console.error('❌ Failed to get or create agent wallet:', error);
+    console.error('Error fetching asset info:', error);
     throw error;
   }
 }
 
 /**
- * Updated place order function using agent wallet
+ * Get user account state
+ */
+export async function getUserAccountState(userAddress, isTestnet = false) {
+  try {
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_INFO : HYPERLIQUID_ENDPOINTS.MAINNET_INFO;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clearinghouseState',
+        user: userAddress.toLowerCase()
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch user state');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching user state:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create action hash for L1 actions (Hyperliquid specific)
+ */
+function actionHash(action, vaultAddress, nonce) {
+  // In production, this should use proper msgpack encoding
+  // For now, we'll use a simplified version
+  const packedData = JSON.stringify({
+    action,
+    nonce,
+    vaultAddress: vaultAddress || ethers.ZeroAddress
+  });
+  
+  return ethers.keccak256(ethers.toUtf8Bytes(packedData));
+}
+
+/**
+ * Construct phantom agent for L1 actions
+ */
+function constructPhantomAgent(hash, isMainnet) {
+  const source = isMainnet ? 'https://hyperliquid.xyz' : 'https://hyperliquid-testnet.xyz';
+  return {
+    source,
+    connectionId: hash
+  };
+}
+
+/**
+ * Sign L1 action (for orders, cancels, etc.)
+ */
+async function signL1Action(signer, action, vaultAddress, timestamp, isMainnet) {
+  try {
+    console.log('🔐 Signing L1 action...');
+    
+    // 1. Create action hash
+    const hash = actionHash(action, vaultAddress, timestamp);
+    console.log('📝 Action hash:', hash);
+    
+    // 2. Construct phantom agent
+    const agent = constructPhantomAgent(hash, isMainnet);
+    console.log('👻 Phantom agent:', agent);
+    
+    // 3. Sign the agent using EIP-712
+    const domain = {
+      name: 'Exchange',
+      version: '1',
+      chainId: 42161,
+      verifyingContract: '0x0000000000000000000000000000000000000000'
+    };
+
+    // CRITICAL: Do NOT include EIP712Domain in types!
+    const types = {
+      Agent: [
+        { name: 'source', type: 'string' },
+        { name: 'connectionId', type: 'bytes32' }
+      ]
+    };
+
+    const signature = await signer.signTypedData(domain, types, agent);
+    console.log('✍️ Signature:', signature);
+    
+    const sig = ethers.Signature.from(signature);
+    
+    return {
+      r: sig.r,
+      s: sig.s,
+      v: sig.v
+    };
+    
+  } catch (error) {
+    console.error('❌ L1 action signing failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sign user-signed action (for transfers, withdrawals, etc.)
+ */
+async function signUserSignedAction(signer, action, types, primaryType, isMainnet) {
+  try {
+    const timestamp = Date.now();
+    const chainId = isMainnet ? 42161 : 421614;
+    
+    // Add required fields for user-signed actions
+    const enrichedAction = {
+      ...action,
+      hyperliquidChain: isMainnet ? 'Mainnet' : 'Testnet',
+      signatureChainId: '0x' + chainId.toString(16),
+      time: timestamp
+    };
+    
+    const domain = {
+      name: 'HyperliquidSignTransaction',
+      version: '1',
+      chainId: chainId,
+      verifyingContract: '0x0000000000000000000000000000000000000000'
+    };
+
+    // CRITICAL: Do NOT include EIP712Domain in types!
+    const signature = await signer.signTypedData(domain, types, enrichedAction);
+    const sig = ethers.Signature.from(signature);
+    
+    return {
+      r: sig.r,
+      s: sig.s,
+      v: sig.v
+    };
+    
+  } catch (error) {
+    console.error('❌ User-signed action signing failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Place order using correct EIP-712 signature
  */
 export async function placeOrder({
   assetIndex,
@@ -192,48 +199,60 @@ export async function placeOrder({
   reduceOnly = false,
   takeProfitPrice = null,
   stopLossPrice = null,
-  clientOrderId = null
-}, masterSigner, isTestnet = false) {
+  szDecimals = 3
+}, signer, isTestnet = false) {
   try {
-    console.log('📤 Placing order with agent wallet...');
+    console.log('📤 Placing order via utility function...');
     
-    // Get or create agent wallet
-    const agentData = await getOrCreateAgentWallet(masterSigner, isTestnet);
-    const { exchange } = agentData.clients;
+    // Validate inputs
+    const orderSize = parseFloat(size);
+    if (orderSize <= 0) {
+      throw new Error('Order size must be greater than 0');
+    }
     
-    // Prepare the main order
+    // Format size according to asset's szDecimals
+    const formattedSize = orderSize.toFixed(szDecimals);
+    const minSize = Math.pow(10, -szDecimals);
+    if (parseFloat(formattedSize) < minSize) {
+      throw new Error(`Minimum order size is ${minSize}`);
+    }
+    
+    // Create main order
     const mainOrder = {
       a: assetIndex,
       b: isBuy,
-      p: orderType.toLowerCase() === 'market' ? '0' : price.toString(),
-      s: size.toString(),
+      p: orderType.toLowerCase() === 'market' ? '0' : price?.toString() || '0',
+      s: formattedSize,
       r: reduceOnly,
-      t: orderType.toLowerCase() === 'market' 
-        ? { trigger: { isMarket: true, triggerPx: '0', tpsl: 'tp' } }
-        : { limit: { tif: timeInForce } }
+      t: orderType.toLowerCase() === 'market' ? {
+        trigger: {
+          isMarket: true,
+          triggerPx: '0',
+          tpsl: 'tp'
+        }
+      } : {
+        limit: {
+          tif: timeInForce
+        }
+      }
     };
-
-    // Add client order ID if provided
-    if (clientOrderId !== null && clientOrderId !== undefined && clientOrderId !== '') {
-      mainOrder.c = clientOrderId;
-    }
 
     const orders = [mainOrder];
 
-    // Add TP/SL orders if specified
+    // Add TP/SL orders
     if (takeProfitPrice) {
       orders.push({
         a: assetIndex,
         b: !isBuy,
         p: takeProfitPrice.toString(),
-        s: size.toString(),
+        s: formattedSize,
         r: true,
-        t: { 
-          trigger: { 
-            isMarket: false, 
-            triggerPx: takeProfitPrice.toString(), 
-            tpsl: 'tp' 
-          } 
+        t: {
+          trigger: {
+            isMarket: false,
+            triggerPx: takeProfitPrice.toString(),
+            tpsl: 'tp'
+          }
         }
       });
     }
@@ -243,235 +262,258 @@ export async function placeOrder({
         a: assetIndex,
         b: !isBuy,
         p: stopLossPrice.toString(),
-        s: size.toString(),
+        s: formattedSize,
         r: true,
-        t: { 
-          trigger: { 
-            isMarket: false, 
-            triggerPx: stopLossPrice.toString(), 
-            tpsl: 'sl' 
-          } 
+        t: {
+          trigger: {
+            isMarket: false,
+            triggerPx: stopLossPrice.toString(),
+            tpsl: 'sl'
+          }
         }
       });
     }
 
     const grouping = (takeProfitPrice || stopLossPrice) ? 'normalTpsl' : 'na';
-
-    console.log('📦 Placing order via agent:', {
-      agentAddress: agentData.agentAddress,
-      masterAddress: agentData.masterAddress,
-      orders,
-      grouping
-    });
-
-    // Place the order using the agent
-    const result = await exchange.order({
-      orders,
-      grouping
-    });
-
-    console.log('📥 Agent order result:', result);
-    return result;
-
+    
+    // Use the corrected signing function
+    return await signAndSubmitOrder(orders, grouping, signer, isTestnet);
+    
   } catch (error) {
-    console.error('❌ Agent order placement failed:', error);
+    console.error('❌ Order placement failed:', error);
     throw error;
   }
 }
 
 /**
- * Get asset index using agent setup
+ * Sign and submit order with correct EIP-712 format
  */
-export async function getAssetIndex(symbol, isTestnet = false) {
+async function signAndSubmitOrder(orders, grouping, signer, isTestnet = false) {
   try {
-    const transport = new hl.HttpTransport({ isTestnet });
-    const client = new hl.InfoClient({ transport });
+    const timestamp = Date.now();
+    const vaultAddress = null; // Use null unless trading for a vault
     
-    const meta = await client.meta();
+    // Create the action object
+    const action = {
+      type: 'order',
+      orders: orders,
+      grouping: grouping
+    };
     
-    if (meta && meta.universe) {
-      const tokenIndex = meta.universe.findIndex(token => token.name === symbol);
-      return tokenIndex >= 0 ? tokenIndex : 0;
+    // Sign the L1 action (NOT user-signed action!)
+    const signature = await signL1Action(signer, action, vaultAddress, timestamp, !isTestnet);
+    
+    // Create request payload
+    const requestPayload = {
+      action: action,
+      nonce: timestamp,
+      signature: signature,
+      vaultAddress: vaultAddress
+    };
+
+    console.log('📤 Submitting order to Hyperliquid...');
+
+    // Submit to Hyperliquid
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
+
+    return await response.json();
     
-    return 0;
   } catch (error) {
-    console.error('Error fetching asset index:', error);
-    return 0;
+    console.error('❌ Sign and submit failed:', error);
+    throw error;
   }
 }
 
 /**
- * Get user account state using agent setup
+ * Transfer USDC (user-signed action)
  */
-export async function getUserAccountState(userAddress, isTestnet = false) {
+export async function transferUSDC(signer, destination, amount, isTestnet = false) {
   try {
-    const transport = new hl.HttpTransport({ isTestnet });
-    const client = new hl.InfoClient({ transport });
+    const action = {
+      destination: destination.toLowerCase(),
+      amount: amount.toString()
+    };
     
-    const normalizedAddress = userAddress.toLowerCase();
+    const types = {
+      'HyperliquidTransaction:UsdSend': [
+        { name: 'hyperliquidChain', type: 'string' },
+        { name: 'signatureChainId', type: 'string' },
+        { name: 'destination', type: 'string' },
+        { name: 'amount', type: 'string' },
+        { name: 'time', type: 'uint64' }
+      ]
+    };
     
-    const userState = await client.clearinghouseState({ 
-      user: normalizedAddress 
+    const signature = await signUserSignedAction(
+      signer,
+      action,
+      types,
+      'HyperliquidTransaction:UsdSend',
+      !isTestnet
+    );
+    
+    const timestamp = Date.now();
+    const requestPayload = {
+      action: {
+        type: 'usdSend',
+        ...action
+      },
+      nonce: timestamp,
+      signature: signature
+    };
+    
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload)
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    return await response.json();
     
-    return userState;
   } catch (error) {
-    console.error('Error fetching user account state:', error);
-    return null;
+    console.error('❌ USDC transfer failed:', error);
+    throw error;
   }
 }
 
-// Keep all the utility functions as before...
+/**
+ * Withdraw from bridge (user-signed action)
+ */
+export async function withdrawFromBridge(signer, destination, amount, isTestnet = false) {
+  try {
+    const action = {
+      destination: destination.toLowerCase(),
+      amount: amount.toString()
+    };
+    
+    const types = {
+      'HyperliquidTransaction:Withdraw': [
+        { name: 'hyperliquidChain', type: 'string' },
+        { name: 'signatureChainId', type: 'string' },
+        { name: 'destination', type: 'string' },
+        { name: 'amount', type: 'string' },
+        { name: 'time', type: 'uint64' }
+      ]
+    };
+    
+    const signature = await signUserSignedAction(
+      signer,
+      action,
+      types,
+      'HyperliquidTransaction:Withdraw',
+      !isTestnet
+    );
+    
+    const timestamp = Date.now();
+    const requestPayload = {
+      action: {
+        type: 'withdraw3',
+        ...action
+      },
+      nonce: timestamp,
+      signature: signature
+    };
+    
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    return await response.json();
+    
+  } catch (error) {
+    console.error('❌ Withdrawal failed:', error);
+    throw error;
+  }
+}
+
+// Utility functions
 export function calculatePositionSize(margin, leverage, price) {
-  const notionalValue = margin * leverage;
-  return notionalValue / price;
+  return (margin * leverage) / price;
 }
 
-export function calculateLiquidationPrice(entryPrice, leverage, isLong) {
-  const maintenanceMarginRate = 0.05;
-  const factor = 1 - (1 / leverage) - maintenanceMarginRate;
-  
-  if (isLong) {
-    return entryPrice * factor;
-  } else {
-    return entryPrice * (2 - factor);
-  }
-}
-
-export function calculateUnrealizedPnL(entryPrice, currentPrice, size, isLong) {
-  const priceDiff = currentPrice - entryPrice;
-  return isLong ? priceDiff * size : -priceDiff * size;
-}
-
-export function calculatePositionValue(size, price) {
-  return size * price;
-}
-
-export function calculateRequiredMargin(notionalValue, leverage) {
-  return notionalValue / leverage;
-}
-
-export function validateOrderParams({
-  size,
-  price = null,
-  orderType,
-  leverage,
-  availableMargin
-}) {
-  const errors = [];
-  
-  if (!size || parseFloat(size) <= 0) {
-    errors.push('Size must be greater than 0');
+export function validateOrderSize(size, szDecimals) {
+  if (size <= 0) {
+    return { isValid: false, error: 'Order size must be greater than 0' };
   }
   
-  if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
-    errors.push('Limit price must be greater than 0');
+  const formattedSize = size.toFixed(szDecimals);
+  const minSize = Math.pow(10, -szDecimals);
+  
+  if (parseFloat(formattedSize) < minSize) {
+    return { isValid: false, error: `Minimum order size is ${minSize}` };
   }
   
-  if (leverage < 1 || leverage > 50) {
-    errors.push('Leverage must be between 1 and 50');
-  }
-  
-  const orderValue = parseFloat(size) * parseFloat(price || 1);
-  const maxOrderValue = availableMargin * leverage;
-  
-  if (orderValue > maxOrderValue) {
-    errors.push('Order size exceeds available margin');
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
+  return { isValid: true, formattedSize };
 }
 
-export function formatNumber(value, decimals = 2) {
-  if (typeof value !== 'number' || isNaN(value)) return '0.00';
-  return value.toFixed(decimals);
-}
-
-export function formatCurrency(value, currency = 'USD') {
-  if (typeof value !== 'number' || isNaN(value)) return `0.00 ${currency}`;
-  return `${value.toFixed(2)} ${currency}`;
-}
-
-export function formatPercentage(value, decimals = 2) {
-  if (typeof value !== 'number' || isNaN(value)) return '0.00%';
-  return `${(value * 100).toFixed(decimals)}%`;
+export function formatPrice(price, decimals = 6) {
+  return parseFloat(price).toFixed(decimals);
 }
 
 export function parseErrorMessage(response) {
-  if (response.status === 'ok') return null;
+  if (response?.status === 'ok') return null;
   
-  const errorMsg = response.response || response.message || 'Unknown error';
+  const errorMsg = response?.response || response?.message || 'Unknown error';
   
+  // Map common Hyperliquid errors to user-friendly messages
   const errorMap = {
     'Insufficient margin': 'Not enough margin available for this trade',
     'Invalid price': 'Please enter a valid price',
     'Invalid size': 'Please enter a valid trade size',
     'Asset not found': 'Trading pair not available',
     'Order too small': 'Order size is below minimum requirement',
-    'Order too large': 'Order size exceeds maximum limit',
-    'Price too far from mark': 'Price is too far from current market price',
+    'Price too far': 'Price is too far from current market price',
     'Self trade': 'Order would trade against your own order',
-    'Post only failed': 'Post-only order would have crossed the spread'
+    'User or API Wallet': 'Wallet not found. Please ensure your wallet is onboarded to Hyperliquid',
+    'does not exist': 'Wallet not found. Please deposit USDC to Hyperliquid first'
   };
   
-  return errorMap[errorMsg] || errorMsg;
-}
-
-export function getCurrentTimestamp() {
-  return Date.now();
-}
-
-export function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-export async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
-  let lastError;
-  
-  for (let i = 0; i <= maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      
-      if (i === maxRetries) {
-        throw lastError;
-      }
-      
-      const delay = baseDelay * Math.pow(2, i);
-      console.log(`Attempt ${i + 1} failed, retrying in ${delay}ms...`);
-      await sleep(delay);
+  // Check for partial matches
+  for (const [key, value] of Object.entries(errorMap)) {
+    if (errorMsg.includes(key)) {
+      return value;
     }
   }
   
-  throw lastError;
+  return errorMsg;
 }
 
-// Default export with all functions
 export default {
-  getAssetIndex,
+  getAssetInfo,
   getUserAccountState,
   placeOrder,
-  getOrCreateAgentWallet,
-  createAgentWallet,
-  storeAgentCredentials,
-  getStoredAgentCredentials,
+  transferUSDC,
+  withdrawFromBridge,
+  validateOrderSize,
   calculatePositionSize,
-  calculateLiquidationPrice,
-  calculateUnrealizedPnL,
-  calculatePositionValue,
-  calculateRequiredMargin,
-  validateOrderParams,
-  formatNumber,
-  formatCurrency,
-  formatPercentage,
+  formatPrice,
   parseErrorMessage,
-  getCurrentTimestamp,
-  sleep,
-  retryWithBackoff,
   HYPERLIQUID_ENDPOINTS
 };
