@@ -4,7 +4,7 @@ import TradingViewChart from '@/components/TradingViewChart'
 import OrderBook from '@/components/OrderBook'
 import TokenData from '@/components/TokenData'
 import TradingPanel from '@/components/TradingPanel'
-
+import UserPositions from '@/components/UserPositions'
 function TradingPage() {
   // Centralized state
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
@@ -272,6 +272,7 @@ function TradingPage() {
       </div>
 
     </div>
+    <UserPositions/>
   </div>
 );
 
