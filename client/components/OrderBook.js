@@ -39,24 +39,24 @@ const OrderBook = ({
   };
 
   return (
-    <div className={`min-h-[600px] h-full text-white ${className} border-l border-l-white/20`}>
+    <div className={`min-h-[600px] h-full font-mono text-white ${className} border-l border-l-[#1F1E23]`}>
       {/* Header Tabs */}
-      <div className="flex border-b border-white/20">
+      <div className="flex border-b border-[#1F1E23]">
         <button 
-          className={`px-4 py-3 text-sm font-medium cursor-pointer ${
+          className={`px-4 py-3 text-[12px] leading-[18px] border-b-2 border-transparent font-[500] duration-200 ease-in cursor-pointer ${
             activeTab === 'Order Book' 
-              ? 'border-b-2 border-white text-white' 
-              : 'text-gray-400 hover:text-white'
+              ? 'border-b-2 border-white text-[#E5E5E5]' 
+              : 'text-[#919093] hover:text-white'
           }`}
           onClick={() => setActiveTab('Order Book')}
         >
           Order Book
         </button>
         <button 
-          className={`px-4 py-3 text-sm font-medium cursor-pointer ${
+          className={`px-4 py-3 text-[12px] leading-[18px] font-[500] cursor-pointer border-b-2 border-transparent  duration-200 ease-in  ${
             activeTab === 'Trades' 
-              ? 'border-b-2 border-white text-white' 
-              : 'text-gray-400 hover:text-white'
+               ? 'border-b-2 border-white text-[#E5E5E5]' 
+              : 'text-[#919093] hover:text-white'
           }`}
           onClick={() => setActiveTab('Trades')}
         >
@@ -68,10 +68,10 @@ const OrderBook = ({
       {activeTab === 'Order Book' && (
         <div className="flex flex-col h-full">
           {/* Column Headers */}
-          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-white/20">
-            <div className="text-left">Price</div>
-            <div className="text-right">Amount (USD)</div>
-            <div className="text-right">Total (USD)</div>
+          <div className="grid grid-cols-3 gap-4 px-4 py-2 my-2  ">
+            <div className="text-left text-[11px] leading-[18px] text-[#919093] font-[400]">Price</div>
+            <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">Amount (USD)</div>
+            <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">Total (USD)</div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -83,22 +83,29 @@ const OrderBook = ({
                   className="grid grid-cols-3 gap-4 px-4 py-1 my-1 text-xs hover:bg-gray-900 transition-colors relative"
                 >
                   {/* Background bar for visual depth */}
-                  <div 
-                    className="absolute right-0 top-0 h-full bg-red-900 opacity-20 bg-opacity-100"
-                    style={{ 
-                      width: orderBookData.asks.length > 0 
-                        ? `${Math.min((ask.total / Math.max(...orderBookData.asks.map(a => a.total))) * 100, 100)}%` 
-                        : '0%'
-                    }}
-                  />
+<div 
+  className="absolute left-0 top-0 h-full"
+  style={{ 
+    width: orderBookData.asks.length > 0 
+      ? `${Math.min((ask.total / Math.max(...orderBookData.asks.map(a => a.total))) * 100, 100)}%` 
+      : '0%',
+    backgroundImage: 'linear-gradient(to right, #000000, #170a0d, #251114, #331618, #421a1a)'
+  }}
+/>
+
+
+
+
+
+
                   
-                  <div className="text-red-400 font-mono relative z-10">
+                  <div className="text-[#FF5757] font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatPrice(ask.price)}
                   </div>
-                  <div className="text-right text-white font-mono relative z-10">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatAmount(ask.amount)}
                   </div>
-                  <div className="text-right text-gray-300 font-mono relative z-10">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatTotal(ask.total)}
                   </div>
                 </div>
@@ -106,14 +113,14 @@ const OrderBook = ({
             </div>
 
             {/* Spread */}
-            <div className="px-4 py-2  bg-[#181a20]">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-gray-400">Spread:</span>
+            <div className="px-4 py-2  ">
+              <div className="flex justify-center gap-1 items-center text-[12px] font-[400] leading-[16px] text-white  ">
+                <span className="">Spread:</span>
                 <div className="flex space-x-2">
-                  <span className="text-white font-mono">
+                  <span className=" font-mono ">
                     {formatPrice(spread.absolute)}
                   </span>
-                  <span className="text-gray-400">
+                  <span className="text-[#889199]">
                     {spread.percentage.toFixed(3)}%
                   </span>
                 </div>
@@ -128,22 +135,24 @@ const OrderBook = ({
                   className="grid grid-cols-3 gap-4 px-4 py-1 text-xs my-1 hover:bg-gray-900 transition-colors relative"
                 >
                   {/* Background bar for visual depth */}
-                  <div 
-                    className="absolute right-0 top-0 h-full bg-green-900 opacity-20 bg-opacity-10"
-                    style={{ 
-                      width: orderBookData.bids.length > 0 
-                        ? `${Math.min((bid.total / Math.max(...orderBookData.bids.map(b => b.total))) * 100, 100)}%` 
-                        : '0%'
-                    }}
-                  />
+        <div 
+  className="absolute left-0 top-0 h-full opacity-20 bg-opacity-10"
+  style={{ 
+    width: orderBookData.bids.length > 0 
+      ? `${Math.min((bid.total / Math.max(...orderBookData.bids.map(b => b.total))) * 100, 100)}%` 
+      : '0%',
+    background: 'linear-gradient(90deg, rgba(47, 227, 172, 0) 0%, #65FB9E 100%)'
+  }}
+/>
+
                   
-                  <div className="text-green-400 font-mono relative z-10">
+                  <div className="text-[#65FB9E] font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatPrice(bid.price)}
                   </div>
-                  <div className="text-right text-white font-mono relative z-10">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatAmount(bid.amount)}
                   </div>
-                  <div className="text-right text-gray-300 font-mono relative z-10">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {formatTotal(bid.total)}
                   </div>
                 </div>
@@ -157,10 +166,10 @@ const OrderBook = ({
       {activeTab === 'Trades' && (
         <div className="flex flex-col h-full">
           {/* Column Headers for Trades */}
-          <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-gray-400 border-b border-white/20">
-            <div className="text-left">Price</div>
-            <div className="text-right">Size (USD)</div>
-            <div className="text-right">Age</div>
+          <div className="grid grid-cols-3 gap-4 px-4 py-2 my-2 ">
+            <div className="text-left text-[11px] leading-[18px] text-[#919093] font-[400]">Price</div>
+            <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">Size (USD)</div>
+            <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">Age</div>
           </div>
 
           {/* Trades List */}
@@ -169,15 +178,15 @@ const OrderBook = ({
               tradesData.map((trade, index) => (
                 <div 
                   key={`trade-${index}`}
-                  className="grid grid-cols-3 gap-4 px-4 py-1 text-xs hover:bg-gray-900 transition-colors"
+                  className="grid grid-cols-3 gap-4 my-1 px-4 py-1 text-xs hover:bg-gray-900 transition-colors"
                 >
-                  <div className={`font-mono ${trade.side === 'B' ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={` font-[400] leading-[18px] text-[12px]  font-mono relative z-10 ${trade.side === 'B' ? 'text-[#65FB9E]' : 'text-[#FF5757]'}`}>
                     {formatPrice(trade.price)}
                   </div>
-                  <div className="text-right text-white font-mono">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     ${numeral(trade.size * trade.price).format('0,0.00')}
                   </div>
-                  <div className="text-right text-gray-400">
+                  <div className="text-right text-white font-[400] leading-[18px] text-[12px]  font-mono relative z-10">
                     {trade.ago}
                   </div>
                 </div>

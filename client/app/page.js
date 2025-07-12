@@ -231,8 +231,8 @@ function TradingPage() {
   }
 
   return (
-  <div className='min-h-screen bg-[#101015]'>
-    <div className='flex border border-white/20 items-stretch min-h-[600px]'>
+  <div className='min-h-screen bg-[#0d0c0e]'>
+    <div className='flex border border-[#1F1E23] items-stretch min-h-[600px]'>
       
       {/* Left Section: TokenData + TradingViewChart */}
       <div className='flex flex-col w-full min-h-[600px] h-full'>
@@ -253,7 +253,7 @@ function TradingPage() {
       </div>
 
       {/* Middle Section: OrderBook */}
-      <div className="min-w-[300px] min-h-[600px] flex flex-col border-l border-white/20">
+      <div className="min-w-[300px] min-h-[600px] flex flex-col ">
         <OrderBook 
           selectedSymbol={selectedSymbol}
           orderBookData={orderBookData}
@@ -263,7 +263,7 @@ function TradingPage() {
       </div>
 
       {/* Right Section: Trading Panel */}
-      <div className="min-w-[350px] min-h-[600px] flex flex-col border-l border-white/20">
+      <div className="min-w-[350px] min-h-[600px] flex flex-col ">
         <TradingPanel 
           selectedSymbol={selectedSymbol}
           marketData={marketData}

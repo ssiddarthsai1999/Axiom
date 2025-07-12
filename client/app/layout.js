@@ -21,7 +21,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
            <AppKitProvider>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={` ${geistMono.variable} antialiased`}
         
       >
         {children}

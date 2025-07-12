@@ -100,7 +100,7 @@ useEffect(() => {
 
   if (!marketData) {
     return (
-      <div className={`bg-[#101015] text-white p-4 ${className}`}>
+      <div className={`bg-[#0d0c0e] text-white p-4 ${className}`}>
         <div className="flex items-center space-x-4">
           <div className="w-16 h-6 bg-gray-800 rounded animate-pulse"></div>
           <div className="w-24 h-6 bg-gray-800 rounded animate-pulse"></div>
@@ -111,35 +111,31 @@ useEffect(() => {
   }
 
   return (
-    <div className={`bg-[#101015] text-white p-4 border-b border-white/20 ${className}`}>
-      <div className="flex items-center justify-start gap-10">
+    <div className={`bg-[#0d0c0e] text-white p-4  font-mono ${className}`}>
+      <div className="flex items-center justify-between gap-10">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
-          <button 
-            onClick={() => navigateToken('prev')}
-            className="p-1 hover:bg-gray-800 rounded transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4 cursor-pointer" />
-          </button>
+
           
           {/* Token Selector */}
           <div className="relative">
 <button 
  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
- className="flex items-center space-x-2 hover:bg-gray-800 px-3 py-2 rounded cursor-pointer transition-colors"
+ className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
 >
  <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
    <span className="text-xs font-bold text-white">
      {marketData.symbol.charAt(0)}
    </span>
  </div>
- <span className="text-lg font-bold">{marketData.symbol}</span>
- <ChevronDown className="w-4 h-4 text-gray-400" />
+ <span className="text-[#E5E5E5] font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
+  <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+ <ChevronDown className="w-4 h-4 text-white ml-3" />
 </button>
             
             {/* Dropdown */}
             {isDropdownOpen && (
-              <div className="absolute  token-dropdown top-full left-0 mt-1 w-80 bg-[#101015] border border-gray-700 rounded-lg shadow-lg z-50">
+              <div className="absolute  token-dropdown top-full left-0 mt-1 w-80 bg-[#0d0c0e] border border-gray-700 rounded-lg shadow-lg z-50">
                 <div className="p-3 border-b border-gray-700">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -179,56 +175,52 @@ useEffect(() => {
             )}
           </div>
 
-          <div className="flex items-center space-x-1">
-            <span className="text-2xl font-bold font-mono">
+
+
+
+        </div>
+
+        {/* Right: Market Data */}
+                  <div className="flex flex-col items-start space-x-1 gap-0">
+            <span className="text-[#E5E5E5] font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">
               {numeral(marketData.price).format('0,0.00')}
             </span>
-            <span className={`text-sm font-medium ${
-              marketData.change24h >= 0 ? 'text-green-400' : 'text-red-400'
+            <span className={`font-mono  font-[400] text-[12px] leading-[17px] tracking-[0px] ${
+              marketData.change24h >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
             }`}>
               {marketData.change24h >= 0 ? '+' : ''}{marketData.change24h.toFixed(2)}%
             </span>
           </div>
 
-          <button 
-            onClick={() => navigateToken('next')}
-            className="p-1 hover:bg-gray-800 rounded transition-colors"
-          >
-            <ChevronRight className="w-4 h-4 cursor-pointer" />
-          </button>
-        </div>
-
-        {/* Right: Market Data */}
-        <div className="flex items-center space-x-8 text-sm">
-          <div className="flex flex-col items-center">
-            <span className="text-gray-400">Oracle Price</span>
-            <span className="font-mono">{numeral(marketData.oraclePrice).format('0,0.00')}</span>
+          <div className="flex flex-col items-start gap-2">
+            <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] ">Oracle Price</span>
+            <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">{numeral(marketData.oraclePrice).format('0,0.00')}</span>
           </div>
           
-          <div className="flex flex-col items-center">
-            <span className="text-gray-400">24h Volume</span>
-            <span className="font-mono">${numeral(marketData.volume24h / 1000000).format('0.00')}B</span>
+          <div className="flex flex-col items-start gap-2">
+            <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] font-mono">24h Volume</span>
+            <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">${numeral(marketData.volume24h / 1000000).format('0.00')}B</span>
           </div>
           
-          <div className="flex flex-col items-center">
-            <span className="text-gray-400">Open Interest</span>
-            <span className="font-mono">${numeral(marketData.openInterest * marketData.price / 1000000000).format('0.00')}B</span>
+          <div className="flex flex-col items-start gap-2">
+            <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] ">Open Interest</span>
+            <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">${numeral(marketData.openInterest * marketData.price / 1000000000).format('0.00')}B</span>
           </div>
           
-          <div className="flex flex-col items-center">
-            <span className="text-gray-400">Funding / Countdown</span>
-            <div className="flex items-center space-x-2">
-              <span className={`font-mono ${
+          <div className="flex flex-col items-start gap-2">
+            <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] ">Funding / Countdown</span>
+            <div className="flex items-start space-x-2">
+              <span className={`font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px] ${
                 marketData.funding >= 0 ? 'text-green-400' : 'text-red-400'
               }`}>
                 {marketData.funding >= 0 ? '+' : ''}{(marketData.funding * 100).toFixed(5)}%
               </span>
-              <span className="text-green-400 font-mono">
+              <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">
                 {fundingCountdown}
               </span>
             </div>
           </div>
-        </div>
+   
       </div>
     </div>
   );

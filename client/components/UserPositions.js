@@ -135,17 +135,17 @@ const UserPositions = ({ className = '' }) => {
   const tabs = ['Positions', 'Open Orders', 'Trades'];
 
   return (
-    <div className={`bg-[#101015] text-white ${className}`}>
+    <div className={`bg-[#0d0c0e] text-white ${className}`}>
       {/* Tab Navigation */}
-      <div className="flex border-b border-white/20">
+      <div className="flex border-b border-[#1F1E23]">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-6 py-3 text-sm font-medium transition-colors cursor-pointer ${
+            className={`px-4 py-3 font-[500] text-[14px] leading-[21px]  font-mono transition-colors ease-in duration-200 cursor-pointer ${
               activeTab === tab
-                ? 'text-white border-b-2 border-white bg-[#1a1a1f]'
-                : 'text-gray-400 hover:text-white hover:bg-[#1a1a1f]'
+                ? 'text-[#C9C9C9]  border-b-2 border-white '
+                : 'text-[#919093] hover:text-white hover:bg-[#1a1a1f]'
             }`}
           >
             {tab}
@@ -179,19 +179,19 @@ const UserPositions = ({ className = '' }) => {
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-white/20">
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Symbol</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Size</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Entry Price</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Mark Price</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">PnL</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Liquidation Price</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Margin Used (USDC)</th>
+                        <tr className="border-b border-[1F1E23]">
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Entry Price</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Mark Price</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">PnL</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Liquidation Price</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Margin Used (USDC)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {positions.map((position, index) => (
-                          <tr key={`${position.symbol}-${index}`} className="border-b border-white/10 hover:bg-[#1a1a1f] transition-colors">
+                          <tr key={`${position.symbol}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
                             <td className="p-4">
                               <div className="flex items-center space-x-2">
                                 <span className="font-medium">{position.symbol}</span>
@@ -232,20 +232,20 @@ const UserPositions = ({ className = '' }) => {
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-white/20">
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Symbol</th>
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Side</th>
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Type</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Size</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Price</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Filled</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Trigger Condition</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Action</th>
+                        <tr className="border-b border-[1F1E23]">
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Side</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Type</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Price</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Filled</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Trigger Condition</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {openOrders.map((order, index) => (
-                          <tr key={`${order.orderId}-${index}`} className="border-b border-white/10 hover:bg-[#1a1a1f] transition-colors">
+                          <tr key={`${order.orderId}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
                             <td className="p-4 font-medium">{order.symbol}</td>
                             <td className="p-4">
                               <span className={`px-2 py-1 text-xs rounded ${
@@ -287,20 +287,20 @@ const UserPositions = ({ className = '' }) => {
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-white/20">
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Time</th>
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Symbol</th>
-                          <th className="text-left p-4 text-xs text-gray-400 font-medium uppercase">Side</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Size</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Price</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Trade Value</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Fee</th>
-                          <th className="text-right p-4 text-xs text-gray-400 font-medium uppercase">Closed PnL</th>
+                        <tr className="border-b border-[1F1E23]">
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Time</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Side</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Price</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Trade Value</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Fee</th>
+                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Closed PnL</th>
                         </tr>
                       </thead>
                       <tbody>
                         {trades.map((trade, index) => (
-                          <tr key={`${trade.symbol}-${trade.time}-${index}`} className="border-b border-white/10 hover:bg-[#1a1a1f] transition-colors">
+                          <tr key={`${trade.symbol}-${trade.time}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
                             <td className="p-4 text-gray-300 font-mono text-sm">{formatTime(trade.time)}</td>
                             <td className="p-4 font-medium">{trade.symbol}</td>
                             <td className="p-4">
