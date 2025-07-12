@@ -1,5 +1,12 @@
-// utils/hyperLiquidTrading.js
-import { ethers } from 'ethers';
+// utils/hyperLiquidTrading.js - Using EXACT official SDK patterns
+import { 
+  signL1Action, 
+  orderToWire, 
+  orderWireToAction, 
+  getTimestampMs,
+  signUsdTransferAction,
+  removeTrailingZeros
+} from "./hyperLiquidSigning"
 
 export const HYPERLIQUID_ENDPOINTS = {
   MAINNET_INFO: 'https://api.hyperliquid.xyz/info',
@@ -9,7 +16,7 @@ export const HYPERLIQUID_ENDPOINTS = {
 };
 
 /**
- * Get asset information from Hyperliquid
+ * Get asset information
  */
 export async function getAssetInfo(symbol, isTestnet = false) {
   try {
@@ -74,120 +81,28 @@ export async function getUserAccountState(userAddress, isTestnet = false) {
 }
 
 /**
- * Create action hash for L1 actions (Hyperliquid specific)
+ * Generate unique nonce - EXACT pattern from official SDK
  */
-function actionHash(action, vaultAddress, nonce) {
-  // In production, this should use proper msgpack encoding
-  // For now, we'll use a simplified version
-  const packedData = JSON.stringify({
-    action,
-    nonce,
-    vaultAddress: vaultAddress || ethers.ZeroAddress
-  });
-  
-  return ethers.keccak256(ethers.toUtf8Bytes(packedData));
-}
+let nonceCounter = 0;
+let lastNonceTimestamp = 0;
 
-/**
- * Construct phantom agent for L1 actions
- */
-function constructPhantomAgent(hash, isMainnet) {
-  const source = isMainnet ? 'https://hyperliquid.xyz' : 'https://hyperliquid-testnet.xyz';
-  return {
-    source,
-    connectionId: hash
-  };
-}
+function generateUniqueNonce() {
+  const timestamp = Date.now();
 
-/**
- * Sign L1 action (for orders, cancels, etc.)
- */
-async function signL1Action(signer, action, vaultAddress, timestamp, isMainnet) {
-  try {
-    console.log('🔐 Signing L1 action...');
-    
-    // 1. Create action hash
-    const hash = actionHash(action, vaultAddress, timestamp);
-    console.log('📝 Action hash:', hash);
-    
-    // 2. Construct phantom agent
-    const agent = constructPhantomAgent(hash, isMainnet);
-    console.log('👻 Phantom agent:', agent);
-    
-    // 3. Sign the agent using EIP-712
-    const domain = {
-      name: 'Exchange',
-      version: '1',
-      chainId: 42161,
-      verifyingContract: '0x0000000000000000000000000000000000000000'
-    };
-
-    // CRITICAL: Do NOT include EIP712Domain in types!
-    const types = {
-      Agent: [
-        { name: 'source', type: 'string' },
-        { name: 'connectionId', type: 'bytes32' }
-      ]
-    };
-
-    const signature = await signer.signTypedData(domain, types, agent);
-    console.log('✍️ Signature:', signature);
-    
-    const sig = ethers.Signature.from(signature);
-    
-    return {
-      r: sig.r,
-      s: sig.s,
-      v: sig.v
-    };
-    
-  } catch (error) {
-    console.error('❌ L1 action signing failed:', error);
-    throw error;
+  // Ensure the nonce is always greater than the previous one
+  if (timestamp <= lastNonceTimestamp) {
+    // If we're in the same millisecond, increment by 1 from the last nonce
+    lastNonceTimestamp += 1;
+    return lastNonceTimestamp;
   }
+
+  // Otherwise use the current timestamp
+  lastNonceTimestamp = timestamp;
+  return timestamp;
 }
 
 /**
- * Sign user-signed action (for transfers, withdrawals, etc.)
- */
-async function signUserSignedAction(signer, action, types, primaryType, isMainnet) {
-  try {
-    const timestamp = Date.now();
-    const chainId = isMainnet ? 42161 : 421614;
-    
-    // Add required fields for user-signed actions
-    const enrichedAction = {
-      ...action,
-      hyperliquidChain: isMainnet ? 'Mainnet' : 'Testnet',
-      signatureChainId: '0x' + chainId.toString(16),
-      time: timestamp
-    };
-    
-    const domain = {
-      name: 'HyperliquidSignTransaction',
-      version: '1',
-      chainId: chainId,
-      verifyingContract: '0x0000000000000000000000000000000000000000'
-    };
-
-    // CRITICAL: Do NOT include EIP712Domain in types!
-    const signature = await signer.signTypedData(domain, types, enrichedAction);
-    const sig = ethers.Signature.from(signature);
-    
-    return {
-      r: sig.r,
-      s: sig.s,
-      v: sig.v
-    };
-    
-  } catch (error) {
-    console.error('❌ User-signed action signing failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Place order using correct EIP-712 signature
+ * Place order using EXACT official SDK pattern
  */
 export async function placeOrder({
   assetIndex,
@@ -199,10 +114,10 @@ export async function placeOrder({
   reduceOnly = false,
   takeProfitPrice = null,
   stopLossPrice = null,
-  szDecimals = 3
+  cloid = null
 }, signer, isTestnet = false) {
   try {
-    console.log('📤 Placing order via utility function...');
+    console.log('📤 Placing order with official SDK pattern...');
     
     // Validate inputs
     const orderSize = parseFloat(size);
@@ -210,74 +125,115 @@ export async function placeOrder({
       throw new Error('Order size must be greater than 0');
     }
     
-    // Format size according to asset's szDecimals
-    const formattedSize = orderSize.toFixed(szDecimals);
-    const minSize = Math.pow(10, -szDecimals);
-    if (parseFloat(formattedSize) < minSize) {
-      throw new Error(`Minimum order size is ${minSize}`);
-    }
-    
-    // Create main order
-    const mainOrder = {
-      a: assetIndex,
-      b: isBuy,
-      p: orderType.toLowerCase() === 'market' ? '0' : price?.toString() || '0',
-      s: formattedSize,
-      r: reduceOnly,
-      t: orderType.toLowerCase() === 'market' ? {
-        trigger: {
-          isMarket: true,
-          triggerPx: '0',
-          tpsl: 'tp'
-        }
-      } : {
-        limit: {
-          tif: timeInForce
-        }
-      }
+    const vaultAddress = null;
+    const grouping = (takeProfitPrice || stopLossPrice) ? 'normalTpsl' : 'na';
+
+    // Create order request - EXACT pattern from official SDK
+    const orderRequest = {
+      is_buy: isBuy,
+      sz: orderSize,
+      limit_px: orderType.toLowerCase() === 'market' ? 
+        (isBuy ? 999999 : 0.000001) : parseFloat(price),
+      reduce_only: reduceOnly,
+      order_type: orderType.toLowerCase() === 'market' ? 
+        { limit: { tif: 'Ioc' } } : 
+        { limit: { tif: timeInForce } }
     };
+    
+    if (cloid) {
+      orderRequest.cloid = cloid;
+    }
 
-    const orders = [mainOrder];
+    // Normalize price and size values to remove trailing zeros - EXACT pattern
+    const normalizedOrder = { ...orderRequest };
 
-    // Add TP/SL orders
+    // Handle price normalization
+    if (typeof normalizedOrder.limit_px === 'string') {
+      normalizedOrder.limit_px = removeTrailingZeros(normalizedOrder.limit_px);
+    }
+
+    // Handle size normalization
+    if (typeof normalizedOrder.sz === 'string') {
+      normalizedOrder.sz = removeTrailingZeros(normalizedOrder.sz);
+    }
+
+    const orders = [normalizedOrder];
+
+    // Add TP/SL orders if specified
     if (takeProfitPrice) {
-      orders.push({
-        a: assetIndex,
-        b: !isBuy,
-        p: takeProfitPrice.toString(),
-        s: formattedSize,
-        r: true,
-        t: {
+      const tpOrder = {
+        is_buy: !isBuy,
+        sz: orderSize,
+        limit_px: parseFloat(takeProfitPrice),
+        reduce_only: true,
+        order_type: {
           trigger: {
+            triggerPx: parseFloat(takeProfitPrice),
             isMarket: false,
-            triggerPx: takeProfitPrice.toString(),
             tpsl: 'tp'
           }
         }
-      });
+      };
+      orders.push(tpOrder);
     }
 
     if (stopLossPrice) {
-      orders.push({
-        a: assetIndex,
-        b: !isBuy,
-        p: stopLossPrice.toString(),
-        s: formattedSize,
-        r: true,
-        t: {
+      const slOrder = {
+        is_buy: !isBuy,
+        sz: orderSize,
+        limit_px: parseFloat(stopLossPrice),
+        reduce_only: true,
+        order_type: {
           trigger: {
+            triggerPx: parseFloat(stopLossPrice),
             isMarket: false,
-            triggerPx: stopLossPrice.toString(),
             tpsl: 'sl'
           }
         }
-      });
+      };
+      orders.push(slOrder);
     }
 
-    const grouping = (takeProfitPrice || stopLossPrice) ? 'normalTpsl' : 'na';
+    // Convert to order wires - EXACT pattern from official SDK
+    const orderWires = orders.map(o => orderToWire(o, parseInt(assetIndex)));
+
+    // Create action - EXACT pattern from official SDK
+    const actions = orderWireToAction(orderWires, grouping);
+
+    // Generate nonce and sign - EXACT pattern from official SDK
+    const nonce = generateUniqueNonce();
+    const signature = await signL1Action(
+      signer,
+      actions,
+      vaultAddress,
+      nonce,
+      !isTestnet
+    );
+
+    // Create payload - EXACT pattern from official SDK
+    const payload = { action: actions, nonce, signature, vaultAddress };
+
+    console.log('📤 Submitting order payload:', JSON.stringify(payload, null, 2));
+
+    // Submit to Hyperliquid
+    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
     
-    // Use the corrected signing function
-    return await signAndSubmitOrder(orders, grouping, signer, isTestnet);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ API Error Response:', errorText);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('📥 API Response:', result);
+    
+    return result;
     
   } catch (error) {
     console.error('❌ Order placement failed:', error);
@@ -286,91 +242,25 @@ export async function placeOrder({
 }
 
 /**
- * Sign and submit order with correct EIP-712 format
- */
-async function signAndSubmitOrder(orders, grouping, signer, isTestnet = false) {
-  try {
-    const timestamp = Date.now();
-    const vaultAddress = null; // Use null unless trading for a vault
-    
-    // Create the action object
-    const action = {
-      type: 'order',
-      orders: orders,
-      grouping: grouping
-    };
-    
-    // Sign the L1 action (NOT user-signed action!)
-    const signature = await signL1Action(signer, action, vaultAddress, timestamp, !isTestnet);
-    
-    // Create request payload
-    const requestPayload = {
-      action: action,
-      nonce: timestamp,
-      signature: signature,
-      vaultAddress: vaultAddress
-    };
-
-    console.log('📤 Submitting order to Hyperliquid...');
-
-    // Submit to Hyperliquid
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestPayload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    return await response.json();
-    
-  } catch (error) {
-    console.error('❌ Sign and submit failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Transfer USDC (user-signed action)
+ * Transfer USDC using official SDK pattern
  */
 export async function transferUSDC(signer, destination, amount, isTestnet = false) {
   try {
     const action = {
+      type: 'usdSend',
+      hyperliquidChain: isTestnet ? 'Testnet' : 'Mainnet',
+      signatureChainId: isTestnet ? '0x66eee' : '0xa4b1', // Arbitrum chain IDs
       destination: destination.toLowerCase(),
-      amount: amount.toString()
+      amount: amount.toString(),
+      time: Date.now()
     };
     
-    const types = {
-      'HyperliquidTransaction:UsdSend': [
-        { name: 'hyperliquidChain', type: 'string' },
-        { name: 'signatureChainId', type: 'string' },
-        { name: 'destination', type: 'string' },
-        { name: 'amount', type: 'string' },
-        { name: 'time', type: 'uint64' }
-      ]
-    };
+    const signature = await signUsdTransferAction(signer, action, !isTestnet);
     
-    const signature = await signUserSignedAction(
-      signer,
+    const payload = {
       action,
-      types,
-      'HyperliquidTransaction:UsdSend',
-      !isTestnet
-    );
-    
-    const timestamp = Date.now();
-    const requestPayload = {
-      action: {
-        type: 'usdSend',
-        ...action
-      },
-      nonce: timestamp,
-      signature: signature
+      nonce: action.time,
+      signature
     };
     
     const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
@@ -378,7 +268,7 @@ export async function transferUSDC(signer, destination, amount, isTestnet = fals
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestPayload)
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -395,49 +285,37 @@ export async function transferUSDC(signer, destination, amount, isTestnet = fals
 }
 
 /**
- * Withdraw from bridge (user-signed action)
+ * Cancel order using official SDK pattern
  */
-export async function withdrawFromBridge(signer, destination, amount, isTestnet = false) {
+export async function cancelOrder(signer, assetIndex, orderId, isTestnet = false) {
   try {
+    const vaultAddress = null;
+    
     const action = {
-      destination: destination.toLowerCase(),
-      amount: amount.toString()
+      type: 'cancel',
+      cancels: [{
+        a: parseInt(assetIndex),
+        o: orderId
+      }]
     };
     
-    const types = {
-      'HyperliquidTransaction:Withdraw': [
-        { name: 'hyperliquidChain', type: 'string' },
-        { name: 'signatureChainId', type: 'string' },
-        { name: 'destination', type: 'string' },
-        { name: 'amount', type: 'string' },
-        { name: 'time', type: 'uint64' }
-      ]
-    };
-    
-    const signature = await signUserSignedAction(
-      signer,
-      action,
-      types,
-      'HyperliquidTransaction:Withdraw',
+    const nonce = generateUniqueNonce();
+    const signature = await signL1Action(
+      signer, 
+      action, 
+      vaultAddress, 
+      nonce, 
       !isTestnet
     );
     
-    const timestamp = Date.now();
-    const requestPayload = {
-      action: {
-        type: 'withdraw3',
-        ...action
-      },
-      nonce: timestamp,
-      signature: signature
-    };
+    const payload = { action, nonce, signature, vaultAddress };
     
     const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
     
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestPayload)
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -448,7 +326,7 @@ export async function withdrawFromBridge(signer, destination, amount, isTestnet 
     return await response.json();
     
   } catch (error) {
-    console.error('❌ Withdrawal failed:', error);
+    console.error('❌ Cancel order failed:', error);
     throw error;
   }
 }
@@ -495,7 +373,6 @@ export function parseErrorMessage(response) {
     'does not exist': 'Wallet not found. Please deposit USDC to Hyperliquid first'
   };
   
-  // Check for partial matches
   for (const [key, value] of Object.entries(errorMap)) {
     if (errorMsg.includes(key)) {
       return value;
@@ -510,7 +387,7 @@ export default {
   getUserAccountState,
   placeOrder,
   transferUSDC,
-  withdrawFromBridge,
+  cancelOrder,
   validateOrderSize,
   calculatePositionSize,
   formatPrice,
