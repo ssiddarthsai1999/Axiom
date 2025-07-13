@@ -6,6 +6,7 @@ import TokenData from '@/components/TokenData'
 import TradingPanel from '@/components/TradingPanel'
 import UserPositions from '@/components/UserPositions'
 import SimpleAtomTrader from '@/components/SimpleAtomTrader'
+
 function TradingPage() {
   // Centralized state
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
@@ -15,8 +16,11 @@ function TradingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Available tokens list
+  // Available tokens list with enhanced market data
   const [availableTokens, setAvailableTokens] = useState([]);
+
+  // Store all market data for quick access
+  const [allMarketData, setAllMarketData] = useState([]);
 
   // Centralized API calls
   const fetchMarketData = useCallback(async () => {
@@ -35,29 +39,24 @@ function TradingPage() {
         const universe = data[0].universe;
         const assetCtxs = data[1];
         
-        // Set available tokens
-        setAvailableTokens(universe.map(token => ({
-          symbol: token.name,
-          maxLeverage: token.maxLeverage,
-          szDecimals: token.szDecimals
-        })));
-
-        // Find selected token data
-        const tokenIndex = universe.findIndex(token => token.name === selectedSymbol);
-        
-        if (tokenIndex !== -1 && assetCtxs[tokenIndex]) {
-          const assetCtx = assetCtxs[tokenIndex];
-          const tokenMeta = universe[tokenIndex];
+        // Process all tokens with enhanced market data
+        const processedTokens = universe.map((token, index) => {
+          const assetCtx = assetCtxs[index];
+          
+          if (!assetCtx) return null;
           
           // Calculate 24h change
           const prevPrice = parseFloat(assetCtx.prevDayPx);
           const currentPrice = parseFloat(assetCtx.markPx);
           const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
-
-          // Set market data for TokenData component
-          setMarketData({
-            symbol: tokenMeta.name,
-            name: getTokenName(tokenMeta.name),
+          
+          return {
+            symbol: token.name,
+            maxLeverage: token.maxLeverage,
+            szDecimals: token.szDecimals,
+            onlyIsolated: token.onlyIsolated || false,
+            
+            // Market data for dropdown display
             price: parseFloat(assetCtx.markPx),
             oraclePrice: parseFloat(assetCtx.oraclePx),
             change24h: change24h,
@@ -65,12 +64,41 @@ function TradingPage() {
             openInterest: parseFloat(assetCtx.openInterest),
             funding: parseFloat(assetCtx.funding),
             prevDayPx: parseFloat(assetCtx.prevDayPx),
-            dayNtlVlm: parseFloat(assetCtx.dayNtlVlm),
             premium: parseFloat(assetCtx.premium),
             midPx: parseFloat(assetCtx.midPx),
-            maxLeverage: tokenMeta.maxLeverage,
-            szDecimals: tokenMeta.szDecimals,
-            onlyIsolated: tokenMeta.onlyIsolated || false
+            
+            // Full asset context for reference
+            fullAssetCtx: assetCtx
+          };
+        }).filter(Boolean); // Remove null entries
+        
+        // Sort by volume (highest first) for better UX
+        const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
+        
+        // Set available tokens for dropdown
+        setAvailableTokens(sortedTokens);
+        setAllMarketData(sortedTokens);
+
+        // Find and set current selected token data
+        const selectedTokenData = sortedTokens.find(token => token.symbol === selectedSymbol);
+        
+        if (selectedTokenData) {
+          setMarketData({
+            symbol: selectedTokenData.symbol,
+            name: getTokenName(selectedTokenData.symbol),
+            price: selectedTokenData.price,
+            oraclePrice: selectedTokenData.oraclePrice,
+            change24h: selectedTokenData.change24h,
+            volume24h: selectedTokenData.volume24h,
+            openInterest: selectedTokenData.openInterest,
+            funding: selectedTokenData.funding,
+            prevDayPx: selectedTokenData.prevDayPx,
+            dayNtlVlm: selectedTokenData.volume24h,
+            premium: selectedTokenData.premium,
+            midPx: selectedTokenData.midPx,
+            maxLeverage: selectedTokenData.maxLeverage,
+            szDecimals: selectedTokenData.szDecimals,
+            onlyIsolated: selectedTokenData.onlyIsolated
           });
         }
       }
@@ -177,7 +205,18 @@ function TradingPage() {
       'AVAX': 'Avalanche',
       'LINK': 'Chainlink',
       'MATIC': 'Polygon',
-      'DOGE': 'Dogecoin'
+      'DOGE': 'Dogecoin',
+      'XRP': 'Ripple',
+      'LTC': 'Litecoin',
+      'BCH': 'Bitcoin Cash',
+      'UNI': 'Uniswap',
+      'ATOM': 'Cosmos',
+      'FTM': 'Fantom',
+      'NEAR': 'Near Protocol',
+      'ALGO': 'Algorand',
+      'VET': 'VeChain',
+      'ICP': 'Internet Computer',
+      'FIL': 'Filecoin'
     };
     return names[coin] || coin;
   };
@@ -194,91 +233,142 @@ function TradingPage() {
     return `${hours}h`;
   };
 
-  // Symbol change handler
-  const handleSymbolChange = (newSymbol) => {
+  // Enhanced symbol change handler
+  const handleSymbolChange = useCallback((newSymbol) => {
     setSelectedSymbol(newSymbol);
-  };
+    
+    // Update market data immediately from cached data
+    const tokenData = allMarketData.find(token => token.symbol === newSymbol);
+    if (tokenData) {
+      setMarketData({
+        symbol: tokenData.symbol,
+        name: getTokenName(tokenData.symbol),
+        price: tokenData.price,
+        oraclePrice: tokenData.oraclePrice,
+        change24h: tokenData.change24h,
+        volume24h: tokenData.volume24h,
+        openInterest: tokenData.openInterest,
+        funding: tokenData.funding,
+        prevDayPx: tokenData.prevDayPx,
+        dayNtlVlm: tokenData.volume24h,
+        premium: tokenData.premium,
+        midPx: tokenData.midPx,
+        maxLeverage: tokenData.maxLeverage,
+        szDecimals: tokenData.szDecimals,
+        onlyIsolated: tokenData.onlyIsolated
+      });
+    }
+  }, [allMarketData]);
+
+  // Separate effect for order book and trades when symbol changes
+  useEffect(() => {
+    if (selectedSymbol && !loading) {
+      fetchOrderBook();
+      fetchTrades();
+    }
+  }, [selectedSymbol, fetchOrderBook, fetchTrades, loading]);
 
   // Initial data fetch and polling
   useEffect(() => {
     fetchMarketData();
-    fetchOrderBook();
-    fetchTrades();
     
-    // Poll every 2 seconds for real-time updates
-    const interval = setInterval(() => {
+    // Poll every 30 seconds for market data updates
+    const marketDataInterval = setInterval(() => {
       fetchMarketData();
-      fetchOrderBook(); 
-      fetchTrades();
-    }, 200000);
+    }, 30000);
     
-    return () => clearInterval(interval);
-  }, [fetchMarketData, fetchOrderBook, fetchTrades]);
+    // Poll every 2 seconds for order book and trades (more frequent)
+    const realtimeInterval = setInterval(() => {
+      if (!loading) {
+        fetchOrderBook();
+        fetchTrades();
+      }
+    }, 20000);
+    
+    return () => {
+      clearInterval(marketDataInterval);
+      clearInterval(realtimeInterval);
+    };
+  }, [fetchMarketData, fetchOrderBook, fetchTrades, loading]);
 
   if (loading) {
     return (
-      <div className='min-h-screen flex items-center justify-center'>
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className='min-h-screen flex items-center justify-center bg-[#0d0c0e]'>
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-gray-400 text-sm">Loading market data...</div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className='min-h-screen flex items-center justify-center'>
-        <div className="text-red-400">Error: {error}</div>
+      <div className='min-h-screen flex items-center justify-center bg-[#0d0c0e]'>
+        <div className="text-center">
+          <div className="text-red-400 text-lg mb-2">Error loading data</div>
+          <div className="text-gray-400 text-sm">{error}</div>
+          <button 
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              fetchMarketData();
+            }}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-  <div className='min-h-screen bg-[#0d0c0e]'>
-    <div className='flex border border-[#1F1E23] items-stretch min-h-[600px]'>
-      
-      {/* Left Section: TokenData + TradingViewChart */}
-      <div className='flex flex-col w-full min-h-[600px] h-full'>
-        <TokenData 
-          marketData={marketData}
-          selectedSymbol={selectedSymbol}
-          availableTokens={availableTokens}
-          onSymbolChange={handleSymbolChange}
-          className="w-full "
-        />
-        <div className="flex flex-col  bg-red-200 flex-grow ">
-          <TradingViewChart 
-            symbol={`${selectedSymbol}USD`}
+    <div className='min-h-screen bg-[#0d0c0e]'>
+      <div className='flex border border-[#1F1E23] items-stretch min-h-[600px]'>
+        
+        {/* Left Section: TokenData + TradingViewChart */}
+        <div className='flex flex-col w-full min-h-[600px] h-full'>
+          <TokenData 
+            marketData={marketData}
+            selectedSymbol={selectedSymbol}
+            availableTokens={availableTokens}
             onSymbolChange={handleSymbolChange}
+            className="w-full"
+          />
+          <div className="flex flex-col bg-red-200 flex-grow">
+            <TradingViewChart 
+              symbol={`${selectedSymbol}USD`}
+              onSymbolChange={handleSymbolChange}
+              className="flex-grow"
+            />
+          </div>
+        </div>
+
+        {/* Middle Section: OrderBook */}
+        <div className="min-w-[300px] min-h-[600px] flex flex-col">
+          <OrderBook 
+            selectedSymbol={selectedSymbol}
+            orderBookData={orderBookData}
+            tradesData={tradesData}
             className="flex-grow"
           />
         </div>
-      </div>
 
-      {/* Middle Section: OrderBook */}
-      <div className="min-w-[300px] min-h-[600px] flex flex-col ">
-        <OrderBook 
-          selectedSymbol={selectedSymbol}
-          orderBookData={orderBookData}
-          tradesData={tradesData}
-          className="flex-grow"
-        />
-      </div>
+        {/* Right Section: Trading Panel */}
+        <div className="min-w-[350px] min-h-[600px] flex flex-col">
+          <TradingPanel 
+            selectedSymbol={selectedSymbol}
+            marketData={marketData}
+            className="flex-grow"
+          />
+        </div>
 
-      {/* Right Section: Trading Panel */}
-      <div className="min-w-[350px] min-h-[600px] flex flex-col ">
-        <TradingPanel 
-          selectedSymbol={selectedSymbol}
-          marketData={marketData}
-          className="flex-grow"
-        />
       </div>
-
+      
+      <UserPositions/>
     </div>
-    <UserPositions/>
-
-   
-  </div>
-);
-
+  );
 }
 
 export default TradingPage;
