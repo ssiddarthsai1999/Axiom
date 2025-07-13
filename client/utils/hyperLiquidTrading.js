@@ -1,396 +1,325 @@
-// utils/hyperLiquidTrading.js - Using EXACT official SDK patterns
-import { 
-  signL1Action, 
-  orderToWire, 
-  orderWireToAction, 
-  getTimestampMs,
-  signUsdTransferAction,
-  removeTrailingZeros
-} from "./hyperLiquidSigning"
+// utils/hyperLiquidTrading.js - Updated to use new signing service
+import { placeOrder } from "./hyperLiquidSigning"
 
-export const HYPERLIQUID_ENDPOINTS = {
-  MAINNET_INFO: 'https://api.hyperliquid.xyz/info',
-  MAINNET_EXCHANGE: 'https://api.hyperliquid.xyz/exchange',
-  TESTNET_INFO: 'https://api.hyperliquid-testnet.xyz/info',
-  TESTNET_EXCHANGE: 'https://api.hyperliquid-testnet.xyz/exchange'
-};
+const HYPERLIQUID_MAINNET_URL = 'https://api.hyperliquid.xyz';
+const HYPERLIQUID_TESTNET_URL = 'https://api.hyperliquid-testnet.xyz';
 
-/**
- * Get asset information
- */
-export async function getAssetInfo(symbol, isTestnet = false) {
-  try {
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_INFO : HYPERLIQUID_ENDPOINTS.MAINNET_INFO;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'meta' })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch asset metadata');
+class HyperliquidUtils {
+  constructor() {
+    this.assetCache = new Map();
+    this.metaCache = null;
+    this.spotMetaCache = null;
+  }
+
+  getApiUrl(isMainnet = true) {
+    return isMainnet ? HYPERLIQUID_MAINNET_URL : HYPERLIQUID_TESTNET_URL;
+  }
+
+  // Fetch meta information
+  async getMeta(isMainnet = true) {
+    if (this.metaCache) {
+      return this.metaCache;
     }
+
+    try {
+      const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'meta' }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Meta fetch failed: ${response.status}`);
+      }
+
+      const meta = await response.json();
+      this.metaCache = meta;
+      return meta;
+    } catch (error) {
+      console.error('Error fetching meta:', error);
+      throw error;
+    }
+  }
+
+  // Fetch spot meta information
+  async getSpotMeta(isMainnet = true) {
+    if (this.spotMetaCache) {
+      return this.spotMetaCache;
+    }
+
+    try {
+      const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'spotMeta' }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Spot meta fetch failed: ${response.status}`);
+      }
+
+      const spotMeta = await response.json();
+      this.spotMetaCache = spotMeta;
+      return spotMeta;
+    } catch (error) {
+      console.error('Error fetching spot meta:', error);
+      throw error;
+    }
+  }
+
+  // Get asset information by symbol
+  async getAssetInfo(symbol, isMainnet = true) {
+    const cacheKey = `${symbol}-${isMainnet}`;
     
-    const data = await response.json();
-    
-    if (data?.universe) {
-      const asset = data.universe.find(token => token.name === symbol);
-      if (asset) {
+    if (this.assetCache.has(cacheKey)) {
+      return this.assetCache.get(cacheKey);
+    }
+
+    try {
+      console.log(`🔍 Fetching asset info for symbol: ${symbol}`);
+      
+      // First try perpetuals
+      const meta = await this.getMeta(isMainnet);
+      
+      if (meta?.universe) {
+        const perpAsset = meta.universe.find(asset => asset.name === symbol);
+        if (perpAsset) {
+          const assetInfo = {
+            index: perpAsset.index || meta.universe.indexOf(perpAsset),
+            name: perpAsset.name,
+            szDecimals: perpAsset.szDecimals || 3,
+            isSpot: false,
+          };
+          
+          this.assetCache.set(cacheKey, assetInfo);
+          console.log(`✅ Found perpetual asset: ${symbol} with index ${assetInfo.index}`);
+          return assetInfo;
+        }
+      }
+
+      // Try spot assets
+      const spotMeta = await this.getSpotMeta(isMainnet);
+      
+      if (spotMeta?.universe) {
+        const spotAsset = spotMeta.universe.find(asset => {
+          // Handle both direct name match and token array format
+          if (typeof asset === 'object' && asset.tokens) {
+            // Find the token in the tokens array that matches our symbol
+            return asset.tokens.some(token => token.name === symbol);
+          }
+          return asset.name === symbol;
+        });
+
+        if (spotAsset) {
+          const spotIndex = spotMeta.universe.indexOf(spotAsset);
+          const assetInfo = {
+            index: 10000 + spotIndex, // Spot assets use 10000 + index
+            name: symbol,
+            szDecimals: spotAsset.szDecimals || 6,
+            isSpot: true,
+          };
+          
+          this.assetCache.set(cacheKey, assetInfo);
+          console.log(`✅ Found spot asset: ${symbol} with index ${assetInfo.index}`);
+          return assetInfo;
+        }
+      }
+
+      // Asset not found, return fallback
+      console.warn(`⚠️ Asset ${symbol} not found, using fallback`);
+      const fallbackInfo = {
+        index: 0,
+        name: symbol,
+        szDecimals: 3,
+        isSpot: false,
+      };
+      
+      this.assetCache.set(cacheKey, fallbackInfo);
+      return fallbackInfo;
+
+    } catch (error) {
+      console.error(`Error fetching asset info for ${symbol}:`, error);
+      
+      // Return fallback on error
+      const fallbackInfo = {
+        index: 0,
+        name: symbol,
+        szDecimals: 3,
+        isSpot: false,
+      };
+      
+      this.assetCache.set(cacheKey, fallbackInfo);
+      return fallbackInfo;
+    }
+  }
+
+  // Get user account state
+  async getUserAccountState(address, isMainnet = true) {
+    try {
+      console.log(`🔍 Fetching user state for: ${address}`);
+      
+      const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'clearinghouseState',
+          user: address,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`User state fetch failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ User state fetched successfully:`, result);
+      return result;
+      
+    } catch (error) {
+      console.error('Error fetching user account state:', error);
+      throw error;
+    }
+  }
+
+  // Place order using new signing service
+  async placeOrder(orderParams, signer, isMainnet = true, vaultAddress = null) {
+    try {
+      console.log('📤 Placing order with params:', orderParams);
+      
+      // Validate required parameters
+      if (!orderParams.assetIndex && orderParams.assetIndex !== 0) {
+        throw new Error('Asset index is required');
+      }
+      
+      if (!orderParams.size || orderParams.size <= 0) {
+        throw new Error('Valid size is required');
+      }
+
+      // For market orders, set price to 0 and use trigger type
+      let finalOrderParams = { ...orderParams };
+      
+      if (orderParams.orderType === 'market') {
+        finalOrderParams.price = 0;
+        finalOrderParams.orderType = 'trigger';
+        finalOrderParams.triggerType = {
+          isMarket: true,
+          triggerPx: '0',
+          tpsl: 'tp'
+        };
+      } else {
+        // Limit order
+        if (!orderParams.price || orderParams.price <= 0) {
+          throw new Error('Valid price is required for limit orders');
+        }
+        finalOrderParams.orderType = 'limit';
+        finalOrderParams.timeInForce = orderParams.timeInForce || 'Gtc';
+      }
+
+      // Use the new signing service
+      const result = await placeOrder(finalOrderParams, signer, isMainnet, vaultAddress);
+      
+      console.log('✅ Order placed successfully:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error placing order:', error);
+      throw error;
+    }
+  }
+
+  // Cancel order using new signing service
+  async cancelOrder(assetIndex, orderId, signer, isMainnet = true, vaultAddress = null) {
+    try {
+      const cancelParams = {
+        assetIndex: assetIndex,
+        oid: orderId,
+      };
+
+      const result = await cancelOrder(cancelParams, signer, isMainnet, vaultAddress);
+      console.log('✅ Order cancelled successfully:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error cancelling order:', error);
+      throw error;
+    }
+  }
+
+  // Update leverage using new signing service
+  async updateLeverage(assetIndex, leverage, isCross, signer, isMainnet = true, vaultAddress = null) {
+    try {
+      const result = await updateLeverage(assetIndex, leverage, isCross, signer, isMainnet, vaultAddress);
+      console.log('✅ Leverage updated successfully:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error updating leverage:', error);
+      throw error;
+    }
+  }
+
+  // Get market data
+  async getMarketData(symbol, isMainnet = true) {
+    try {
+      const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'allMids',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Market data fetch failed: ${response.status}`);
+      }
+
+      const allMids = await response.json();
+      
+      // Find the symbol in the response
+      const marketData = allMids.find(mid => mid.coin === symbol);
+      
+      if (marketData) {
         return {
-          index: data.universe.indexOf(asset),
-          name: asset.name,
-          szDecimals: asset.szDecimals || 3,
-          ...asset
+          symbol: symbol,
+          price: parseFloat(marketData.px),
+          timestamp: Date.now(),
         };
       }
+
+      throw new Error(`Market data not found for ${symbol}`);
+      
+    } catch (error) {
+      console.error(`Error fetching market data for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  // Parse error messages
+  parseErrorMessage(result) {
+    if (result?.status === 'err') {
+      return result.response || 'Unknown error occurred';
     }
     
-    throw new Error(`Asset ${symbol} not found`);
-  } catch (error) {
-    console.error('Error fetching asset info:', error);
-    throw error;
+    if (result?.response?.type === 'error') {
+      return result.response.data || 'API error occurred';
+    }
+    
+    if (typeof result === 'string') {
+      return result;
+    }
+    
+    return 'Unknown error occurred';
+  }
+
+  // Clear caches
+  clearCache() {
+    this.assetCache.clear();
+    this.metaCache = null;
+    this.spotMetaCache = null;
+    console.log('🧹 Hyperliquid cache cleared');
   }
 }
 
-/**
- * Get user account state
- */
-export async function getUserAccountState(userAddress, isTestnet = false) {
-  try {
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_INFO : HYPERLIQUID_ENDPOINTS.MAINNET_INFO;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'clearinghouseState',
-        user: userAddress.toLowerCase()
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch user state');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching user state:', error);
-    throw error;
-  }
-}
-
-/**
- * Generate unique nonce - EXACT pattern from official SDK
- */
-let nonceCounter = 0;
-let lastNonceTimestamp = 0;
-
-function generateUniqueNonce() {
-  const timestamp = Date.now();
-
-  // Ensure the nonce is always greater than the previous one
-  if (timestamp <= lastNonceTimestamp) {
-    // If we're in the same millisecond, increment by 1 from the last nonce
-    lastNonceTimestamp += 1;
-    return lastNonceTimestamp;
-  }
-
-  // Otherwise use the current timestamp
-  lastNonceTimestamp = timestamp;
-  return timestamp;
-}
-
-/**
- * Place order using EXACT official SDK pattern
- */
-export async function placeOrder({
-  assetIndex,
-  isBuy,
-  size,
-  price = null,
-  orderType = 'market',
-  timeInForce = 'Gtc',
-  reduceOnly = false,
-  takeProfitPrice = null,
-  stopLossPrice = null,
-  cloid = null
-}, signer, isTestnet = false) {
-  try {
-    console.log('📤 Placing order with official SDK pattern...');
-    
-    // Validate inputs
-    const orderSize = parseFloat(size);
-    if (orderSize <= 0) {
-      throw new Error('Order size must be greater than 0');
-    }
-    
-    const vaultAddress = null;
-    const grouping = (takeProfitPrice || stopLossPrice) ? 'normalTpsl' : 'na';
-
-    // Create order request - EXACT pattern from official SDK
-    const orderRequest = {
-      is_buy: isBuy,
-      sz: orderSize,
-      limit_px: orderType.toLowerCase() === 'market' ? 
-        (isBuy ? 999999 : 0.000001) : parseFloat(price),
-      reduce_only: reduceOnly,
-      order_type: orderType.toLowerCase() === 'market' ? 
-        { limit: { tif: 'Ioc' } } : 
-        { limit: { tif: timeInForce } }
-    };
-    
-    if (cloid) {
-      orderRequest.cloid = cloid;
-    }
-
-    // Normalize price and size values to remove trailing zeros - EXACT pattern
-    const normalizedOrder = { ...orderRequest };
-
-    // Handle price normalization
-    if (typeof normalizedOrder.limit_px === 'string') {
-      normalizedOrder.limit_px = removeTrailingZeros(normalizedOrder.limit_px);
-    }
-
-    // Handle size normalization
-    if (typeof normalizedOrder.sz === 'string') {
-      normalizedOrder.sz = removeTrailingZeros(normalizedOrder.sz);
-    }
-
-    const orders = [normalizedOrder];
-
-    // Add TP/SL orders if specified
-    if (takeProfitPrice) {
-      const tpOrder = {
-        is_buy: !isBuy,
-        sz: orderSize,
-        limit_px: parseFloat(takeProfitPrice),
-        reduce_only: true,
-        order_type: {
-          trigger: {
-            triggerPx: parseFloat(takeProfitPrice),
-            isMarket: false,
-            tpsl: 'tp'
-          }
-        }
-      };
-      orders.push(tpOrder);
-    }
-
-    if (stopLossPrice) {
-      const slOrder = {
-        is_buy: !isBuy,
-        sz: orderSize,
-        limit_px: parseFloat(stopLossPrice),
-        reduce_only: true,
-        order_type: {
-          trigger: {
-            triggerPx: parseFloat(stopLossPrice),
-            isMarket: false,
-            tpsl: 'sl'
-          }
-        }
-      };
-      orders.push(slOrder);
-    }
-
-    // Convert to order wires - EXACT pattern from official SDK
-    const orderWires = orders.map(o => orderToWire(o, parseInt(assetIndex)));
-
-    // Create action - EXACT pattern from official SDK
-    const actions = orderWireToAction(orderWires, grouping);
-
-    // Generate nonce and sign - EXACT pattern from official SDK
-    const nonce = generateUniqueNonce();
-    const signature = await signL1Action(
-      signer,
-      actions,
-      vaultAddress,
-      nonce,
-      !isTestnet
-    );
-
-    // Create payload - EXACT pattern from official SDK
-    const payload = { action: actions, nonce, signature, vaultAddress };
-
-    console.log('📤 Submitting order payload:', JSON.stringify(payload, null, 2));
-
-    // Submit to Hyperliquid
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ API Error Response:', errorText);
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('📥 API Response:', result);
-    
-    return result;
-    
-  } catch (error) {
-    console.error('❌ Order placement failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Transfer USDC using official SDK pattern
- */
-export async function transferUSDC(signer, destination, amount, isTestnet = false) {
-  try {
-    const action = {
-      type: 'usdSend',
-      hyperliquidChain: isTestnet ? 'Testnet' : 'Mainnet',
-      signatureChainId: isTestnet ? '0x66eee' : '0xa4b1', // Arbitrum chain IDs
-      destination: destination.toLowerCase(),
-      amount: amount.toString(),
-      time: Date.now()
-    };
-    
-    const signature = await signUsdTransferAction(signer, action, !isTestnet);
-    
-    const payload = {
-      action,
-      nonce: action.time,
-      signature
-    };
-    
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    return await response.json();
-    
-  } catch (error) {
-    console.error('❌ USDC transfer failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Cancel order using official SDK pattern
- */
-export async function cancelOrder(signer, assetIndex, orderId, isTestnet = false) {
-  try {
-    const vaultAddress = null;
-    
-    const action = {
-      type: 'cancel',
-      cancels: [{
-        a: parseInt(assetIndex),
-        o: orderId
-      }]
-    };
-    
-    const nonce = generateUniqueNonce();
-    const signature = await signL1Action(
-      signer, 
-      action, 
-      vaultAddress, 
-      nonce, 
-      !isTestnet
-    );
-    
-    const payload = { action, nonce, signature, vaultAddress };
-    
-    const endpoint = isTestnet ? HYPERLIQUID_ENDPOINTS.TESTNET_EXCHANGE : HYPERLIQUID_ENDPOINTS.MAINNET_EXCHANGE;
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    return await response.json();
-    
-  } catch (error) {
-    console.error('❌ Cancel order failed:', error);
-    throw error;
-  }
-}
-
-// Utility functions
-export function calculatePositionSize(margin, leverage, price) {
-  return (margin * leverage) / price;
-}
-
-export function validateOrderSize(size, szDecimals) {
-  if (size <= 0) {
-    return { isValid: false, error: 'Order size must be greater than 0' };
-  }
-  
-  const formattedSize = size.toFixed(szDecimals);
-  const minSize = Math.pow(10, -szDecimals);
-  
-  if (parseFloat(formattedSize) < minSize) {
-    return { isValid: false, error: `Minimum order size is ${minSize}` };
-  }
-  
-  return { isValid: true, formattedSize };
-}
-
-export function formatPrice(price, decimals = 6) {
-  return parseFloat(price).toFixed(decimals);
-}
-
-export function parseErrorMessage(response) {
-  if (response?.status === 'ok') return null;
-  
-  const errorMsg = response?.response || response?.message || 'Unknown error';
-  
-  // Map common Hyperliquid errors to user-friendly messages
-  const errorMap = {
-    'Insufficient margin': 'Not enough margin available for this trade',
-    'Invalid price': 'Please enter a valid price',
-    'Invalid size': 'Please enter a valid trade size',
-    'Asset not found': 'Trading pair not available',
-    'Order too small': 'Order size is below minimum requirement',
-    'Price too far': 'Price is too far from current market price',
-    'Self trade': 'Order would trade against your own order',
-    'User or API Wallet': 'Wallet not found. Please ensure your wallet is onboarded to Hyperliquid',
-    'does not exist': 'Wallet not found. Please deposit USDC to Hyperliquid first'
-  };
-  
-  for (const [key, value] of Object.entries(errorMap)) {
-    if (errorMsg.includes(key)) {
-      return value;
-    }
-  }
-  
-  return errorMsg;
-}
-
-export default {
-  getAssetInfo,
-  getUserAccountState,
-  placeOrder,
-  transferUSDC,
-  cancelOrder,
-  validateOrderSize,
-  calculatePositionSize,
-  formatPrice,
-  parseErrorMessage,
-  HYPERLIQUID_ENDPOINTS
-};
+// Export singleton instance
+const hyperliquidUtils = new HyperliquidUtils();
+export default hyperliquidUtils;

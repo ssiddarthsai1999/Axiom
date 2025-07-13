@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
+import { placeOrder } from '@/utils/hyperLiquidSigning'
 import { useAppKit } from '@reown/appkit/react';
 import { X } from 'lucide-react';
 const TradingPanel = ({ 
@@ -84,7 +85,7 @@ const TradingPanel = ({
       try {
         console.log('🔍 Fetching asset info for:', selectedSymbol);
         
-        const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, false);
+     const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, true);
         setAssetInfo(assetData);
         
         console.log('✅ Asset info set:', assetData);
@@ -148,7 +149,7 @@ const TradingPanel = ({
     
     setCheckingOnboarding(true);
     try {
-      const userState = await hyperliquidUtils.getUserAccountState(address, false);
+ const userState = await hyperliquidUtils.getUserAccountState(address, true);
       console.log('📊 User state response:', userState);
       
       if (userState && (userState.marginSummary || userState.balances)) {
@@ -335,141 +336,202 @@ const TradingPanel = ({
   };
 
   // UPDATED TRADE HANDLER WITH CONVERTED SIGNING UTILS
-  const handleTrade = async () => {
-    if (!isConnected) {
-      await connectWallet();
+// BULLETPROOF TRADE HANDLER with new signing
+const handleTrade = async () => {
+  if (!isConnected) {
+    await connectWallet();
+    return;
+  }
+
+  if (!wallet || !wallet.signer) {
+    setOrderError('Wallet not properly connected. Please try reconnecting.');
+    return;
+  }
+
+  if (!assetInfo) {
+    setOrderError('Asset information not loaded. Please wait and try again.');
+    return;
+  }
+
+  try {
+    // Clear previous errors
+    setOrderError(null);
+    setOrderSuccess(null);
+    
+    // Verify wallet is still valid
+    const signerAddress = (await wallet.signer.getAddress()).toLowerCase();
+    const expectedAddress = address.toLowerCase();
+    
+    if (signerAddress !== expectedAddress) {
+      setOrderError('Wallet address mismatch. Please reconnect.');
+      await createSigner();
       return;
     }
 
-    if (!wallet || !wallet.signer) {
-      setOrderError('Wallet not properly connected. Please try reconnecting.');
+    // Check onboarding status
+    if (!isOnboarded) {
+      const onboarded = await checkOnboardingStatus();
+      if (!onboarded) {
+        setOrderError(
+          'Your wallet is not onboarded to Hyperliquid. ' +
+          'Please visit https://app.hyperliquid.xyz to deposit USDC and enable trading.'
+        );
+        window.open('https://app.hyperliquid.xyz/trade', '_blank');
+        return;
+      }
+    }
+
+    // CRITICAL: Validate all order parameters
+    const orderSize = parseFloat(buyAmount);
+    if (!buyAmount || orderSize <= 0) {
+      setOrderError('Please enter a valid order size');
       return;
     }
 
-    if (!assetInfo) {
-      setOrderError('Asset information not loaded. Please wait and try again.');
+    // Check minimum size based on asset decimals
+    const minSize = Math.pow(10, -assetInfo.szDecimals);
+    if (orderSize < minSize) {
+      setOrderError(`Minimum order size is ${minSize} ${selectedSymbol}`);
       return;
     }
 
-    try {
-      // Verify wallet is still valid
-      const signerAddress = (await wallet.signer.getAddress()).toLowerCase();
-      const expectedAddress = address.toLowerCase();
+    // Validate limit price for limit orders
+    if (orderType === 'Limit') {
+      const limitPriceValue = parseFloat(limitPrice);
+      if (!limitPrice || limitPriceValue <= 0) {
+        setOrderError('Please enter a valid limit price for limit orders');
+        return;
+      }
+    }
+
+    // Ensure market data is available
+    if (!marketData || !marketData.price) {
+      setOrderError('Market data not available. Please try again.');
+      return;
+    }
+
+    console.log('🚀 Starting bulletproof order placement...');
+    console.log('📋 Order details:', {
+      symbol: selectedSymbol,
+      side: side,
+      size: orderSize,
+      orderType: orderType,
+      limitPrice: limitPrice,
+      assetIndex: assetInfo.index,
+      isSpot: assetInfo.isSpot
+    });
+
+    setIsPlacingOrder(true);
+
+    // CRITICAL: Prepare order parameters exactly like Python SDK expects
+    const orderParams = {
+      assetIndex: assetInfo.index,
+      isBuy: side === 'Long',
+      size: orderSize,
+      price: orderType === 'Limit' ? parseFloat(limitPrice) : 0,
+      orderType: orderType.toLowerCase(), // 'market' or 'limit'
+      timeInForce: 'Gtc',
+      reduceOnly: false,
+      cloid: null, // Optional client order ID
+      builder: null // Optional builder for fees
+    };
+
+    console.log('📤 Sending order with params:', orderParams);
+
+    // Use the bulletproof signing service
+    const result = await placeOrder(
+      orderParams,
+      wallet.signer,
+      true, // isMainnet = true
+      null, // vaultAddress = null (not using vault)
+      null  // expiresAfter = null (no expiry)
+    );
+
+    console.log('📥 Order result:', result);
+
+    // Handle response
+    if (result && result.status === 'ok') {
+      const orderData = result.response?.data;
       
-      if (signerAddress !== expectedAddress) {
-        setOrderError('Wallet address mismatch. Please reconnect.');
-        await createSigner();
-        return;
-      }
-
-      // Check onboarding status
-      if (!isOnboarded) {
-        const onboarded = await checkOnboardingStatus();
-        if (!onboarded) {
-          setOrderError(
-            'Your wallet is not onboarded to Hyperliquid. ' +
-            'Please visit https://app.hyperliquid.xyz to deposit USDC and enable trading.'
+      if (orderData?.statuses && orderData.statuses.length > 0) {
+        const status = orderData.statuses[0];
+        
+        if (status.filled) {
+          // Order was filled
+          setOrderSuccess(
+            `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
           );
-          window.open('https://app.hyperliquid.xyz/trade', '_blank');
-          return;
-        }
-      }
-
-      // Validation
-      const orderSize = parseFloat(buyAmount);
-      if (orderSize <= 0) {
-        setOrderError('Please enter a valid order size');
-        return;
-      }
-
-      const minSize = Math.pow(10, -assetInfo.szDecimals);
-      if (orderSize < minSize) {
-        setOrderError(`Minimum order size is ${minSize} ${selectedSymbol}`);
-        return;
-      }
-
-      if (orderType === 'Limit') {
-        const limitPriceValue = parseFloat(limitPrice);
-        if (!limitPrice || limitPriceValue <= 0) {
-          setOrderError('Please enter a valid limit price for limit orders');
-          return;
-        }
-      }
-
-      if (!marketData || !marketData.price) {
-        setOrderError('Market data not available. Please try again.');
-        return;
-      }
-
-      setIsPlacingOrder(true);
-      setOrderError(null);
-      setOrderSuccess(null);
-
-      try {
-        console.log('📤 Starting order placement with converted signing utils...');
-
-        // Use the corrected placeOrder function with converted signing utils
-        const result = await hyperliquidUtils.placeOrder({
-          assetIndex: assetInfo.index,
-          isBuy: side === 'Long',
-          size: orderSize,
-          price: orderType === 'Limit' ? parseFloat(limitPrice) : null,
-          orderType: orderType.toLowerCase(),
-          timeInForce: 'Gtc',
-          reduceOnly: false,
-          takeProfitPrice: null,
-          stopLossPrice: null,
-          cloid: null
-        }, wallet.signer, false);
-
-        console.log('📥 Order result:', result);
-
-        if (result && result.status === 'ok') {
+        } else if (status.resting) {
+          // Order is resting on the book
+          setOrderSuccess(
+            `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully! Order ID: ${status.resting.oid}`
+          );
+        } else {
+          // Order was placed successfully
           setOrderSuccess(
             `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
           );
-          
-          // Reset form
-          setBuyAmount('0.0');
-          setLimitPrice('');
-          
-          // Refresh account data after successful order
-          setTimeout(() => {
-            checkOnboardingStatus();
-          }, 2000);
-          
-        } else {
-          const errorMsg = hyperliquidUtils.parseErrorMessage(result);
-          console.error('❌ Order failed:', errorMsg);
-          setOrderError(errorMsg);
         }
-        
-      } catch (orderError) {
-        console.error('❌ Order placement exception:', orderError);
-        
-        let errorMessage = orderError.message || 'Failed to place order. Please try again.';
-        
-        if (errorMessage.includes('Asset information not loaded')) {
-          errorMessage = 'Asset information is still loading. Please wait a moment and try again.';
-        } else if (errorMessage.includes('Network')) {
-          errorMessage = 'Network error. Please check your connection and try again.';
-        } else if (errorMessage.includes('User rejected')) {
-          errorMessage = 'Transaction was rejected. Please try again.';
-        } else if (errorMessage.includes('Invalid size')) {
-          errorMessage = `Invalid order size. Must be at least ${minSize} ${selectedSymbol} with max ${assetInfo.szDecimals} decimal places.`;
-        }
-        
-        setOrderError(errorMessage);
+      } else {
+        setOrderSuccess(
+          `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+        );
       }
       
-    } catch (validationError) {
-      console.error('❌ Trade validation error:', validationError);
-      setOrderError(validationError.message || 'Failed to validate trade. Please try again.');
-    } finally {
-      setIsPlacingOrder(false);
+      // Reset form on success
+      setBuyAmount('0.0');
+      setLimitPrice('');
+      setPercentage(0);
+      
+      // Refresh account data
+      setTimeout(() => {
+        checkOnboardingStatus();
+      }, 2000);
+      
+    } else {
+      // Handle API errors
+      let errorMessage = 'Failed to place order. Please try again.';
+      
+      if (result.status === 'err') {
+        errorMessage = result.response || errorMessage;
+      } else if (result.response?.type === 'error') {
+        errorMessage = result.response.data || errorMessage;
+      }
+      
+      console.error('❌ Order API error:', errorMessage);
+      setOrderError(errorMessage);
     }
-  };
-
+    
+  } catch (orderError) {
+    console.error('❌ Order placement exception:', orderError);
+    
+    let errorMessage = orderError.message || 'Failed to place order. Please try again.';
+    
+    // Parse specific error types
+    if (errorMessage.includes('User or API Wallet') && errorMessage.includes('does not exist')) {
+      errorMessage = 'Signature verification failed. This usually means:\n' +
+                   '• Your wallet is not onboarded to Hyperliquid\n' +
+                   '• There was a signing error\n' +
+                   'Please try reconnecting your wallet or visit app.hyperliquid.xyz to onboard.';
+    } else if (errorMessage.includes('Must deposit before performing actions')) {
+      errorMessage = 'You need to deposit USDC to Hyperliquid before trading. Visit app.hyperliquid.xyz to deposit.';
+    } else if (errorMessage.includes('Asset information not loaded')) {
+      errorMessage = 'Asset information is still loading. Please wait a moment and try again.';
+    } else if (errorMessage.includes('Network')) {
+      errorMessage = 'Network error. Please check your connection and try again.';
+    } else if (errorMessage.includes('User rejected')) {
+      errorMessage = 'Transaction was rejected. Please try again.';
+    } else if (errorMessage.includes('Invalid size')) {
+      errorMessage = `Invalid order size. Must be at least ${minSize} ${selectedSymbol} with max ${assetInfo.szDecimals} decimal places.`;
+    } else if (errorMessage.includes('chainId')) {
+      errorMessage = 'Wallet network mismatch. Please ensure you\'re connected to Arbitrum.';
+    }
+    
+    setOrderError(errorMessage);
+  } finally {
+    setIsPlacingOrder(false);
+  }
+};
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23]`}>
@@ -477,7 +539,7 @@ const TradingPanel = ({
         {/* Error Display */}
         {orderError && (
           <div className="mb-4 p-3 bg-red-900 bg-opacity-30 border border-red-600 rounded">
-            <p className="text-red-400 text-sm">{orderError}</p>
+          <p className="text-red-400 text-sm whitespace-pre-line">{orderError}</p>
           </div>
         )}
 
