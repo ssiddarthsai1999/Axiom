@@ -323,52 +323,60 @@ function TradingPage() {
     );
   }
 
-  return (
-    <div className='min-h-screen bg-[#0d0c0e]'>
-      <div className='flex border border-[#1F1E23] items-stretch min-h-[600px]'>
-        
-        {/* Left Section: TokenData + TradingViewChart */}
-        <div className='flex flex-col w-full min-h-[600px] h-full'>
+return (
+  <div className='min-h-screen bg-[#0d0c0e] flex'>
+    {/* Left and Middle Section Container */}
+    <div className='flex flex-col flex-1 min-w-0'>
+      {/* Top Row: TokenData + Chart + OrderBook */}
+      <div className='flex flex-1 min-h-0'>
+        {/* Left Section: TokenData + Chart */}
+        <div className='flex flex-col flex-1 min-w-0'>
+          {/* Token Data Header */}
           <TokenData 
             marketData={marketData}
             selectedSymbol={selectedSymbol}
             availableTokens={availableTokens}
             onSymbolChange={handleSymbolChange}
-            className="w-full"
+            className="shrink-0"
           />
-          <div className="flex flex-col bg-red-200 flex-grow">
+          
+          {/* Chart Section */}
+          <div className='flex flex-1 w-full min-h-0'>
             <TradingViewChart 
               symbol={`${selectedSymbol}USD`}
               onSymbolChange={handleSymbolChange}
-              className="flex-grow"
+              className="flex-1 w-full"
             />
           </div>
         </div>
 
-        {/* Middle Section: OrderBook */}
-        <div className="min-w-[300px] min-h-[600px] flex flex-col">
+        {/* Middle Section: Order Book */}
+        <div className='w-80 flex-shrink-0 border-l border-r border-[#1F1E23]'>
           <OrderBook 
             selectedSymbol={selectedSymbol}
             orderBookData={orderBookData}
             tradesData={tradesData}
-            className="flex-grow"
+            className="h-full"
           />
         </div>
-
-        {/* Right Section: Trading Panel */}
-        <div className="min-w-[350px] min-h-[600px] flex flex-col">
-          <TradingPanel 
-            selectedSymbol={selectedSymbol}
-            marketData={marketData}
-            className="flex-grow"
-          />
-        </div>
-
       </div>
-      
-      <UserPositions/>
+
+      {/* Bottom Section: User Positions (spans only under chart + orderbook) */}
+      <div className='border-t border-[#1F1E23] shrink-0'>
+        <UserPositions />
+      </div>
     </div>
-  );
+
+    {/* Right Section: Trading Panel (full height) */}
+    <div className='w-[320px] flex-shrink-0 border-l border-[#1F1E23]'>
+      <TradingPanel 
+        selectedSymbol={selectedSymbol}
+        marketData={marketData}
+        className="h-full"
+      />
+    </div>
+  </div>
+);
 }
 
 export default TradingPage;

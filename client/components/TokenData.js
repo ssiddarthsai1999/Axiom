@@ -209,19 +209,30 @@ const TokenData = ({
         <div className="flex items-center space-x-4">
           {/* Token Selector */}
           <div className="relative">
-            <button 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
-            >
-              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
-                <span className="text-xs font-bold text-white">
-                  {marketData.symbol.charAt(0)}
-                </span>
-              </div>
-              <span className="text-[#E5E5E5] font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
-              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
-              <ChevronDown className="w-4 h-4 text-white ml-3" />
-            </button>
+<button 
+  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+  className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
+>
+  <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
+    <span className="text-xs font-bold text-white">
+      {marketData.symbol.charAt(0)}
+    </span>
+  </div>
+  <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
+  <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+  <Star 
+    className={`w-4 h-4 cursor-pointer transition-colors ${
+      favorites.has(marketData.symbol) 
+        ? 'text-yellow-400 fill-yellow-400' 
+        : 'text-gray-600 hover:text-yellow-400'
+    }`}
+    onClick={(e) => {
+      e.stopPropagation();
+      toggleFavorite(marketData.symbol, e);
+    }}
+  />
+  <ChevronDown className="w-4 h-4 text-white ml-3" />
+</button>
             
             {/* Enhanced Dropdown */}
             {isDropdownOpen && (
