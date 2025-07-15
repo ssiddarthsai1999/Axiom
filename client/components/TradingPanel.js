@@ -5,6 +5,7 @@ import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
 import { placeOrderWithAgent, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, createAgentWallet } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
+import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
@@ -15,7 +16,12 @@ const TradingPanel = ({
    const [ethBalance, setEthBalance] = useState(0);
   const [orderType, setOrderType] = useState('Market');
   const [buyAmount, setBuyAmount] = useState('0.0');
+    const [tpPercentage, setTpPercentage] = useState('');
+  const [slPrice, setSlPrice] = useState('');
+  const [slPercentage, setSlPercentage] = useState('');
+
   const [limitPrice, setLimitPrice] = useState('');
+  const [tpPrice, setTpPrice] = useState('');
   const [assetInfo, setAssetInfo] = useState(null);
     const percentageOptions = [0, 25, 50, 75, 100];
   const maxLeverage = 50; // Maximum leverage allowed
@@ -32,6 +38,7 @@ const TradingPanel = ({
     const [showLeverageModal, setShowLeverageModal] = useState(false);
       const [tempLeverage, setTempLeverage] = useState(10);
   const { address, isConnected } = useAccount();
+    const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
@@ -538,7 +545,7 @@ const handleTrade = async () => {
 };
   return (
     <>
-      <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23]`}>
+      <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
 
         {/* Error Display */}
         {orderError && (
@@ -581,7 +588,7 @@ const handleTrade = async () => {
 
         {/* Market/Limit Toggle */}
         <div className=' px-4 border  border-[#1F1E23]'>
-        <div className="flex items-center   space-x-8">
+        <div className="flex items-center   space-x-4">
           <button
             onClick={() => setOrderType('Market')}
             className={`text-[12px]  font-mono leading-[16px] font-[500]  border-b-2 border-transparent  py-2 cursor-pointer ${
@@ -602,46 +609,69 @@ const handleTrade = async () => {
           >
             Limit
           </button>
-                 <button 
-            onClick={handleLeverageClick}
-            className="ml-auto  font-mono leading-[16px] font-[500] text-[#65FB9E] bg-[#4FFFAB33] h-[90%] px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent  transition-colors cursor-pointer"
-          >
-            Leverage: {leverage}x
-          </button>
+               
+<button onClick={handleLeverageClick} className="ml-auto text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
+  <span>Leverage: {leverage}x (Isolated)</span>
+  <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
+</button>
         </div></div>
 
       {/* Buy Amount */}
-        <div className="my-4 px-4">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-[#919093] text-[11px] font-[500] fomt-mono ">Available to trade    {usdcBalance} USDC</label>
-            <span className="text-sm text-gray-400">{selectedSymbol}</span>
-          </div>
-          
-          <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
-            <div className='flex flex-col items-start gap-3 '>
-            <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
-            <input
-              type="number"
-              value={buyAmount}
-              onChange={(e) => {
-                setBuyAmount(e.target.value);
-                calculateUSDValue(e.target.value); // Calculate USD equivalent
-              }}
-              placeholder="0.0"
-              className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
-            /></div>
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
-                    {/* USD Equivalent Display */}
-          {parseFloat(buyAmount) > 0 && (
-            <div className="mt-2 text-[11px] leading-[16px] font-[400] text-[#919093] text-right">
-              ≈ ${usdEquivalent} USDC
-            </div>
-          )}
-            </div>
-          </div>
-          
-
+<div className="my-4 px-4">
+  <div className="flex justify-between items-center mb-2">
+    <label className="text-[#919093] text-[11px] font-[500] fomt-mono ">
+      Available to trade {usdcBalance} USDC
+    </label>
+    
+    {/* Half/Max Buttons */}
+    <div className="flex items-center space-x-2">
+      <button
+        onClick={() => {
+          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price).toFixed(4);
+          setBuyAmount(halfAmount);
+          calculateUSDValue(halfAmount);
+        }}
+        className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33] cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
+      >
+        Half
+      </button>
+      <button
+        onClick={() => {
+          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price).toFixed(4); // 95% to leave room for fees
+          setBuyAmount(maxAmount);
+          calculateUSDValue(maxAmount);
+        }}
+        className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33]  cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
+      >
+        Max
+      </button>
+    </div>
+  </div>
+                  
+  <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
+    <div className='flex flex-col items-start gap-3 '>
+      <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
+      <input
+        type="number"
+        value={buyAmount}
+        onChange={(e) => {
+          setBuyAmount(e.target.value);
+          calculateUSDValue(e.target.value); // Calculate USD equivalent
+        }}
+        placeholder="0.0"
+        className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
+      />
+    </div>
+    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
+      {/* USD Equivalent Display */}
+      {parseFloat(buyAmount) > 0 && (
+        <div className="mt-2 text-[11px] leading-[16px] font-[400] text-[#919093] text-right">
+          ≈ ${usdEquivalent} USDC
         </div>
+      )}
+    </div>
+  </div>
+</div>
 
         {/* Limit Price (only for limit orders) */}
         {orderType === 'Limit' && (
@@ -684,6 +714,105 @@ const handleTrade = async () => {
     ))}
   </div>
 </div>
+
+
+        {/* TP/SL Checkbox */}
+        <div className="flex items-center justify-between mb-4 px-4">
+<div className="flex items-center space-x-2">
+  <div className="relative">
+    <input
+      type="checkbox"
+      id="tpsl"
+      checked={tpSlEnabled}
+      onChange={(e) => setTpSlEnabled(e.target.checked)}
+      className="sr-only"
+    />
+    <label 
+      htmlFor="tpsl" 
+      className="flex items-center cursor-pointer"
+    >
+      <div className={`w-4 h-4 rounded-sm border-2 border-[#C9C9C9]  flex items-center justify-center transition-colors ${
+        tpSlEnabled 
+          ? ' border-white bg-[#C9C9C9] ' 
+          : 'bg-transparent border-[#C9C9C9] '
+      }`}>
+        {tpSlEnabled && (
+          <svg 
+            className="w-2.5 h-2.5 text-white" 
+            fill="currentColor" 
+            viewBox="0 0 20 20"
+          >
+            <path 
+              fillRule="evenodd" 
+              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" 
+              clipRule="evenodd" 
+            />
+          </svg>
+        )}
+      </div>
+      <span className="ml-2 text-white text-[12px] leading-[18px] font-[500] font-mono">
+        TP/SL
+      </span>
+    </label>
+  </div>
+</div>
+          <div className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">
+            Est. Liq. Price: —
+          </div>
+        </div>
+
+                {/* TP/SL Input Fields - Show when enabled */}
+                {tpSlEnabled && (
+          <div className="mb-4 space-y-4 px-4">
+            {/* Take Profit Section */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP Price</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP %</label>
+              </div>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  value={tpPrice}
+                  onChange={(e) => setTpPrice(e.target.value)}
+                  placeholder="Enter TP price"
+                  className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
+                />
+                <input
+                  type="number"
+                  value={tpPercentage}
+                  onChange={(e) => setTpPercentage(e.target.value)}
+                  placeholder="0.0"
+                   className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
+                />
+              </div>
+            </div>
+
+            {/* Stop Loss Section */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL Price</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL %</label>
+              </div>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  value={slPrice}
+                  onChange={(e) => setSlPrice(e.target.value)}
+                  placeholder="Enter SL price"
+  className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
+                />
+                <input
+                  type="number"
+                  value={slPercentage}
+                  onChange={(e) => setSlPercentage(e.target.value)}
+                  placeholder="0.0"
+                  className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* Account Information */}
@@ -868,11 +997,18 @@ const handleTrade = async () => {
         )}
 
         {/* Powered by Hyperliquid */}
-        <div className="text-center mt-6">
-          <span className="text-xs text-gray-500">
-            powered by 💎 <span className="text-blue-400">Hyperliquid</span>
-          </span>
-        </div>
+ <div className="text-center mt-6 absolute bottom-0 right-5">
+  <span className="text-xs text-[#919093] flex items-center justify-center gap-2" style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}>
+    powered by 
+    <img 
+      src="/hyperlogo.svg" 
+      alt="Hyperliquid" 
+      className="inline-block w-20 h-20"
+      style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}
+    />
+
+  </span>
+</div>
       </div>
     </>
   );

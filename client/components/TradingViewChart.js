@@ -75,7 +75,7 @@ function TradingViewWidget({ symbol = 'BTCUSD' }) {
   }, [symbol]); // Re-run when symbol changes
 
   return (
-    <div className="tradingview-widget-container  h-[900px] bg-[#0d0c0e] ">
+    <div className="tradingview-widget-container w-full   bg-[#0d0c0e] ">
       <div 
         ref={container}
         className="tradingview-widget-container__widget h-full w-full bg-[#0d0c0e] "
