@@ -56,6 +56,7 @@ function actionHash(action, vaultAddress, nonce, expiresAfter = null) {
     data[offset] = 0x01;
     offset += 1;
     // Python: address_to_bytes(vault_address) 
+    // IMPORTANT: Lowercase the address as per Hyperliquid docs
     const addressBytes = getBytes(vaultAddress.toLowerCase());
     data.set(addressBytes, offset);
     offset += 20;
@@ -88,10 +89,15 @@ function constructPhantomAgent(hash, isMainnet) {
 /**
  * EXACT Python SDK l1_payload
  */
-function l1Payload(phantomAgent) {
+function l1Payload(phantomAgent, isMainnet = true) {
+  // Use the correct chainId based on the network
+  // For mainnet, use the actual chainId where the user is onboarded
+  // For testnet, use 1337
+  const chainId = isMainnet ? 42161 : 1337; // Arbitrum One for mainnet
+  
   return {
     domain: {
-      chainId: 1337,
+      chainId: chainId,
       name: 'Exchange',
       verifyingContract: '0x0000000000000000000000000000000000000000',
       version: '1',
@@ -100,12 +106,6 @@ function l1Payload(phantomAgent) {
       Agent: [
         { name: 'source', type: 'string' },
         { name: 'connectionId', type: 'bytes32' },
-      ],
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
       ],
     },
     primaryType: 'Agent',
@@ -119,84 +119,51 @@ function l1Payload(phantomAgent) {
 async function forceSignWithChainBypass(wallet, data) {
   console.log('🚀 Attempting to force cross-chain signature...');
   
-  const address = await wallet.getAddress();
+  // Handle both signer and wallet objects
+  let address;
+  let walletObject;
+  
+  if (wallet.getAddress) {
+    // It's a signer object
+    address = await wallet.getAddress();
+    walletObject = wallet;
+    console.log('🔍 Using signer object with address:', address);
+  } else if (wallet.address) {
+    // It's a wallet object with address property
+    address = wallet.address;
+    walletObject = wallet;
+    console.log('🔍 Using wallet object with address:', address);
+  } else {
+    throw new Error('Invalid wallet object - must have getAddress() method or address property');
+  }
+  
+  // IMPORTANT: Lowercase the address as per Hyperliquid docs
+  address = address.toLowerCase();
+  
+  console.log('🔍 Wallet address for signing:', address);
+  console.log('🔍 Wallet object type:', typeof wallet);
+  console.log('🔍 Wallet object keys:', Object.keys(wallet));
+  
   const typedDataString = JSON.stringify(data);
   
-  // Method 1: Try raw JSON-RPC call (bypasses most wallet validations)
+  // Method 1: Try direct wallet signing first (most reliable)
   try {
-    console.log('🔧 Method 1: Raw JSON-RPC call...');
+    console.log('🔧 Method 1: Direct wallet signing...');
     
-    if (window.ethereum && window.ethereum.request) {
-      const signature = await window.ethereum.request({
-        method: 'eth_signTypedData_v4',
-        params: [address.toLowerCase(), typedDataString],
-      });
-      
-      console.log('✅ Raw JSON-RPC signing successful:', signature);
-      return signature;
+    // Use the signer from the wallet object if available
+    const signer = walletObject.signer || walletObject;
+    
+    // Verify the signer's address matches before signing
+    const signerAddress = await signer.getAddress();
+    console.log('🔍 Signer address before signing:', signerAddress);
+    console.log('🔍 Expected address:', address);
+    
+    // IMPORTANT: Use lowercase comparison as per Hyperliquid docs
+    if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+      throw new Error(`Signer address mismatch: expected ${address}, got ${signerAddress}`);
     }
-  } catch (error) {
-    console.warn('⚠️ Raw JSON-RPC failed:', error.message);
-  }
-  
-  // Method 2: Try with modified provider (disable chainId checks)
-  try {
-    console.log('🔧 Method 2: Modified provider...');
     
-    // Create a custom provider that intercepts and modifies requests
-    const originalRequest = window.ethereum.request.bind(window.ethereum);
-    
-    // Temporarily override the request method
-    window.ethereum.request = async (args) => {
-      if (args.method === 'eth_chainId') {
-        console.log('🔧 Intercepting eth_chainId, returning 1337...');
-        return '0x539'; // Return 1337 in hex
-      }
-      return originalRequest(args);
-    };
-    
-    try {
-      const signature = await originalRequest({
-        method: 'eth_signTypedData_v4',
-        params: [address.toLowerCase(), typedDataString],
-      });
-      
-      console.log('✅ Modified provider signing successful:', signature);
-      return signature;
-    } finally {
-      // Restore original request method
-      window.ethereum.request = originalRequest;
-    }
-  } catch (error) {
-    console.warn('⚠️ Modified provider failed:', error.message);
-  }
-  
-  // Method 3: Try with personal_sign as fallback (less secure but works)
-  try {
-    console.log('🔧 Method 3: Personal sign fallback...');
-    
-    // Create a hash of the typed data and sign it with personal_sign
-    const dataHash = ethers.keccak256(ethers.toUtf8Bytes(typedDataString));
-    const personalSignature = await window.ethereum.request({
-      method: 'personal_sign',
-      params: [dataHash, address.toLowerCase()],
-    });
-    
-    console.log('✅ Personal sign successful:', personalSignature);
-    
-    // Convert personal signature to typed data format
-    const { r, s, v } = ethers.Signature.from(personalSignature);
-    return ethers.Signature.from({ r, s, v }).serialized;
-    
-  } catch (error) {
-    console.warn('⚠️ Personal sign failed:', error.message);
-  }
-  
-  // Method 4: Try direct wallet signing (will likely fail but worth trying)
-  try {
-    console.log('🔧 Method 4: Direct wallet signing...');
-    
-    const signature = await wallet.signTypedData(
+    const signature = await signer.signTypedData(
       data.domain,
       data.types,
       data.message
@@ -207,6 +174,76 @@ async function forceSignWithChainBypass(wallet, data) {
     
   } catch (error) {
     console.warn('⚠️ Direct wallet signing failed:', error.message);
+  }
+  
+  // Method 2: Try standard EIP-712 signing with ethereum provider directly
+  try {
+    console.log('🔧 Method 2: Standard EIP-712 signing...');
+    
+    if (window.ethereum && window.ethereum.request) {
+      // Get the current accounts to ensure we're using the right one
+      const accounts = await window.ethereum.request({
+        method: 'eth_accounts'
+      });
+      console.log('🔍 Current ethereum accounts:', accounts);
+      console.log('🔍 Using account for signing:', address.toLowerCase());
+      
+      // Ensure the account we want to sign with is the first one
+      if (accounts.length > 0 && accounts[0].toLowerCase() !== address.toLowerCase()) {
+        console.warn('⚠️ Account mismatch! Requesting account switch...');
+        
+        // Try to switch to the correct account
+        try {
+          await window.ethereum.request({
+            method: 'wallet_requestPermissions',
+            params: [{ eth_accounts: {} }]
+          });
+          
+          // Get accounts again after permission request
+          const newAccounts = await window.ethereum.request({
+            method: 'eth_accounts'
+          });
+          console.log('🔍 New ethereum accounts after permission request:', newAccounts);
+          
+          if (newAccounts.length > 0 && newAccounts[0].toLowerCase() !== address.toLowerCase()) {
+            throw new Error(`Account mismatch: expected ${address}, got ${newAccounts[0]}`);
+          }
+        } catch (switchError) {
+          console.warn('⚠️ Failed to switch accounts:', switchError.message);
+          throw new Error(`Please ensure your wallet is connected to account ${address}`);
+        }
+      }
+      
+      const signature = await window.ethereum.request({
+        method: 'eth_signTypedData_v4',
+        params: [address.toLowerCase(), typedDataString],
+      });
+      
+      console.log('✅ Standard EIP-712 signing successful:', signature);
+      return signature;
+    }
+  } catch (error) {
+    console.warn('⚠️ Standard EIP-712 failed:', error.message);
+  }
+  
+  // Method 3: Try personal_sign as fallback
+  try {
+    console.log('🔧 Method 3: Personal sign fallback...');
+    
+    // Create the EIP-712 hash
+    const eip712Hash = ethers.TypedDataEncoder.hash(data.domain, data.types, data.message);
+    console.log('🔍 EIP-712 hash for personal sign:', eip712Hash);
+    
+    const personalSignature = await window.ethereum.request({
+      method: 'personal_sign',
+      params: [eip712Hash, address.toLowerCase()],
+    });
+    
+    console.log('✅ Personal sign successful:', personalSignature);
+    return personalSignature;
+    
+  } catch (error) {
+    console.warn('⚠️ Personal sign failed:', error.message);
   }
   
   throw new Error('All cross-chain signing methods failed. Your wallet does not support cross-chain signatures.');
@@ -223,27 +260,78 @@ async function signInner(wallet, data) {
     
     const signature = await forceSignWithChainBypass(wallet, data);
     
-    // Verify signature matches expected address
-    const address = await wallet.getAddress();
-    const recoveredAddress = ethers.verifyTypedData(
-      data.domain,
-      data.types,
-      data.message,
-      signature
-    );
-    
-    console.log('🔍 Expected address:', address.toLowerCase());
-    console.log('🔍 Recovered address:', recoveredAddress.toLowerCase());
-    
-    if (address.toLowerCase() !== recoveredAddress.toLowerCase()) {
-      throw new Error(`Signature verification failed: expected ${address}, got ${recoveredAddress}`);
+    // Handle both signer and wallet objects
+    let address;
+    if (wallet.getAddress) {
+      address = await wallet.getAddress();
+    } else if (wallet.address) {
+      address = wallet.address;
+    } else {
+      throw new Error('Invalid wallet object - must have getAddress() method or address property');
     }
     
-    console.log('✅ Cross-chain signature verification passed');
+    // IMPORTANT: Lowercase the address as per Hyperliquid docs
+    address = address.toLowerCase();
     
-    // Return in Python SDK format: {"r": ..., "s": ..., "v": ...}
-    const { r, s, v } = ethers.Signature.from(signature);
-    return { r, s, v };
+    console.log('🔍 Final wallet address:', address);
+    console.log('🔍 Signature received:', signature);
+    
+    // Check if this is a personal signature (starts with 0x and is 132 chars)
+    // EIP-712 signatures are also 132 chars, so we need a different way to detect
+    // For now, let's assume all signatures are EIP-712 unless we know otherwise
+    const isPersonalSignature = false; // We'll handle this differently
+    
+    // Try to verify as EIP-712 signature first
+    try {
+      console.log('🔍 Verifying as EIP-712 signature...');
+      
+      // Verify EIP-712 signature
+      const recoveredAddress = ethers.verifyTypedData(
+        data.domain,
+        data.types,
+        data.message,
+        signature
+      );
+      
+      console.log('🔍 EIP-712 verification - Expected:', address);
+      console.log('🔍 EIP-712 verification - Recovered:', recoveredAddress);
+      console.log('🔍 EIP-712 verification - Match:', recoveredAddress.toLowerCase() === address.toLowerCase());
+      
+      if (recoveredAddress.toLowerCase() === address.toLowerCase()) {
+        console.log('✅ EIP-712 signature verification passed');
+        
+        // Return in Python SDK format: {"r": ..., "s": ..., "v": ...}
+        const { r, s, v } = ethers.Signature.from(signature);
+        return { r, s, v };
+      }
+    } catch (error) {
+      console.warn('⚠️ EIP-712 verification error:', error.message);
+    }
+    
+    // If EIP-712 verification failed, try as personal signature
+    try {
+      console.log('🔍 Verifying as personal signature...');
+      
+      const eip712Hash = ethers.TypedDataEncoder.hash(data.domain, data.types, data.message);
+      const recoveredAddress = ethers.recoverAddress(eip712Hash, signature);
+      
+      console.log('🔍 Personal signature verification - Expected:', address.toLowerCase());
+      console.log('🔍 Personal signature verification - Recovered:', recoveredAddress.toLowerCase());
+      console.log('🔍 Personal signature verification - Match:', address.toLowerCase() === recoveredAddress.toLowerCase());
+      
+      if (address.toLowerCase() === recoveredAddress.toLowerCase()) {
+        console.log('✅ Personal signature verification passed');
+        
+        // Return in Python SDK format: {"r": ..., "s": ..., "v": ...}
+        const { r, s, v } = ethers.Signature.from(signature);
+        return { r, s, v };
+      } else {
+        throw new Error(`Personal signature verification failed: expected ${address}, got ${recoveredAddress}`);
+      }
+    } catch (error) {
+      console.error('❌ Both EIP-712 and personal signature verification failed');
+      throw error;
+    }
     
   } catch (error) {
     console.error('❌ Sign inner error:', error);
@@ -286,7 +374,7 @@ export async function signL1Action(wallet, action, vaultAddress, nonce, expiresA
     console.log('👻 Phantom agent:', phantomAgent);
     
     // Python: data = l1_payload(phantom_agent)
-    const data = l1Payload(phantomAgent);
+    const data = l1Payload(phantomAgent, isMainnet);
     console.log('📝 L1 payload:', JSON.stringify(data, null, 2));
     
     // Python: return sign_inner(wallet, data)
@@ -439,13 +527,19 @@ export async function placeOrder(orderParams, signer, isMainnet = true, vaultAdd
     
     console.log('✍️ Final signature:', signature);
     
-    // Prepare request body
+    // Determine API URL
+    const apiUrl = isMainnet 
+      ? 'https://api.hyperliquid.xyz/exchange'
+      : 'https://api.hyperliquid-testnet.xyz/exchange';
+    
+    // Prepare request body according to Hyperliquid API documentation
     const requestBody = {
       action,
       nonce,
       signature,
     };
     
+    // Add optional fields according to API docs
     if (vaultAddress) {
       requestBody.vaultAddress = vaultAddress.toLowerCase();
     }
@@ -455,12 +549,13 @@ export async function placeOrder(orderParams, signer, isMainnet = true, vaultAdd
     }
     
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+    console.log('📤 Request URL:', apiUrl);
+    console.log('📤 Request method: POST');
+    console.log('📤 Request headers:', {
+      'Content-Type': 'application/json',
+    });
     
     // Make API call
-    const apiUrl = isMainnet 
-      ? 'https://api.hyperliquid.xyz/exchange'
-      : 'https://api.hyperliquid-testnet.xyz/exchange';
-      
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -469,8 +564,21 @@ export async function placeOrder(orderParams, signer, isMainnet = true, vaultAdd
       body: JSON.stringify(requestBody),
     });
     
-    const result = await response.json();
-    console.log('📥 API Response:', JSON.stringify(result, null, 2));
+    console.log('📥 Response status:', response.status);
+    console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+    
+    let result;
+    const responseText = await response.text();
+    console.log('📥 Raw response text:', responseText);
+    
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error(`API returned invalid JSON: ${responseText}`);
+    }
+    
+    console.log('📥 Parsed API Response:', JSON.stringify(result, null, 2));
     
     if (result.status === 'err') {
       throw new Error(result.response || 'API returned error status');

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrder } from '@/utils/hyperLiquidSigning'
+import { placeOrderWithAgent, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, createAgentWallet } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import { X } from 'lucide-react';
 const TradingPanel = ({ 
@@ -423,28 +423,25 @@ const handleTrade = async () => {
 
     setIsPlacingOrder(true);
 
-    // CRITICAL: Prepare order parameters exactly like Python SDK expects
+    // Prepare order parameters for @nktkas/hyperliquid SDK
     const orderParams = {
-      assetIndex: assetInfo.index,
+      symbol: selectedSymbol,
       isBuy: side === 'Long',
       size: orderSize,
       price: orderType === 'Limit' ? parseFloat(limitPrice) : 0,
       orderType: orderType.toLowerCase(), // 'market' or 'limit'
-      timeInForce: 'Gtc',
+      timeInForce: 'GTC',
       reduceOnly: false,
-      cloid: null, // Optional client order ID
-      builder: null // Optional builder for fees
+      cloid: null // Optional client order ID
     };
 
     console.log('📤 Sending order with params:', orderParams);
 
-    // Use the bulletproof signing service
-    const result = await placeOrder(
-      orderParams,
+    // Use the Agent Wallet approach (like Hyperliquid's official app)
+    const result = await placeOrderWithAgent(
       wallet.signer,
-      true, // isMainnet = true
-      null, // vaultAddress = null (not using vault)
-      null  // expiresAfter = null (no expiry)
+      orderParams,
+      true // isMainnet = true
     );
 
     console.log('📥 Order result:', result);
@@ -523,8 +520,15 @@ const handleTrade = async () => {
       errorMessage = 'Transaction was rejected. Please try again.';
     } else if (errorMessage.includes('Invalid size')) {
       errorMessage = `Invalid order size. Must be at least ${minSize} ${selectedSymbol} with max ${assetInfo.szDecimals} decimal places.`;
-    } else if (errorMessage.includes('chainId')) {
-      errorMessage = 'Wallet network mismatch. Please ensure you\'re connected to Arbitrum.';
+    } else if (errorMessage.includes('chainId') || errorMessage.includes('1337') || errorMessage.includes('42161')) {
+      errorMessage = 'Chain ID mismatch detected. Hyperliquid requires chain ID 1337 for signing, but your wallet is on Arbitrum (42161).\n\n' +
+                   'To fix this:\n' +
+                   '1. Enable MetaMask Developer Mode: Settings > Advanced > Developer Mode\n' +
+                   '2. Or use a different wallet like Rainbow or Frame\n' +
+                   '3. Or try switching to a different network temporarily';
+      
+      // Show helper instructions
+      enableMetaMaskDeveloperMode();
     }
     
     setOrderError(errorMessage);
@@ -839,6 +843,26 @@ const handleTrade = async () => {
               className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors cursor-pointer"
             >
               🚀 Onboard to Hyperliquid
+            </button>
+          </div>
+        )}
+
+        {/* Agent Wallet Button for onboarded users */}
+        {isConnected && isOnboarded && (
+          <div className='px-4 mt-2'>
+            <button
+              onClick={async () => {
+                try {
+                  await createAgentWallet(wallet.signer, true);
+                  alert('✅ Agent Wallet created successfully! You can now trade without chain ID issues.');
+                } catch (error) {
+                  console.error('❌ Error creating agent wallet:', error);
+                  alert('❌ Failed to create agent wallet. Please try again or visit app.hyperliquid.xyz');
+                }
+              }}
+              className="w-full py-2 px-4 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors cursor-pointer"
+            >
+              🤖 Create Agent Wallet
             </button>
           </div>
         )}
