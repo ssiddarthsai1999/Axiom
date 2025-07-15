@@ -546,7 +546,19 @@ const handleTrade = async () => {
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
+         {/* Powered by Hyperliquid */}
+ <div className="text-center mt-6 absolute bottom-0 right-5 hidden lg:block">
+  <span className="text-xs text-[#919093] flex items-center justify-center gap-2" style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}>
+    powered by 
+    <img 
+      src="/hyperlogo.svg" 
+      alt="Hyperliquid" 
+      className="inline-block w-20 h-20"
+      style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}
+    />
 
+  </span>
+</div>
         {/* Error Display */}
         {orderError && (
           <div className="mb-4 p-3 bg-red-900 bg-opacity-30 border border-red-600 rounded">
@@ -562,7 +574,7 @@ const handleTrade = async () => {
         )}
 
         {/* Long/Short Toggle */}
-        <div className='px-4 pt-2'>
+        <div className='px-4 pt-2 ' >
         <div className="flex mb-4 border border-[#1F1E23] rounded-xl p-1">
           <button
             onClick={() => setSide('Long')}
@@ -996,19 +1008,7 @@ const handleTrade = async () => {
           </div>
         )}
 
-        {/* Powered by Hyperliquid */}
- <div className="text-center mt-6 absolute bottom-0 right-5">
-  <span className="text-xs text-[#919093] flex items-center justify-center gap-2" style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}>
-    powered by 
-    <img 
-      src="/hyperlogo.svg" 
-      alt="Hyperliquid" 
-      className="inline-block w-20 h-20"
-      style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}
-    />
 
-  </span>
-</div>
       </div>
     </>
   );
