@@ -7,6 +7,7 @@ import TradingPanel from '@/components/TradingPanel'
 import UserPositions from '@/components/UserPositions'
 import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
+import FavoritesTicker from '@/components/FavoritesTicker'
 
 function TradingPage() {
   // Centralized state
@@ -402,6 +403,10 @@ function TradingPage() {
           <div className='flex flex-1 min-h-0'>
             {/* Left Section: TokenData + Chart */}
             <div className='flex flex-col flex-1 min-w-0'>
+            <FavoritesTicker 
+        selectedSymbol={selectedSymbol}
+        setSelectedSymbol={setSelectedSymbol}
+      />
               {/* Token Data Header */}
               <TokenData 
                 marketData={marketData}

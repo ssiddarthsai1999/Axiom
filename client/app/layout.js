@@ -3,6 +3,7 @@ import "./globals.css";
 import { AppKitProvider } from "@/context/AppKitProvider";
 import Navbar from "@/components/Navbar";
 import DynamicFooter from "@/components/DynamicFooter";
+import FavoritesTicker from "@/components/FavoritesTicker";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({ children }) {
       
           <main className="min-h-screen bg-[#0d0c0e]">
                 <Navbar />
+                {/* <FavoritesTicker/> */}
             {children}
           </main>
           <DynamicFooter/>

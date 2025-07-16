@@ -70,7 +70,7 @@ const Navbar = ({ className = '' }) => {
           {/* Right side items */}
           <div className="flex items-center space-x-2 sm:space-x-4">
             {/* Deposit Button */}
-            <button className="bg-[#212023] border border-[#FAFAFA33] duration-200 ease-in cursor-pointer hover:bg-[#2b2b2e] text-[#E5E5E5] px-3 py-2 sm:px-4 rounded-lg text-[12px] leading-[18px] font-[500] transition-colors duration-200">
+            <button className="bg-[#212023] font-mono border border-[#FAFAFA33] duration-200 ease-in cursor-pointer hover:bg-[#2b2b2e] text-[#E5E5E5] px-3 py-2 sm:px-4 rounded-lg text-[12px] leading-[18px] font-[500] transition-colors duration-200">
               Deposit
             </button>
 
