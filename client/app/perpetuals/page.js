@@ -510,7 +510,7 @@ const MobileTabs = () => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex flex-1 min-h-0">
         <div className='flex flex-col flex-1 min-w-0'>
-          <div className='flex flex-1 min-h-0'>
+          <div className='flex flex-1 min-h-0 max-h-[1100px]'>
             <div className='flex flex-col flex-1 min-w-0'>
               <FavoritesTicker 
                 selectedSymbol={selectedSymbol}
@@ -522,9 +522,10 @@ const MobileTabs = () => {
                 selectedSymbol={selectedSymbol}
                 availableTokens={availableTokens}
                 onSymbolChange={handleSymbolChange}
+          
                 className="shrink-0"
               />
-              <div className='flex flex-1 w-full min-h-0'>
+              <div className='flex flex-1 w-full  min-h-0'>
                 <TradingViewChart 
                   symbol={`${selectedSymbol}USD`}
                   onSymbolChange={handleSymbolChange}

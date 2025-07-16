@@ -154,16 +154,16 @@ const UserPositions = ({ className = '' }) => {
       </div>
 
       {/* Content Area */}
-      <div className="min-h-[300px]">
+      <div className="min-h-[10px]">
         {!isConnected ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex items-center justify-center ">
             <div className="text-center">
               <div className="text-gray-400 text-lg mb-2">Connect your wallet</div>
               <div className="text-gray-500 text-sm">to view your {activeTab.toLowerCase()}</div>
             </div>
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex items-center justify-center ">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : (
@@ -172,7 +172,7 @@ const UserPositions = ({ className = '' }) => {
             {activeTab === 'Positions' && (
               <div>
                 {positions.length === 0 ? (
-                  <div className="flex items-center justify-center h-64">
+                  <div className="flex items-center justify-center ">
                     <div className="text-gray-400">No open positions</div>
                   </div>
                 ) : (

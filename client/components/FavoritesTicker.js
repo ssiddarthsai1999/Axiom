@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Marquee from 'react-fast-marquee';
 import { Star } from 'lucide-react';
+import { getTokenLogo } from '@/utils/getTokenLogo';
 
 const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
   const [favoritesData, setFavoritesData] = useState([]);
@@ -46,7 +47,7 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
               price: parseFloat(assetCtx.markPx),
               change24h: change24h,
               volume24h: parseFloat(assetCtx.dayNtlVlm),
-              logo: getTokenLogo(token.name), // We'll create this function
+              logo: getTokenLogo(token.name),
               name: getTokenName(token.name)
             };
           })
@@ -61,33 +62,6 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
       setError(err.message);
       setLoading(false);
     }
-  };
-
-  // Helper function to get token logos (you can replace with actual logo URLs)
-  const getTokenLogo = (symbol) => {
-    const logos = {
-      'BTC': '₿',
-      'ETH': 'Ξ',
-      'SOL': '◎',
-      'AVAX': '▲',
-      'LINK': '⬢',
-      'DOGE': 'Ð',
-      'ADA': '₳',
-      'DOT': '●',
-      'MATIC': '◆',
-      'UNI': '🦄',
-      'ATOM': '⚛',
-      'FTM': '👻',
-      'NEAR': 'Ⓝ',
-      'ALGO': '△',
-      'VET': 'Ⓥ',
-      'ICP': '∞',
-      'FIL': '⨎',
-      'LTC': 'Ł',
-      'BCH': '▬',
-      'XRP': 'Ⓡ'
-    };
-    return logos[symbol] || symbol.charAt(0);
   };
 
   // Helper function to get token names
@@ -146,7 +120,7 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
 
   // Individual ticker item component
   const TickerItem = ({ token }) => (
-    <div className="flex items-center  space-x-2 px-5 py-1 cursor-pointer hover:brightness-125 duration-150 ease-in  mx-2 min-w-fit" onClick={()=>setSelectedSymbol(token.symbol)}>
+    <div className="flex items-center space-x-2 px-5 py-1 cursor-pointer hover:brightness-125 duration-150 ease-in mx-2 min-w-fit" onClick={()=>setSelectedSymbol(token.symbol)}>
       {/* Star icon */}
       <Star 
         size={14} 
@@ -154,8 +128,23 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
       />
       
       {/* Token logo */}
-      <div className="text-lg font-bold font-mono text-white">
-        {token.logo}
+      <div className="w-5 h-5 flex items-center justify-center">
+        <img 
+          src={token.logo} 
+          alt={`${token.symbol} logo`}
+          className="w-full h-full object-contain"
+          onError={(e) => {
+            // Fallback to first letter if image fails to load
+            e.target.style.display = 'none';
+            e.target.nextSibling.style.display = 'block';
+          }}
+        />
+        <span 
+          className="text-lg font-bold font-mono text-white hidden"
+          style={{ display: 'none' }}
+        >
+          {token.symbol.charAt(0)}
+        </span>
       </div>
       
       {/* Symbol */}
@@ -170,7 +159,7 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
       
       {/* Change percentage */}
       <span 
-        className={`font-mono  font-[500] leading-[16px] text-[12px] ${
+        className={`font-mono font-[500] leading-[16px] text-[12px] ${
           token.change24h >= 0 ? 'text-green-400' : 'text-red-400'
         }`}
       >
@@ -213,7 +202,7 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
     <div className="bg-[#0d0c0e] border-b border-[#1F1E23] overflow-hidden py-1">
       <Marquee
         speed={50}
-    loop={0}
+        loop={0}
         gradient={true}
         gradientColor={[13, 12, 14]} // RGB values for #0d0c0e
         gradientWidth={50}

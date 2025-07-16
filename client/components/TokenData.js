@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, Search, Star } from 'lucide-react';
 import numeral from 'numeral';
-
+import { getTokenLogo } from '@/utils/getTokenLogo';
 const TokenData = ({ 
   marketData, 
   selectedSymbol, 
@@ -143,52 +143,7 @@ const TokenData = ({
     return { amount: changeAmountFormatted, percentage: changePercentage };
   };
 
-  const getTokenLogo = (symbol) => {
-    const tokenMapping = {
-      'BTC': 'bitcoin',
-      'ETH': 'ethereum', 
-      'SOL': 'solana',
-      'AVAX': 'avalanche-2',
-      'DOGE': 'dogecoin',
-      'ADA': 'cardano',
-      'DOT': 'polkadot',
-      'MATIC': 'matic-network',
-      'LTC': 'litecoin',
-      'LINK': 'chainlink',
-      'UNI': 'uniswap',
-      'ATOM': 'cosmos',
-      'XRP': 'ripple',
-      'TRX': 'tron',
-      'BCH': 'bitcoin-cash',
-      'ETC': 'ethereum-classic',
-      'FIL': 'filecoin',
-      'APT': 'aptos',
-      'SUI': 'sui',
-      'NEAR': 'near',
-      'ICP': 'internet-computer',
-      'ARB': 'arbitrum',
-      'OP': 'optimism',
-      'HBAR': 'hedera-hashgraph',
-      'VET': 'vechain',
-      'STX': 'stacks',
-      'IMX': 'immutable-x',
-      'INJ': 'injective-protocol',
-      'TIA': 'celestia',
-      'SEI': 'sei-network',
-      'WLD': 'worldcoin-wld',
-      'ORDI': 'ordi',
-      'BLUR': 'blur',
-      'PEPE': 'pepe',
-      'BONK': 'bonk',
-      'WIF': 'dogwifcoin',
-      'MEME': 'memecoin',
-      'FLOKI': 'floki',
-      'SHIB': 'shiba-inu'
-    };
-    
-    const coinId = tokenMapping[symbol] || symbol.toLowerCase();
-    return `https://assets.coingecko.com/coins/images/1/small/${coinId}.png`;
-  };
+
 
   if (!marketData) {
     return (
@@ -214,7 +169,7 @@ const TokenData = ({
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
             >
-              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8  rounded-full flex items-center justify-center">
                 <img 
                   src={getTokenLogo(marketData.symbol)} 
                   alt={marketData.symbol}
@@ -389,11 +344,13 @@ const TokenData = ({
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
             >
-              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
-                <span className="text-xs font-bold text-white">
-                  {marketData.symbol.charAt(0)}
-                </span>
-              </div>
+  <div className="w-6 h-6 rounded-full flex items-center justify-center">
+  <img 
+    src={getTokenLogo(marketData.symbol)} 
+    alt={`${marketData.symbol} logo`}
+    className="w-full h-full rounded-full object-cover"
+  />
+</div>
               <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
               <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
               <Star 
