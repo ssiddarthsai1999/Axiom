@@ -380,7 +380,7 @@ const TokenData = ({
       </div>
 
       {/* Desktop Layout - Original */}
-      <div className="hidden md:flex items-center justify-between gap-10">
+      <div className="hidden md:flex flex-wrap items-center 2xl:justify-between gap-10">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
           {/* Token Selector */}
