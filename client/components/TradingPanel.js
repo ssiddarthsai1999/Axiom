@@ -19,6 +19,8 @@ const TradingPanel = ({
     const [tpPercentage, setTpPercentage] = useState('');
   const [slPrice, setSlPrice] = useState('');
   const [slPercentage, setSlPercentage] = useState('');
+  const [marginMode, setMarginMode] = useState('isolated'); // 'isolated' or 'cross'
+const [applyToAll, setApplyToAll] = useState(false);
 
   const [limitPrice, setLimitPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
@@ -489,7 +491,19 @@ const TradingPanel = ({
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
+         {/* Powered by Hyperliquid */}
+ <div className="text-center mt-6 absolute bottom-0 right-5 hidden lg:block">
+  <span className="text-xs text-[#919093] flex items-center justify-center gap-2" style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}>
+    powered by 
+    <img 
+      src="/hyperlogo.svg" 
+      alt="Hyperliquid" 
+      className="inline-block w-20 h-20"
+      style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}
+    />
 
+  </span>
+</div>
         {/* Error Display */}
         {orderError && (
           <div className="mb-4 p-3 bg-red-900 bg-opacity-30 border border-red-600 rounded">
@@ -505,7 +519,7 @@ const TradingPanel = ({
         )}
 
         {/* Long/Short Toggle */}
-        <div className='px-4 pt-2'>
+        <div className='px-4 pt-2 ' >
         <div className="flex mb-4 border border-[#1F1E23] rounded-xl p-1">
           <button
             onClick={() => setSide('Long')}
@@ -554,7 +568,7 @@ const TradingPanel = ({
           </button>
                
 <button onClick={handleLeverageClick} className="ml-auto text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
-  <span>Leverage: {leverage}x (Isolated)</span>
+  <span>Leverage: {leverage}x ({marginMode})</span>
   <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
 </button>
         </div></div>
@@ -820,99 +834,141 @@ const TradingPanel = ({
 
 
          {/* Leverage Modal */}
-      {showLeverageModal && (
-        <div className="fixed inset-0 backdrop-blur-3xl bg-black/60 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-[#0d0c0e] border border-white/20 rounded-lg p-6 w-80 mx-4">
-            {/* Modal Header */}
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-semibold text-white">Set Leverage</h3>
-              <button 
-                onClick={() => setShowLeverageModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X className="w-5 h-5 cursor-pointer" />
-              </button>
-            </div>
-
-            {/* Current Leverage Display */}
-            <div className="text-center mb-6">
-              <div className="text-3xl font-bold text-white mb-2">
-                {tempLeverage}x
-              </div>
-              <div className="text-sm text-gray-400">
-                Current leverage for {selectedSymbol}
-              </div>
-            </div>
-
-            {/* Leverage Slider */}
-            <div className="mb-6">
-              <input
-                type="range"
-                min="1"
-                max={maxLeverage}
-                value={tempLeverage}
-                onChange={handleSliderChange}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                style={{
-                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 100%)`
-                }}
-              />
-              <div className="flex justify-between text-xs text-gray-400 mt-2">
-                <span>1x</span>
-                <span>{maxLeverage}x</span>
-              </div>
-            </div>
-
-            {/* Quick Select Buttons */}
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {[1, 5, 10, 20, 30, 50].map((lev) => (
-                <button
-                  key={lev}
-                  onClick={() => setTempLeverage(lev)}
-                  className={`py-2 px-3 text-sm rounded transition-colors cursor-pointer ${
-                    tempLeverage === lev
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-[#181a20] text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {lev}x
-                </button>
-              ))}
-            </div>
-
-            {/* Warning Message */}
-            <div className="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded p-3 mb-6">
-              <p className="text-yellow-400 text-xs">
-                ⚠️ Higher leverage increases both potential profits and losses. 
-                Trade responsibly and never risk more than you can afford to lose.
-              </p>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowLeverageModal(false)}
-                className="flex-1 py-2 px-4 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleLeverageSet}
-                className="flex-1 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors cursor-pointer"
-              >
-                Set Leverage
-              </button>
-            </div>
-          </div>
+   {showLeverageModal && (
+  <div className="fixed inset-0 backdrop-blur-sm bg-black/60 flex items-center justify-center z-50">
+    <div className="bg-[#0D0D0F] border border-[#FAFAFA33] rounded-2xl p-8 w-full lg:w-[440px]  max-w-[440px] mx-4 relative">
+      {/* Modal Header */}
+      <div className="flex justify-between items-center mb-8">
+        <div className='w-full flex flex-col gap-2'>
+          <h3 className="text-[16px] leading-[24px] font-[400] font-mono text-[#E5E5E5] text-center">Leverage & Margin</h3>
+          <p className="text-[11px] leading-[12px] font-[500] font-mono text-[#919093] text-center mt-1">
+            Adjust the leverage and margin mode for your position.<br />
+            The max leverage is {maxLeverage}x.
+          </p>
         </div>
-      )}
+        <button 
+          onClick={() => setShowLeverageModal(false)}
+          className="text-gray-400 hover:text-white absolute right-4 top-4 cursor-pointer"
+        >
+          <X className="w-6 h-6" />
+        </button>
+      </div>
+
+      {/* Current Leverage Display */}
+      <div className="text-center flex items-center justify-between mb-8 ">
+                  <button 
+            onClick={() => setTempLeverage(Math.max(1, tempLeverage - 1))}
+            className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
+          >
+            <span className="text-2xl">−</span>
+          </button>
+        <div className="text-[40px] leading-[24px] font-[400] font-mono text-[#FFFFFF] text-center ">
+          {tempLeverage}x
+        </div>
+                  <button 
+            onClick={() => setTempLeverage(Math.min(maxLeverage, tempLeverage + 1))}
+                className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
+          >
+            <span className="text-2xl">+</span>
+          </button>
+      </div>
+
+      {/* Leverage Slider */}
+      <div className="mb-8">
+        <div className="flex items-center justify-center mb-4">
+
+          
+          <div className="flex-1 mx-8">
+            <input
+              type="range"
+              min="1"
+              max={maxLeverage}
+              value={tempLeverage}
+              onChange={handleSliderChange}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+              style={{
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 100%)`
+              }}
+            />
+          </div>
+          
+
+        </div>
+        
+        <div className="flex justify-between px-6">
+          <span className='text-[11px] font-[400] leading-[16px] text-white  '>1x</span>
+          <span className='text-[11px] font-[400] leading-[16px] text-white '>{maxLeverage}x</span>
+        </div>
+      </div>
+
+      {/* Margin Mode Selection */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div 
+          onClick={() => setMarginMode('isolated')}
+          className={`p-2 rounded-lg  cursor-pointer border  flex flex-col items-start justify-start   transition-all ${
+            marginMode === 'isolated' 
+              ? 'border-[#2133FF] bg-[#0f1127] ' 
+              : ' bg-[#1F1F1F] border-transparent '
+          }`}
+        >
+          <h4 className="text-[16px] leading-[24px] font-[400] font-mono text-[#E6E6E6] mb-2">Isolated</h4>
+          <p className="text-[9px] leading-[12px] font-[500] font-mono text-left text-[#919093]">
+            In isolated margin mode, a margin is added to the position. 
+            If it falls below maintenance, liquidation occurs. You can add 
+            or reduce the margin.
+          </p>
+        </div>
+        
+        <div 
+          onClick={() => setMarginMode('cross')}
+          className={`p-2 rounded-lg  flex flex-col items-start justify-start cursor-pointer border   transition-all ${
+            marginMode === 'cross' 
+             ? 'border-[#2133FF] bg-[#0f1127] ' 
+              : ' bg-[#1F1F1F] border-transparent '
+          }`}
+        >
+          <h4 className="text-[16px] leading-[24px] font-[400] font-mono text-[#E6E6E6] mb-2">Cross</h4>
+          <p className="text-[9px] leading-[12px] font-[500] font-mono text-left text-[#919093]">
+            In cross margin mode, margin is shared across positions. If 
+            liquidation occurs, traders may lose all margin and positions.
+          </p>
+        </div>
+      </div>
+
+      {/* Checkbox */}
+      <div className="flex items-center mb-8 text-center flex justify-center mx-auto">
+        <input
+          type="checkbox"
+          id="applyToAll"
+          checked={applyToAll}
+          onChange={(e) => setApplyToAll(e.target.checked)}
+          className="w-4 h-4 text-blue-600 bg-[#333333] border-[#444444] rounded focus:ring-blue-500 focus:ring-2"
+        />
+        <label htmlFor="applyToAll" className="ml-3 text-[12px] font-[400] font-mono  text-[#E5E5E5] ">
+          Apply margin mode adjustment to all
+        </label>
+        <button className="ml-2 text-gray-400 hover:text-white">
+          <span className="w-4 h-4 rounded-full bg-gray-600 text-white text-xs flex items-center justify-center">i</span>
+        </button>
+      </div>
+
+      {/* Confirm Button */}
+      <button
+        onClick={handleLeverageSet}
+        className="w-full py-4 text-[14px] font-[500] text-white rounded-lg cursor-pointer duration-200 ease-in  font-mono bg-[#2133FF] hover:bg-blue-600 transition-colors text-lg"
+      >
+        Confirm
+      </button>
+    </div>
+  </div>
+)}
 
         {/* Onboard Button for non-onboarded users */}
         {isConnected && !isOnboarded && (
           <div className='px-4 mt-2'>
             <button
               onClick={() => window.open('https://app.hyperliquid.xyz/trade', '_blank')}
-              className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors cursor-pointer"
+              className="w-full py-2 px-4 text-[14px] font-[500] bg-[#2133FF] hover:bg-blue-700  text-white rounded transition-colors cursor-pointer"
             >
               🚀 Onboard to Hyperliquid
             </button>
@@ -942,19 +998,7 @@ const TradingPanel = ({
           </div>
         )}
 
-        {/* Powered by Hyperliquid */}
- <div className="text-center mt-6 absolute bottom-0 right-5">
-  <span className="text-xs text-[#919093] flex items-center justify-center gap-2" style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}>
-    powered by 
-    <img 
-      src="/hyperlogo.svg" 
-      alt="Hyperliquid" 
-      className="inline-block w-20 h-20"
-      style={{ fontWeight: 400, fontSize: '11px', lineHeight: '16.5px', letterSpacing: '0%' }}
-    />
 
-  </span>
-</div>
       </div>
     </>
   );

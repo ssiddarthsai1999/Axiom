@@ -1,6 +1,9 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppKitProvider } from "@/context/AppKitProvider";
+import Navbar from "@/components/Navbar";
+import DynamicFooter from "@/components/DynamicFooter";
+import FavoritesTicker from "@/components/FavoritesTicker";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -19,13 +22,19 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-           <AppKitProvider>
       <body
-        className={` ${geistMono.variable} antialiased`}
-        
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
-      </body></AppKitProvider>
+        <AppKitProvider>
+      
+          <main className="min-h-screen bg-[#0d0c0e]">
+                <Navbar />
+                {/* <FavoritesTicker/> */}
+            {children}
+          </main>
+          <DynamicFooter/>
+        </AppKitProvider>
+      </body>
     </html>
   );
 }

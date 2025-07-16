@@ -232,7 +232,7 @@ const SimpleAtomTrader = ({ className = '' }) => {
       {isConnected && wallet?.walletName === 'MetaMask' && (
         <div className="mb-4 p-3 bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded">
           <p className="text-yellow-400 text-xs">
-            💡 Tip: If signing fails, enable "Show test networks" in MetaMask → Settings → Advanced
+          {`  💡 Tip: If signing fails, enable "Show test networks" in MetaMask → Settings → Advanced`}
           </p>
         </div>
       )}

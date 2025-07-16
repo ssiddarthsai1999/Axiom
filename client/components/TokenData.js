@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, Search, Star } from 'lucide-react';
 import numeral from 'numeral';
-
+import { getTokenLogo } from '@/utils/getTokenLogo';
 const TokenData = ({ 
   marketData, 
   selectedSymbol, 
@@ -143,52 +143,7 @@ const TokenData = ({
     return { amount: changeAmountFormatted, percentage: changePercentage };
   };
 
-  const getTokenLogo = (symbol) => {
- const tokenMapping = {
-   'BTC': 'bitcoin',
-   'ETH': 'ethereum', 
-   'SOL': 'solana',
-   'AVAX': 'avalanche-2',
-   'DOGE': 'dogecoin',
-   'ADA': 'cardano',
-   'DOT': 'polkadot',
-   'MATIC': 'matic-network',
-   'LTC': 'litecoin',
-   'LINK': 'chainlink',
-   'UNI': 'uniswap',
-   'ATOM': 'cosmos',
-   'XRP': 'ripple',
-   'TRX': 'tron',
-   'BCH': 'bitcoin-cash',
-   'ETC': 'ethereum-classic',
-   'FIL': 'filecoin',
-   'APT': 'aptos',
-   'SUI': 'sui',
-   'NEAR': 'near',
-   'ICP': 'internet-computer',
-   'ARB': 'arbitrum',
-   'OP': 'optimism',
-   'HBAR': 'hedera-hashgraph',
-   'VET': 'vechain',
-   'STX': 'stacks',
-   'IMX': 'immutable-x',
-   'INJ': 'injective-protocol',
-   'TIA': 'celestia',
-   'SEI': 'sei-network',
-   'WLD': 'worldcoin-wld',
-   'ORDI': 'ordi',
-   'BLUR': 'blur',
-   'PEPE': 'pepe',
-   'BONK': 'bonk',
-   'WIF': 'dogwifcoin',
-   'MEME': 'memecoin',
-   'FLOKI': 'floki',
-   'SHIB': 'shiba-inu'
- };
- 
- const coinId = tokenMapping[symbol] || symbol.toLowerCase();
- return `https://assets.coingecko.com/coins/images/1/small/${coinId}.png`;
-};
+
 
   if (!marketData) {
     return (
@@ -204,35 +159,213 @@ const TokenData = ({
 
   return (
     <div className={`bg-[#0d0c0e] text-white p-4 font-mono ${className}`}>
-      <div className="flex items-center justify-between gap-10">
+      {/* Mobile Layout */}
+      <div className="block md:hidden">
+        {/* Top Section: Token Info with Price */}
+        <div className="flex items-center justify-between mb-4">
+          {/* Token Selector */}
+          <div className="relative">
+            <button 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
+            >
+              <div className="w-8 h-8  rounded-full flex items-center justify-center">
+                <img 
+                  src={getTokenLogo(marketData.symbol)} 
+                  alt={marketData.symbol}
+                  className="w-8 h-8 rounded-full"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <span className="text-sm font-bold text-white hidden">
+                  {marketData.symbol.charAt(0)}
+                </span>
+              </div>
+              <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
+              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-2 py-1 rounded-md font-[500] text-[14px] leading-[18px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+              <Star 
+                className={`w-4 h-4 cursor-pointer transition-colors ${
+                  favorites.has(marketData.symbol) 
+                    ? 'text-yellow-400 fill-yellow-400' 
+                    : 'text-gray-600 hover:text-yellow-400'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(marketData.symbol, e);
+                }}
+              />
+              <ChevronDown className="w-4 h-4 text-white" />
+            </button>
+            
+            {/* Dropdown - same as desktop but adjusted for mobile */}
+            {isDropdownOpen && (
+              <div className="absolute token-dropdown top-full left-0 mt-1 w-[calc(100vw-2rem)] max-w-[600px] bg-[#0d0c0e] border border-[#1F1E23] rounded-xl shadow-lg z-50">
+                {/* Search Header */}
+                <div className="p-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search name or paste address"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-transparent border font-mono border-[#FAFAFA33] placeholder:text-[#919093] rounded-xl px-10 py-3 text-white text-[14px] font-[500] leading-[100%] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Mobile Token List - Simplified */}
+                <div className="max-h-60 overflow-y-auto">
+                  {filteredTokens.map((token) => (
+                    <button
+                      key={token.symbol}
+                      onClick={() => handleTokenSelect(token.symbol)}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-[#1a1b23] cursor-pointer transition-colors text-sm border-b border-[#1F1E23] last:border-b-0 ${
+                        selectedSymbol === token.symbol ? 'bg-[#1a1b23]' : ''
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Star 
+                          className={`w-4 h-4 cursor-pointer transition-colors ${
+                            favorites.has(token.symbol) 
+                              ? 'text-yellow-400 fill-yellow-400' 
+                              : 'text-gray-600 hover:text-yellow-400'
+                          }`}
+                          onClick={(e) => toggleFavorite(token.symbol, e)}
+                        />
+                        <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
+                          <img 
+                            src={getTokenLogo(token.symbol)} 
+                            alt={token.symbol}
+                            className="w-6 h-6 rounded-full"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                          <span className="text-xs font-bold text-white hidden">
+                            {token.symbol.charAt(0)}
+                          </span>
+                        </div>
+                        <span className="text-white font-medium">{token.symbol}</span>
+                        <span className="text-[#65FB9E] bg-[#65FB9E]/20 px-2 py-0.5 rounded text-xs font-medium">
+                          {token.maxLeverage}x
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[#E5E5E5] font-mono text-sm">
+                          {token.price ? numeral(token.price).format('0,0.000') : 'N/A'}
+                        </div>
+                        <div className={`font-mono text-xs ${
+                          (token.change24h || 0) >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
+                        }`}>
+                          {formatPriceChange(token.price, token.change24h).percentage}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Price and Change */}
+          <div className="text-right">
+            <div className="flex items-center space-x-2">
+              <span className={`font-mono font-[400] text-[12px] leading-[17px] tracking-[0px] ${
+                marketData.change24h >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
+              }`}>
+                {formatPriceChange(marketData.price, marketData.change24h).percentage}
+              </span>
+              <span className="text-[#E5E5E5] font-[500] text-[24px] leading-[30px] tracking-[-0.48px]">
+                {numeral(marketData.price).format('0,0')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Section: Market Data Grid */}
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">Mark Price</div>
+            <div className="font-mono text-[#E5E5E5] font-[400] text-[14px] leading-[20px] tracking-[0px]">
+              {numeral(marketData.price).format('0,0')}
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">Oracle Price</div>
+            <div className="font-mono text-[#E5E5E5] font-[400] text-[14px] leading-[20px] tracking-[0px]">
+              {numeral(marketData.oraclePrice).format('0,0')}
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">24h Volume</div>
+            <div className="font-mono text-[#E5E5E5] font-[400] text-[14px] leading-[20px] tracking-[0px]">
+              {formatVolume(marketData.volume24h)}
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">Open Interest</div>
+            <div className="font-mono text-[#E5E5E5] font-[400] text-[14px] leading-[20px] tracking-[0px]">
+              {formatVolume(marketData.openInterest * marketData.price)}
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">Funding</div>
+            <div className={`font-mono font-[400] text-[14px] leading-[20px] tracking-[0px] ${
+              marketData.funding >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
+            }`}>
+              {formatFunding(marketData.funding)}
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] mb-1">Countdown</div>
+            <div className="font-mono text-[#E5E5E5] font-[400] text-[14px] leading-[20px] tracking-[0px]">
+              {fundingCountdown}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop Layout - Original */}
+      <div className="hidden md:flex flex-wrap items-center 2xl:justify-between gap-10">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
           {/* Token Selector */}
           <div className="relative">
-<button 
-  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-  className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
->
-  <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
-    <span className="text-xs font-bold text-white">
-      {marketData.symbol.charAt(0)}
-    </span>
-  </div>
-  <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
-  <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
-  <Star 
-    className={`w-4 h-4 cursor-pointer transition-colors ${
-      favorites.has(marketData.symbol) 
-        ? 'text-yellow-400 fill-yellow-400' 
-        : 'text-gray-600 hover:text-yellow-400'
-    }`}
-    onClick={(e) => {
-      e.stopPropagation();
-      toggleFavorite(marketData.symbol, e);
-    }}
+            <button 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="flex items-center space-x-2 hover:brightness-150 duration-150 ease-in px-3 py-2 rounded cursor-pointer transition-colors"
+            >
+  <div className="w-6 h-6 rounded-full flex items-center justify-center">
+  <img 
+    src={getTokenLogo(marketData.symbol)} 
+    alt={`${marketData.symbol} logo`}
+    className="w-full h-full rounded-full object-cover"
   />
-  <ChevronDown className="w-4 h-4 text-white ml-3" />
-</button>
+</div>
+              <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
+              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+              <Star 
+                className={`w-4 h-4 cursor-pointer transition-colors ${
+                  favorites.has(marketData.symbol) 
+                    ? 'text-yellow-400 fill-yellow-400' 
+                    : 'text-gray-600 hover:text-yellow-400'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(marketData.symbol, e);
+                }}
+              />
+              <ChevronDown className="w-4 h-4 text-white ml-3" />
+            </button>
             
             {/* Enhanced Dropdown */}
             {isDropdownOpen && (
@@ -276,36 +409,36 @@ const TokenData = ({
                       }`}
                     >
                       {/* Symbol with Icon, Star and Leverage */}
-  <div className="w-full min-w-[150px] flex items-center  space-x-3">
- <Star 
-   className={`min-w-4 min-h-4 w-4 h-4 cursor-pointer transition-colors ${
-     favorites.has(token.symbol) 
-       ? 'text-yellow-400 fill-yellow-400' 
-       : 'text-gray-600 hover:text-yellow-400'
-   }`}
-   onClick={(e) => toggleFavorite(token.symbol, e)}
- />
- <div className="min-w-6 min-h-6 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs font-bold text-white">
-   <img 
-     src={getTokenLogo(token.symbol)} 
-     alt={token.symbol}
-     className="w-6 h-6 rounded-full"
-     onError={(e) => {
-       e.target.style.display = 'none';
-       e.target.nextSibling.style.display = 'flex';
-     }}
-   />
-   <span className="text-xs font-bold text-white hidden">
-     {token.symbol.charAt(0)}
-   </span>
- </div>
- <div className="flex items-center space-x-2">
-   <span className="text-white font-medium">{token.symbol}</span>
-   <span className="text-[#65FB9E] bg-[#65FB9E]/20 px-2 py-0.5 rounded text-xs font-medium">
-     {token.maxLeverage}x
-   </span>
- </div>
-</div>
+                      <div className="w-full min-w-[150px] flex items-center  space-x-3">
+                        <Star 
+                          className={`min-w-4 min-h-4 w-4 h-4 cursor-pointer transition-colors ${
+                            favorites.has(token.symbol) 
+                              ? 'text-yellow-400 fill-yellow-400' 
+                              : 'text-gray-600 hover:text-yellow-400'
+                          }`}
+                          onClick={(e) => toggleFavorite(token.symbol, e)}
+                        />
+                        <div className="min-w-6 min-h-6 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs font-bold text-white">
+                          <img 
+                            src={getTokenLogo(token.symbol)} 
+                            alt={token.symbol}
+                            className="w-6 h-6 rounded-full"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                          <span className="text-xs font-bold text-white hidden">
+                            {token.symbol.charAt(0)}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-white font-medium">{token.symbol}</span>
+                          <span className="text-[#65FB9E] bg-[#65FB9E]/20 px-2 py-0.5 rounded text-xs font-medium">
+                            {token.maxLeverage}x
+                          </span>
+                        </div>
+                      </div>
 
                       {/* Last Price */}
                       <div className="w-full text-center text-[#E5E5E5] font-mono text-[12px] font-[400] leading-[24px] ">
@@ -338,8 +471,6 @@ const TokenData = ({
                     </button>
                   ))}
                 </div>
-
-
               </div>
             )}
           </div>
