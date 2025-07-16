@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgent, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, createAgentWallet } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -44,7 +44,43 @@ const TradingPanel = ({
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
-  
+  // Replace agentWallet state logic with sessionStorage-based agent wallet
+  // Instead of useState for agentWallet, just call getOrCreateSessionAgentWallet() when needed
+  // In handleTrade, before placing an order:
+  //   const agentWallet = getOrCreateSessionAgentWallet();
+  //   await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
+  //   await placeOrderWithAgentWallet(agentWallet, orderParams, true);
+  // Remove any legacy agent wallet state, approval, or creation logic
+
+  // Generate agent wallet on mount (or first connect)
+  useEffect(() => {
+    if (!wallet || !wallet.signer) {
+      const wallet = getOrCreateSessionAgentWallet();
+      setWallet({
+        address: wallet.address,
+        signer: wallet.signer,
+        provider: wallet.provider,
+        walletClient: wallet.walletClient
+      });
+    }
+  }, [wallet]);
+
+  // Update ensureAgentWalletApproved to always check the current agent wallet in sessionStorage
+  // const ensureAgentWalletApproved = async () => {
+  //   if (!wallet || !wallet.signer) return false;
+  //   try {
+  //     // Always get the current agent wallet from sessionStorage
+  //     const agentKey = sessionStorage.getItem('hl_agent_wallet');
+  //     if (!agentKey) throw new Error('No agent wallet found in sessionStorage');
+  //     const agentWallet = new ethers.Wallet(agentKey);
+  //     await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
+  //     return true;
+  //   } catch (e) {
+  //     setOrderError('Failed to approve agent wallet: ' + (e.message || e));
+  //     return false;
+  //   }
+  // };
+
   const handleLeverageClick = () => {
     setTempLeverage(leverage);
     setShowLeverageModal(true);
@@ -342,207 +378,114 @@ const TradingPanel = ({
     }
   };
 
-  // UPDATED TRADE HANDLER WITH CONVERTED SIGNING UTILS
-// BULLETPROOF TRADE HANDLER with new signing
-const handleTrade = async () => {
-  if (!isConnected) {
-    await connectWallet();
-    return;
-  }
-
-  if (!wallet || !wallet.signer) {
-    setOrderError('Wallet not properly connected. Please try reconnecting.');
-    return;
-  }
-
-  if (!assetInfo) {
-    setOrderError('Asset information not loaded. Please wait and try again.');
-    return;
-  }
-
-  try {
-    // Clear previous errors
-    setOrderError(null);
-    setOrderSuccess(null);
-    
-    // Verify wallet is still valid
-    const signerAddress = (await wallet.signer.getAddress()).toLowerCase();
-    const expectedAddress = address.toLowerCase();
-    
-    if (signerAddress !== expectedAddress) {
-      setOrderError('Wallet address mismatch. Please reconnect.');
-      await createSigner();
+  // UPDATED TRADE HANDLER WITH AGENT WALLET
+  const handleTrade = async () => {
+    if (!isConnected) {
+      await connectWallet();
       return;
     }
 
-    // Check onboarding status
-    if (!isOnboarded) {
-      const onboarded = await checkOnboardingStatus();
-      if (!onboarded) {
-        setOrderError(
-          'Your wallet is not onboarded to Hyperliquid. ' +
-          'Please visit https://app.hyperliquid.xyz to deposit USDC and enable trading.'
-        );
-        window.open('https://app.hyperliquid.xyz/trade', '_blank');
+    if (!wallet || !wallet.signer) {
+      setOrderError('Wallet not properly connected. Please try reconnecting.');
+      return;
+    }
+
+    if (!assetInfo) {
+      setOrderError('Asset information not loaded. Please wait and try again.');
+      return;
+    }
+
+    try {
+      setOrderError(null);
+      setOrderSuccess(null);
+
+      // Get agent wallet from sessionStorage and ensure it's approved
+      // const agentWallet = getOrCreateSessionAgentWallet();
+      // await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
+
+      // CRITICAL: Validate all order parameters
+      const orderSize = parseFloat(buyAmount);
+      if (!buyAmount || orderSize <= 0) {
+        setOrderError('Please enter a valid order size');
         return;
       }
-    }
-
-    // CRITICAL: Validate all order parameters
-    const orderSize = parseFloat(buyAmount);
-    if (!buyAmount || orderSize <= 0) {
-      setOrderError('Please enter a valid order size');
-      return;
-    }
-
-    // Check minimum size based on asset decimals
-    const minSize = Math.pow(10, -assetInfo.szDecimals);
-    if (orderSize < minSize) {
-      setOrderError(`Minimum order size is ${minSize} ${selectedSymbol}`);
-      return;
-    }
-
-    // Validate limit price for limit orders
-    if (orderType === 'Limit') {
-      const limitPriceValue = parseFloat(limitPrice);
-      if (!limitPrice || limitPriceValue <= 0) {
-        setOrderError('Please enter a valid limit price for limit orders');
+      const minSize = Math.pow(10, -assetInfo.szDecimals);
+      if (orderSize < minSize) {
+        setOrderError(`Minimum order size is ${minSize} ${selectedSymbol}`);
         return;
       }
-    }
-
-    // Ensure market data is available
-    if (!marketData || !marketData.price) {
-      setOrderError('Market data not available. Please try again.');
-      return;
-    }
-
-    console.log('🚀 Starting bulletproof order placement...');
-    console.log('📋 Order details:', {
-      symbol: selectedSymbol,
-      side: side,
-      size: orderSize,
-      orderType: orderType,
-      limitPrice: limitPrice,
-      assetIndex: assetInfo.index,
-      isSpot: assetInfo.isSpot
-    });
-
-    setIsPlacingOrder(true);
-
-    // Prepare order parameters for @nktkas/hyperliquid SDK
-    const orderParams = {
-      symbol: selectedSymbol,
-      isBuy: side === 'Long',
-      size: orderSize,
-      price: orderType === 'Limit' ? parseFloat(limitPrice) : 0,
-      orderType: orderType.toLowerCase(), // 'market' or 'limit'
-      timeInForce: 'GTC',
-      reduceOnly: false,
-      cloid: null // Optional client order ID
-    };
-
-    console.log('📤 Sending order with params:', orderParams);
-
-    // Use the Agent Wallet approach (like Hyperliquid's official app)
-    const result = await placeOrderWithAgent(
-      wallet.signer,
-      orderParams,
-      true // isMainnet = true
-    );
-
-    console.log('📥 Order result:', result);
-
-    // Handle response
-    if (result && result.status === 'ok') {
-      const orderData = result.response?.data;
-      
-      if (orderData?.statuses && orderData.statuses.length > 0) {
-        const status = orderData.statuses[0];
-        
-        if (status.filled) {
-          // Order was filled
-          setOrderSuccess(
-            `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
-          );
-        } else if (status.resting) {
-          // Order is resting on the book
-          setOrderSuccess(
-            `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully! Order ID: ${status.resting.oid}`
-          );
+      if (orderType === 'Limit') {
+        const limitPriceValue = parseFloat(limitPrice);
+        if (!limitPrice || limitPriceValue <= 0) {
+          setOrderError('Please enter a valid limit price for limit orders');
+          return;
+        }
+      }
+      if (!marketData || !marketData.price) {
+        setOrderError('Market data not available. Please try again.');
+        return;
+      }
+      setIsPlacingOrder(true);
+      const orderParams = {
+        symbol: selectedSymbol,
+        isBuy: side === 'Long',
+        size: orderSize,
+        price: orderType === 'Limit' ? parseFloat(limitPrice) : marketData.price,
+        orderType: orderType.toLowerCase(),
+        timeInForce: 'GTC',
+        reduceOnly: false,
+        cloid: null
+      };
+      // Place order with agent wallet
+      const result = await placeOrderWithAgentWallet(
+        orderParams,
+        true // isMainnet
+      );
+      // ... handle result as before ...
+      if (result && result.status === 'ok') {
+        const orderData = result.response?.data;
+        if (orderData?.statuses && orderData.statuses.length > 0) {
+          const status = orderData.statuses[0];
+          if (status.filled) {
+            setOrderSuccess(
+              `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
+            );
+          } else if (status.resting) {
+            setOrderSuccess(
+              `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully! Order ID: ${status.resting.oid}`
+            );
+          } else {
+            setOrderSuccess(
+              `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+            );
+          }
         } else {
-          // Order was placed successfully
           setOrderSuccess(
             `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
           );
         }
+        setBuyAmount('0.0');
+        setLimitPrice('');
+        setPercentage(0);
+        setTimeout(() => {
+          checkOnboardingStatus();
+        }, 2000);
       } else {
-        setOrderSuccess(
-          `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
-        );
+        let errorMessage = 'Failed to place order. Please try again.';
+        if (result.status === 'err') {
+          errorMessage = result.response || errorMessage;
+        } else if (result.response?.type === 'error') {
+          errorMessage = result.response.data || errorMessage;
+        }
+        setOrderError(errorMessage);
       }
-      
-      // Reset form on success
-      setBuyAmount('0.0');
-      setLimitPrice('');
-      setPercentage(0);
-      
-      // Refresh account data
-      setTimeout(() => {
-        checkOnboardingStatus();
-      }, 2000);
-      
-    } else {
-      // Handle API errors
-      let errorMessage = 'Failed to place order. Please try again.';
-      
-      if (result.status === 'err') {
-        errorMessage = result.response || errorMessage;
-      } else if (result.response?.type === 'error') {
-        errorMessage = result.response.data || errorMessage;
-      }
-      
-      console.error('❌ Order API error:', errorMessage);
+    } catch (orderError) {
+      let errorMessage = orderError.message || 'Failed to place order. Please try again.';
       setOrderError(errorMessage);
+    } finally {
+      setIsPlacingOrder(false);
     }
-    
-  } catch (orderError) {
-    console.error('❌ Order placement exception:', orderError);
-    
-    let errorMessage = orderError.message || 'Failed to place order. Please try again.';
-    
-    // Parse specific error types
-    if (errorMessage.includes('User or API Wallet') && errorMessage.includes('does not exist')) {
-      errorMessage = 'Signature verification failed. This usually means:\n' +
-                   '• Your wallet is not onboarded to Hyperliquid\n' +
-                   '• There was a signing error\n' +
-                   'Please try reconnecting your wallet or visit app.hyperliquid.xyz to onboard.';
-    } else if (errorMessage.includes('Must deposit before performing actions')) {
-      errorMessage = 'You need to deposit USDC to Hyperliquid before trading. Visit app.hyperliquid.xyz to deposit.';
-    } else if (errorMessage.includes('Asset information not loaded')) {
-      errorMessage = 'Asset information is still loading. Please wait a moment and try again.';
-    } else if (errorMessage.includes('Network')) {
-      errorMessage = 'Network error. Please check your connection and try again.';
-    } else if (errorMessage.includes('User rejected')) {
-      errorMessage = 'Transaction was rejected. Please try again.';
-    } else if (errorMessage.includes('Invalid size')) {
-      errorMessage = `Invalid order size. Must be at least ${minSize} ${selectedSymbol} with max ${assetInfo.szDecimals} decimal places.`;
-    } else if (errorMessage.includes('chainId') || errorMessage.includes('1337') || errorMessage.includes('42161')) {
-      errorMessage = 'Chain ID mismatch detected. Hyperliquid requires chain ID 1337 for signing, but your wallet is on Arbitrum (42161).\n\n' +
-                   'To fix this:\n' +
-                   '1. Enable MetaMask Developer Mode: Settings > Advanced > Developer Mode\n' +
-                   '2. Or use a different wallet like Rainbow or Frame\n' +
-                   '3. Or try switching to a different network temporarily';
-      
-      // Show helper instructions
-      enableMetaMaskDeveloperMode();
-    }
-    
-    setOrderError(errorMessage);
-  } finally {
-    setIsPlacingOrder(false);
-  }
-};
+  };
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
@@ -982,11 +925,14 @@ const handleTrade = async () => {
             <button
               onClick={async () => {
                 try {
-                  await createAgentWallet(wallet.signer, true);
-                  alert('✅ Agent Wallet created successfully! You can now trade without chain ID issues.');
+                  // Generate a new agent wallet using the already imported ethers
+                  const agentWallet = await getOrCreateSessionAgentWallet()
+                  // Approve the agent wallet with the main wallet
+                  await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
+                  alert('✅ New Agent Wallet created, saved, and approved!');
                 } catch (error) {
-                  console.error('❌ Error creating agent wallet:', error);
-                  alert('❌ Failed to create agent wallet. Please try again or visit app.hyperliquid.xyz');
+                  console.error('❌ Error creating/approving agent wallet:', error);
+                  alert('❌ Failed to create/approve agent wallet. Please try again or visit app.hyperliquid.xyz');
                 }
               }}
               className="w-full py-2 px-4 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors cursor-pointer"

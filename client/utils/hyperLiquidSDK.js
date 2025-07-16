@@ -1,6 +1,8 @@
 // utils/hyperLiquidSDK.js - Using @nktkas/hyperliquid SDK
 import { ExchangeClient, InfoClient, HttpTransport } from '@nktkas/hyperliquid';
+import { signUserSignedAction, userSignedActionEip712Types } from "@nktkas/hyperliquid/signing";
 import { ethers } from "ethers";
+import * as hl from "@nktkas/hyperliquid";
 
 /**
  * Custom signer wrapper for the @nktkas/hyperliquid SDK
@@ -178,50 +180,273 @@ Note: The app is now configured to use Arbitrum chain ID (42161) which should ma
 }
 
 /**
- * Create an Agent Wallet for Hyperliquid (like the official app)
+ * Generate a new agent wallet (in-memory only, not persisted)
  */
-export async function createAgentWallet(signer, isMainnet = true) {
+export function generateAgentWallet() {
+  // Generate a new random wallet
+  const wallet = ethers.Wallet.createRandom();
+  console.log('🤖 Generated new agent wallet:', wallet.address);
+  return wallet;
+}
+
+// /**
+//  * Approve the agent wallet with the main wallet (on-chain action)
+//  *
+//  * @param {ethers.Signer} mainSigner - The main wallet signer (MetaMask, etc)
+//  * @param {string} agentAddress - The address of the agent wallet
+//  * @param {boolean} isMainnet - Whether to use mainnet or testnet
+//  * @param {string} [agentName] - Optional name for the agent wallet
+//  * @returns {Promise<any>} The result of the approval transaction
+//  */
+// export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = true, agentName = undefined) {
+//   // Prepare the ApproveAgent action
+//   const userAddress = await mainSigner.getAddress();
+//   console.log('🔐 Approving agent wallet:', agentAddress, 'for user:', userAddress);
+  
+//   const nonce = Date.now();
+  
+//   // Use the exact domain format that Hyperliquid expects
+//   const domain = {
+//     name: 'Exchange',
+//     version: '1',
+//     chainId: '0xa4b1', // Arbitrum mainnet
+//     verifyingContract: '0x0000000000000000000000000000000000000000',
+//   };
+  
+//   const types = {
+//     Exchange: [
+//       { name: 'action', type: 'bytes' },
+//       { name: 'nonce', type: 'uint64' },
+//       { name: 'signatureChainId', type: 'uint256' },
+//     ],
+//   };
+  
+//   const action = {
+//     type: 'approveAgent',
+//     hyperliquidChain: isMainnet ? 'Mainnet' : 'Testnet',
+//     signatureChainId: '0xa4b1',
+//     agentAddress,
+//     agentName,
+//     nonce,
+//   };
+  
+//   // Encode action using msgpack
+//   const { encode } = await import('@msgpack/msgpack');
+//   const actionBytes = encode(action);
+  
+//   console.log('📦 Encoded action bytes:', actionBytes);
+//   console.log('📦 Action bytes length:', actionBytes.length);
+  
+//   const dataToSign = {
+//     action: actionBytes,
+//     nonce: BigInt(nonce),
+//     signatureChainId: BigInt('0xa4b1'),
+//   };
+  
+//   console.log('📋 Signing data:', {
+//     domain,
+//     types,
+//     dataToSign,
+//     userAddress
+//   });
+  
+//   // Sign with main wallet
+//   const signature = await mainSigner.signTypedData(domain, types, dataToSign);
+//   console.log('🔐 Raw signature:', signature);
+  
+//   // Parse signature components correctly
+//   const r = signature.slice(0, 66);
+//   const s = '0x' + signature.slice(66, 130);
+//   const v = parseInt(signature.slice(130, 132), 16);
+  
+//   console.log('🔐 Parsed signature:', { r, s, v });
+  
+//   // Verify signature recovery (optional but helpful for debugging)
+//   try {
+//     const { ethers } = await import('ethers');
+//     const recoveredAddress = ethers.verifyTypedData(domain, types, dataToSign, signature);
+//     console.log('🔍 Recovered address from signature:', recoveredAddress);
+//     console.log('🔍 Expected address:', userAddress);
+//     console.log('🔍 Addresses match:', recoveredAddress.toLowerCase() === userAddress.toLowerCase());
+//   } catch (recoveryError) {
+//     console.warn('⚠️ Could not verify signature recovery:', recoveryError.message);
+//   }
+  
+//   // Prepare request body
+//   const requestBody = {
+//     action,
+//     nonce,
+//     signature: {
+//       v,
+//       r,
+//       s,
+//     },
+//   };
+  
+//   console.log('📦 Request body:', JSON.stringify(requestBody, null, 2));
+  
+//   // Send to API
+//   const apiUrl = isMainnet
+//     ? 'https://api.hyperliquid.xyz/exchange'
+//     : 'https://api.testnet.hyperliquid-testnet.xyz/exchange';
+    
+//   const response = await fetch(apiUrl, {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify(requestBody),
+//   });
+  
+//   if (!response.ok) {
+//     const errorText = await response.text();
+//     throw new Error(`ApproveAgent failed: ${response.status} - ${errorText}`);
+//   }
+  
+//   const result = await response.json();
+//   console.log('✅ Agent wallet approved:', result);
+//   return result;
+// }
+
+
+export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = true, agentName) {
+  const nonce = Date.now();
+  console.log('🔐 Approving agent wallet:', agentAddress, 'for user:', mainSigner.getAddress());
+  const action = {
+    type: "approveAgent",
+    signatureChainId: "0xa4b1", // Arbitrum mainnet
+    hyperliquidChain: "Mainnet",
+    agentAddress,
+    agentName,
+    nonce,
+  };
+  console.log('🔐 Action:', action);
+  const chainId = parseInt(action.signatureChainId, 16); // 42161
+
+  const signature = await signUserSignedAction({
+    wallet: mainSigner,
+    action,
+    types: userSignedActionEip712Types.approveAgent,
+    chainId,
+  });
+  console.log('🔐 Signature:', signature);
+  const resp = await fetch("https://api.hyperliquid.xyz/exchange", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, signature, nonce }),
+  });
+  console.log('🔐 Response:', resp);
+  if (!resp.ok) {
+    throw new Error(`Approval failed: ${await resp.text()}`);
+  }
+
+  return resp.json();
+}
+
+/**
+ * Get or create the session agent wallet (persisted in sessionStorage for the session)
+ * @returns {ethers.Wallet}
+ */
+export function getOrCreateSessionAgentWallet() {
+  if (typeof window === 'undefined') throw new Error('Not in browser environment');
+  let agentKey = sessionStorage.getItem('hl_agent_wallet');
+  const createdAt = parseInt(sessionStorage.getItem('agentCreatedAt') || '0');
+  const isExpired = Date.now() - createdAt > 6 * 60 * 60 * 1000;
+  console.log('🔑 isExpired:', isExpired);
+  // return new ethers.Wallet(agentKey);
+  if (isExpired) {
+    sessionStorage.removeItem('hl_agent_wallet');
+    sessionStorage.removeItem('agentCreatedAt');
+    agentKey = null;
+  }
+  let agentWallet;
+  if (agentKey) {
+    agentWallet = new ethers.Wallet(agentKey);
+    console.log('🔑 Loaded agent wallet from sessionStorage:', agentWallet.address);
+  } else {
+    agentWallet = ethers.Wallet.createRandom();
+    sessionStorage.setItem('hl_agent_wallet', agentWallet.privateKey);
+    sessionStorage.setItem('agentCreatedAt', Date.now().toString());
+    console.log('🔑 Generated and saved new agent wallet:', agentWallet.address);
+  }
+  return agentWallet;
+}
+
+/**
+ * Check if the agent wallet is already approved for the main wallet
+ * @param {ethers.Signer} mainSigner
+ * @param {ethers.Wallet} agentWallet
+ * @param {boolean} isMainnet
+ * @returns {Promise<boolean>}
+ */
+export async function isAgentWalletApproved(mainSigner, agentWallet, isMainnet = true) {
+  const agents = await getAgentWallets(mainSigner, isMainnet);
+  if (agents && agents.agents && Array.isArray(agents.agents)) {
+    return agents.agents.some(a => a.address?.toLowerCase() === agentWallet.address.toLowerCase());
+  }
+  return false;
+}
+
+/**
+ * Approve the agent wallet if not already approved
+ * @param {ethers.Signer} mainSigner
+ * @param {ethers.Wallet} agentWallet
+ * @param {boolean} isMainnet
+ * @param {string} [agentName]
+ * @returns {Promise<void>}
+ */
+export async function ensureAgentWalletApproved(mainSigner, agentWallet, isMainnet = true, agentName = undefined) {
+  const approved = await isAgentWalletApproved(mainSigner, agentWallet, isMainnet);
+  if (approved) {
+    console.log('✅ Agent wallet already approved:', agentWallet.address);
+    return;
+  }
+  await approveAgentWallet(mainSigner, agentWallet.address, isMainnet, agentName);
+  console.log('✅ Agent wallet approved:', agentWallet.address);
+}
+
+/**
+ * Place an order using the agent wallet (API wallet)
+ *
+ * @param {ethers.Wallet} agentWallet - The agent wallet (must be approved)
+ * @param {object} orderParams - The order parameters (same as before)
+ * @param {boolean} isMainnet - Whether to use mainnet or testnet
+ * @returns {Promise<any>} The result of the order
+ */
+export async function placeOrderWithAgentWallet(orderParams, isMainnet = true) {
+  const agentWallet = getOrCreateSessionAgentWallet();
+  console.log(agentWallet.privateKey, 'agentWallet -----')
+  console.log(agentWallet.address, 'agentWallet address -----')
+  console.log('🚀 Starting Agent Wallet order placement...');
+  console.log('📋 Order params:', orderParams);
+  // return
+  const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
+  // Use the Wallet object, not the private key string!
+  const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+  // Convert orderParams to SDK format if needed
+  // orderParams: { symbol, isBuy, size, price, orderType, ... }
+  const assetId = getAssetId(orderParams.symbol);
+  const orderRequest = {
+    orders: [{
+      a: assetId,
+      b: orderParams.isBuy,
+      p: orderParams.price.toString(),
+      s: orderParams.size.toString(),
+      r: false,
+      t: {
+        limit: {
+          // tif: orderParams.orderType === 'market' ? 'Ioc' : 'Gtc',
+          tif: 'Gtc',
+        },
+      },
+    }],
+    grouping: 'na',
+  };
+  console.log(orderRequest, 'orderRequest -----')
   try {
-    console.log('🤖 Creating Agent Wallet for Hyperliquid...');
-    
-    // Initialize SDK
-    const sdk = await initializeHyperliquidSDK(signer, isMainnet);
-    
-    // Get user address
-    const userAddress = await signer.getAddress();
-    
-    // Create agent wallet with a unique name
-    const timestamp = Date.now();
-    const agentName = `Agent-${userAddress.slice(0, 8)}-${timestamp}`;
-    
-    console.log('📋 Creating agent with name:', agentName);
-    
-    // Approve agent (this creates the agent wallet)
-    const result = await sdk.approveAgent({
-      agentAddress: userAddress,
-      agentName: agentName,
-    });
-    
-    console.log('✅ Agent wallet created:', result);
+    const result = await exchClient.order(orderRequest);
+    console.log('✅ Order placed with agent wallet:', result);
     return result;
-    
   } catch (error) {
-    console.error('❌ Error creating agent wallet:', error);
-    
-    // If the error is about using existing user address, try to get existing agents
-    if (error.message?.includes('Cannot use existing user address as agent')) {
-      console.log('🔄 User already has agent wallets, checking existing ones...');
-      
-      try {
-        const existingAgents = await getAgentWallets(signer, isMainnet);
-        console.log('✅ Found existing agent wallets:', existingAgents);
-        return existingAgents;
-      } catch (agentError) {
-        console.error('❌ Error getting existing agents:', agentError);
-        throw new Error('You already have agent wallets. Please try placing an order directly.');
-      }
-    }
-    
+    console.error('❌ Error placing order:', error);
     throw error;
   }
 }
@@ -233,9 +458,9 @@ export async function getAgentWallets(signer, isMainnet = true) {
   try {
     console.log('🔍 Getting agent wallets...');
     
-    // Get wallet address
-    const customSigner = new CustomSigner(signer);
-    const address = await customSigner.getAddress();
+    // Get wallet address directly from signer
+    const address = await signer.getAddress();
+    console.log('🔍 Getting agent wallets for address:', address);
     
     // Use InfoClient for read-only operations
     const infoClient = initializeInfoClient(isMainnet);
@@ -243,478 +468,11 @@ export async function getAgentWallets(signer, isMainnet = true) {
     // Get user details (includes agent information)
     const userDetails = await infoClient.userDetails({ user: address });
     
-    console.log('✅ Agent wallets:', userDetails);
+    console.log('✅ Agent wallets for', address, ':', userDetails);
     return userDetails;
     
   } catch (error) {
     console.error('❌ Error getting agent wallets:', error);
-    throw error;
-  }
-}
-
-/**
- * Create a completely fresh SDK instance with forced address verification
- */
-async function createFreshSDKInstance(signer, isMainnet = true) {
-  console.log('🔄 Creating completely fresh SDK instance...');
-  
-  // Get the user address first
-  const userAddress = await signer.getAddress();
-  console.log('💳 User address for fresh SDK:', userAddress);
-  
-  // Clear ALL potential cached data
-  if (typeof window !== 'undefined') {
-    console.log('🧹 Clearing ALL cached data...');
-    
-    // Clear localStorage
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('hyperliquid') || key.includes('wallet') || key.includes('address') || key.includes('sdk'))) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => {
-      console.log('🗑️ Removing localStorage key:', key);
-      localStorage.removeItem(key);
-    });
-    
-    // Clear sessionStorage
-    const sessionKeysToRemove = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key && (key.includes('hyperliquid') || key.includes('wallet') || key.includes('address') || key.includes('sdk'))) {
-        sessionKeysToRemove.push(key);
-      }
-    }
-    sessionKeysToRemove.forEach(key => {
-      console.log('🗑️ Removing sessionStorage key:', key);
-      sessionStorage.removeItem(key);
-    });
-    
-    // Clear global variables
-    const globalVars = ['hyperliquidSDK', 'hyperliquidWallet', 'hyperliquidAddress', 'sdkInstance'];
-    globalVars.forEach(varName => {
-      if (window[varName]) {
-        console.log('🗑️ Clearing global variable:', varName);
-        delete window[varName];
-      }
-    });
-  }
-  
-  // Create a completely new custom signer
-  const customSigner = new CustomSigner(signer);
-  
-  // Verify the signer address
-  const signerAddress = await customSigner.getAddress();
-  if (signerAddress.toLowerCase() !== userAddress.toLowerCase()) {
-    throw new Error(`Fresh signer address mismatch! Expected ${userAddress} but got ${signerAddress}`);
-  }
-  
-  // Create a new transport instance
-  const transport = new HttpTransport({
-    isTestnet: !isMainnet,
-  });
-  
-  // Create SDK with explicit configuration
-  const sdkConfig = {
-    transport,
-    wallet: customSigner,
-    signatureChainId: "0xa4b1", // Chain ID 42161 in hex (Arbitrum mainnet)
-  };
-  
-  console.log('🔧 Fresh SDK config:', sdkConfig);
-  
-  const sdk = new ExchangeClient(sdkConfig);
-  
-  // Immediately verify the SDK address
-  const sdkAddress = await sdk.wallet.getAddress();
-  console.log('🔍 Fresh SDK address:', sdkAddress);
-  
-  if (sdkAddress.toLowerCase() !== userAddress.toLowerCase()) {
-    throw new Error(`Fresh SDK address mismatch! Expected ${userAddress} but got ${sdkAddress}`);
-  }
-  
-  console.log('✅ Fresh SDK instance created successfully');
-  return sdk;
-}
-
-/**
- * Fallback: Manual API request when SDK fails
- */
-async function placeOrderManually(signer, orderParams, isMainnet = true) {
-  console.log('🔄 Falling back to manual API request...');
-
-  try {
-    const userAddress = await signer.getAddress();
-    console.log('👤 Manual order - User address:', userAddress);
-
-    // Get asset ID
-    const assetId = getAssetId(orderParams.symbol);
-    console.log('🔍 Asset ID for', orderParams.symbol, ':', assetId);
-
-    // --- Fetch actual market price for market orders ---
-    let price = orderParams.price;
-    if (orderParams.orderType === 'market' && (!price || price === '0' || price === 0 || price === '999999')) {
-      try {
-        const infoClient = initializeInfoClient(isMainnet);
-        const l2 = await infoClient.l2Book({ coin: orderParams.symbol });
-        if (orderParams.isBuy) {
-          // For buy, use best ask
-          price = l2.asks && l2.asks.length > 0 ? l2.asks[0][0] : '1';
-        } else {
-          // For sell, use best bid
-          price = l2.bids && l2.bids.length > 0 ? l2.bids[0][0] : '1';
-        }
-        console.log('💰 Using market price for market order:', price);
-      } catch (e) {
-        console.warn('⚠️ Could not fetch market price, using fallback price 1');
-        price = '1';
-      }
-    }
-
-    // --- Use FrontendMarket TIF for market orders ---
-    const tif = orderParams.orderType === 'market' ? 'FrontendMarket' : 'Gtc';
-
-    // --- Create the action for signing (match official frontend) ---
-    const action = {
-      type: 'order',
-      orders: [{
-        a: assetId, // asset index
-        b: orderParams.isBuy, // is buy
-        p: price.toString(), // use actual price for all orders
-        s: orderParams.size.toString(), // size as string
-        r: false, // reduce only
-        t: {
-          limit: {
-            tif: tif
-          }
-        }
-      }],
-      grouping: 'na'
-    };
-
-    console.log('📋 Manual order action:', JSON.stringify(action, null, 2));
-
-    // Generate nonce
-    const nonce = Date.now();
-
-    // Import msgpack for action encoding
-    const { encode } = await import('@msgpack/msgpack');
-
-    // Encode the action using msgpack
-    const actionBytes = encode(action);
-    console.log('📦 Encoded action bytes length:', actionBytes.length);
-
-    // Create the data to sign with proper EIP-712 structure
-    const domain = {
-      name: 'Exchange',
-      version: '1',
-      chainId: '0xa4b1', // Chain ID 42161 in hex (Arbitrum mainnet)
-      verifyingContract: '0x0000000000000000000000000000000000000000'
-    };
-
-    const types = {
-      Exchange: [
-        { name: 'action', type: 'bytes' },
-        { name: 'nonce', type: 'uint64' },
-        { name: 'signatureChainId', type: 'uint256' }
-      ]
-    };
-
-    const dataToSign = {
-      action: actionBytes, // should be Uint8Array, not hex string
-      nonce: BigInt(nonce),
-      signatureChainId: BigInt('0xa4b1')
-    };
-
-    console.log('🔐 Signing manual order with EIP-712...');
-    console.log('📋 Domain:', domain);
-    console.log('📋 Types:', types);
-    console.log('📋 Data to sign:', {
-      action: `0x${Buffer.from(actionBytes).toString('hex')}`,
-      nonce: dataToSign.nonce.toString(),
-      signatureChainId: dataToSign.signatureChainId.toString()
-    });
-
-    const signature = await signer.signTypedData(domain, types, dataToSign);
-    console.log('✅ Manual order signed');
-
-    // --- Build request body to match official frontend ---
-    const requestBody = {
-      action,
-      isFrontend: true,
-      nonce: nonce, // Send as number, not string (as per API docs)
-      signature: {
-        v: parseInt(signature.slice(130, 132), 16),
-        r: signature.slice(0, 66),
-        s: '0x' + signature.slice(66, 130)
-      },
-      vaultAddress: null
-      // Do NOT include signatureChainId at top level
-    };
-
-    console.log('📤 Sending manual API request...');
-    console.log('📋 Request body:', JSON.stringify(requestBody, null, 2));
-
-    // Make the API request directly
-    const apiUrl = isMainnet
-      ? 'https://api.hyperliquid.xyz/exchange'
-      : 'https://api.testnet.hyperliquid-testnet.xyz/exchange';
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Manual API request failed:', response.status, errorText);
-      throw new Error(`Manual API request failed: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('✅ Manual order response:', result);
-    return result;
-
-  } catch (error) {
-    console.error('❌ Manual order placement failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Place order directly without agent wallet
- */
-export async function placeOrderDirect(signer, orderParams, isMainnet = true) {
-  try {
-    console.log('🚀 Starting direct order placement...');
-    console.log('📋 Order params:', orderParams);
-    
-    // Validate parameters
-    if (!orderParams.symbol) {
-      throw new Error('Symbol is required');
-    }
-    
-    if (!orderParams.size || orderParams.size <= 0) {
-      throw new Error('Valid size is required');
-    }
-    
-    if (!orderParams.hasOwnProperty('isBuy')) {
-      throw new Error('isBuy flag is required');
-    }
-    
-    // Get user address first to verify we're using the correct one
-    const userAddress = await signer.getAddress();
-    console.log('👤 Direct order - User address:', userAddress);
-    
-    // Clear any global state that might be causing issues
-    console.log('🧹 Clearing global state...');
-    if (typeof window !== 'undefined') {
-      // Clear any global variables that might be cached
-      if (window.hyperliquidSDK) {
-        console.log('🗑️ Clearing cached SDK instance');
-        delete window.hyperliquidSDK;
-      }
-      if (window.hyperliquidWallet) {
-        console.log('🗑️ Clearing cached wallet');
-        delete window.hyperliquidWallet;
-      }
-      
-      // Clear any other potential cached data
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('hyperliquid') || key.includes('wallet') || key.includes('address'))) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(key => {
-        console.log('🗑️ Removing cached key:', key);
-        localStorage.removeItem(key);
-      });
-    }
-    
-    // Try SDK first
-    try {
-      // Force a completely fresh SDK instance
-      console.log('🔄 Creating fresh SDK instance...');
-      const sdk = await createFreshSDKInstance(signer, isMainnet);
-      
-      // Triple-check the SDK is using the correct address
-      try {
-        const sdkAddress = await sdk.wallet.getAddress();
-        console.log('🔍 Final SDK wallet address check:', sdkAddress);
-        if (sdkAddress.toLowerCase() !== userAddress.toLowerCase()) {
-          throw new Error(
-            `SDK initialization failed: Address mismatch. Expected ${userAddress} but SDK returned ${sdkAddress}`
-          );
-        }
-        console.log('✅ SDK address verification passed');
-      } catch (addrError) {
-        console.log('⚠️ Could not verify final SDK address:', addrError.message);
-        throw new Error(`SDK address verification failed: ${addrError.message}`);
-      }
-      
-      // Get asset ID
-      const assetId = getAssetId(orderParams.symbol);
-      console.log('🔍 Asset ID for', orderParams.symbol, ':', assetId);
-      
-      // Create the order request
-      const orderRequest = {
-        orders: [{
-          a: assetId, // asset index
-          b: orderParams.isBuy, // is buy
-          p: orderParams.orderType === 'market' 
-            ? (orderParams.isBuy ? "999999" : "0.000001") // Use extreme prices for market orders
-            : orderParams.price.toString(), // Use actual price for limit orders
-          s: orderParams.size.toString(), // size as string
-          r: false, // reduce only
-          t: {
-            limit: {
-              tif: orderParams.orderType === 'market' ? "Ioc" : "Gtc" // IOC for market, GTC for limit
-            }
-          }
-        }],
-        grouping: "na"
-      };
-      
-      console.log('📋 Direct Order request:', JSON.stringify(orderRequest, null, 2));
-      
-      // Place the order directly
-      console.log('📤 Submitting order directly...');
-      const response = await sdk.order(orderRequest);
-      
-      console.log('✅ Direct Order response:', response);
-      return response;
-      
-    } catch (sdkError) {
-      console.log('❌ SDK order placement failed:', sdkError.message);
-      
-      // Check if it's an address mismatch error
-      if (sdkError.message?.includes('does not exist') || 
-          sdkError.message?.includes('User or API Wallet') ||
-          sdkError.message?.includes('wrong wallet address') ||
-          sdkError.message?.includes('Address mismatch')) {
-        
-        console.log('🔄 SDK address mismatch detected, trying manual fallback...');
-        return await placeOrderManually(signer, orderParams, isMainnet);
-      }
-      
-      // Re-throw other SDK errors
-      throw sdkError;
-    }
-    
-  } catch (error) {
-    console.error('❌ Direct Place order error:', error);
-    
-    // Check if the error contains a different wallet address
-    if (error.message?.includes('does not exist')) {
-      const addressMatch = error.message.match(/0x[a-fA-F0-9]{40}/);
-      if (addressMatch) {
-        const errorAddress = addressMatch[0];
-        const userAddress = await signer.getAddress();
-        if (errorAddress.toLowerCase() !== userAddress.toLowerCase()) {
-          console.error('🚨 SDK is using wrong address!');
-          console.error('Expected:', userAddress);
-          console.error('Got:', errorAddress);
-          throw new Error(
-            `SDK configuration error: Using wrong wallet address. Expected ${userAddress} but got ${errorAddress}. Please refresh the page and try again.`
-          );
-        }
-      }
-    }
-    
-    throw error;
-  }
-}
-
-/**
- * Place order using Agent Wallet (like Hyperliquid's official app)
- */
-export async function placeOrderWithAgent(signer, orderParams, isMainnet = true) {
-  try {
-    console.log('🚀 Starting Agent Wallet order placement...');
-    console.log('📋 Order params:', orderParams);
-    
-    // Validate parameters
-    if (!orderParams.symbol) {
-      throw new Error('Symbol is required');
-    }
-    
-    if (!orderParams.size || orderParams.size <= 0) {
-      throw new Error('Valid size is required');
-    }
-    
-    if (!orderParams.hasOwnProperty('isBuy')) {
-      throw new Error('isBuy flag is required');
-    }
-    
-    // Get user address
-    const userAddress = await signer.getAddress();
-    console.log('👤 User address:', userAddress);
-    
-    // Always try direct order placement first (most reliable)
-    console.log('📤 Trying direct order placement...');
-    try {
-      return await placeOrderDirect(signer, orderParams, isMainnet);
-    } catch (directError) {
-      console.log('❌ Direct order failed:', directError.message);
-      
-      // If direct order fails with "does not exist", check for agent wallets
-      if (directError.message?.includes('does not exist') || directError.message?.includes('User or API Wallet')) {
-        console.log('🔍 Checking for existing agent wallets...');
-        
-        try {
-          const existingAgents = await getAgentWallets(signer, isMainnet);
-          console.log('✅ Found existing agent wallets:', existingAgents);
-          
-          // If we have agents, the user might need to use agent wallets
-          if (existingAgents && existingAgents.agents && existingAgents.agents.length > 0) {
-            console.log('🤖 User has agent wallets but direct order failed. This suggests the user needs to use agent wallets.');
-            throw new Error(
-              'Your wallet is not directly onboarded to Hyperliquid. ' +
-              'Please visit app.hyperliquid.xyz to deposit USDC directly to your wallet first, or use the official app to set up agent wallets properly.'
-            );
-          }
-        } catch (agentError) {
-          console.log('ℹ️ No agent wallets found');
-        }
-        
-        // If we get here, the user is not onboarded
-        throw new Error(
-          'Your wallet is not onboarded to Hyperliquid. ' +
-          'Please visit app.hyperliquid.xyz to deposit USDC first.'
-        );
-      }
-      
-      // Re-throw other errors
-      throw directError;
-    }
-    
-  } catch (error) {
-    console.error('❌ Agent Wallet Place order error:', error);
-    
-    // Provide helpful error messages
-    if (error.message?.includes('chainId') || error.message?.includes('1337') || error.message?.includes('42161')) {
-      throw new Error(
-        'Chain ID mismatch detected. The app is now configured for Arbitrum (42161). Please enable MetaMask Developer Mode if needed.'
-      );
-    } else if (error.message?.includes('does not exist') || error.message?.includes('User or API Wallet')) {
-      throw new Error(
-        'Your wallet is not onboarded to Hyperliquid. ' +
-        'Please visit app.hyperliquid.xyz to deposit USDC first.'
-      );
-    } else if (error.message?.includes('Insufficient margin')) {
-      throw new Error(
-        'Insufficient margin for this trade. ' +
-        'Please ensure you have enough USDC deposited in Hyperliquid.'
-      );
-    }
-    
     throw error;
   }
 }
