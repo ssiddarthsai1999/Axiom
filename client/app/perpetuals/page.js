@@ -397,60 +397,64 @@ function TradingPage() {
   }, [fetchInitialMarketData]);
 
   // Mobile Tab Component
-  const MobileTabs = () => {
-    const tabs = [
-      { id: 'positions', label: 'Positions' },
-      { id: 'orderbook', label: 'Order Book' },
-      { id: 'trades', label: 'Trading' }
-    ];
+const MobileTabs = () => {
+  const tabs = [
+    { id: 'positions', label: 'Positions' },
+    { id: 'orderbook', label: 'Order Book' },
+    { id: 'trades', label: 'Trades' }
+  ];
+
+  const handleTabClick = useCallback((tabId) => {
+    setActiveTab(tabId);
+  }, []);
 
     return (
-      <div className="lg:hidden">
-        <div className='p-4'>
-          <div className="flex p-1 border rounded-2xl border-[#FAFAFA33]">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-3 px-4 text-[12px] font-mono leading-[20px] rounded-[10px] font-[500] transition-colors duration-200 ${
-                  activeTab === tab.id
-                    ? 'text-[#FAFAFA] bg-[#222227]'
-                    : 'text-[#B3B9BE] hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-[#0d0c0e] min-h-[50vh]">
-          {activeTab === 'positions' && (
-            <div className="p-4">
-              <UserPositions />
-            </div>
-          )}
-          {activeTab === 'orderbook' && (
-            <div className="h-[50vh]">
-              <OrderBook 
-                selectedSymbol={selectedSymbol}
-                orderBookData={orderBookData}
-                tradesData={tradesData}
-                className="h-full"
-              />
-            </div>
-          )}
-          {activeTab === 'trades' && (
-            <div className="h-[50vh]">
-              <TradingPanel 
-                selectedSymbol={selectedSymbol}
-                marketData={marketData}
-                className="h-full"
-              />
-            </div>
-          )}
+    <div className="lg:hidden">
+      <div className='p-4'>
+        <div className="flex p-1 border rounded-2xl border-[#FAFAFA33]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id)}
+              className={`flex-1 py-3 px-4 text-[12px] font-mono leading-[20px] rounded-[10px] font-[500] transition-colors duration-200 ${
+                activeTab === tab.id
+                  ? 'text-[#FAFAFA] bg-[#222227]'
+                  : 'text-[#B3B9BE] hover:text-white'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      <div className="bg-[#0d0c0e]">
+        {/* Solution: Use CSS display property directly, not Tailwind classes */}
+        
+        <div style={{ display: activeTab === 'positions' ? 'block' : 'none' }}>
+          <div className="p-4">
+            <UserPositions />
+          </div>
+        </div>
+        
+        <div style={{ display: activeTab === 'orderbook' ? 'block' : 'none' }}>
+          <OrderBook 
+            selectedSymbol={selectedSymbol}
+            orderBookData={orderBookData}
+            tradesData={tradesData}
+            className="h-full"
+          />
+        </div>
+        
+        <div style={{ display: activeTab === 'trades' ? 'block' : 'none' }}>
+          <TradingPanel 
+            selectedSymbol={selectedSymbol}
+            marketData={marketData}
+            className="h-full"
+          />
+        </div>
+      </div>
+    </div>
     );
   };
 
@@ -551,7 +555,7 @@ function TradingPage() {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden flex flex-col pb-[150px] flex-1">
+      <div className="lg:hidden flex flex-col  flex-1">
         <FavoritesTicker 
           selectedSymbol={selectedSymbol}
           setSelectedSymbol={handleSymbolChange}
@@ -564,15 +568,16 @@ function TradingPage() {
           onSymbolChange={handleSymbolChange}
           className="shrink-0"
         />
-        <div className='flex-1 min-h-[40vh] max-h-[50vh]'>
+        <div className='flex-1'>
           <TradingViewChart 
             symbol={`${selectedSymbol}USD`}
             onSymbolChange={handleSymbolChange}
             className="w-full h-full"
           />
+        
         </div>
-        <MobileTabs />
-      </div>
+    <MobileTabs />
+      </div>      
     </div>
   );
 }
