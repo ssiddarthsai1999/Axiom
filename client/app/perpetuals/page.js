@@ -30,6 +30,10 @@ function TradingPage() {
   const maxReconnectAttempts = 5;
   const reconnectTimeout = useRef(null);
 
+  // Trade history management
+  const tradeHistoryRef = useRef([]);
+  const maxTradesCount = 40; // Keep last 40 trades
+
   // Helper functions
   const getTokenName = (coin) => {
     const names = {
@@ -55,6 +59,63 @@ function TradingPage() {
     const hours = Math.floor(minutes / 60);
     return `${hours}h`;
   };
+
+  // Trade history management functions
+  const addTradesToHistory = useCallback((newTrades, symbol) => {
+    if (!Array.isArray(newTrades) || newTrades.length === 0) return;
+
+    // Format new trades
+    const formattedTrades = newTrades.map(trade => ({
+      id: `${trade.time}-${trade.px}-${trade.sz}-${Math.random()}`, // Create unique ID with random to avoid duplicates
+      price: parseFloat(trade.px),
+      size: parseFloat(trade.sz),
+      side: trade.side,
+      time: new Date(trade.time),
+      timestamp: trade.time,
+      ago: formatTimeAgo(trade.time),
+      symbol: symbol
+    }));
+
+    // Add new trades to the beginning and maintain only trades for current symbol
+    const currentSymbolTrades = tradeHistoryRef.current.filter(trade => trade.symbol === symbol);
+    
+    // Combine new trades with existing trades, newest first
+    const updatedTrades = [
+      ...formattedTrades,
+      ...currentSymbolTrades
+    ]
+      .sort((a, b) => b.timestamp - a.timestamp) // Sort by newest first
+      .slice(0, maxTradesCount); // Keep only the most recent 40 trades
+
+    // Update the ref with all trades (including other symbols) but replace current symbol trades
+    tradeHistoryRef.current = [
+      ...updatedTrades,
+      ...tradeHistoryRef.current.filter(trade => trade.symbol !== symbol)
+    ];
+
+    // Update state with only current symbol trades
+    setTradesData([...updatedTrades]);
+  }, []);
+
+  const updateTradeTimestamps = useCallback(() => {
+    // Update "ago" timestamps for current symbol trades only
+    const currentSymbolTrades = tradeHistoryRef.current
+      .filter(trade => trade.symbol === selectedSymbol)
+      .map(trade => ({
+        ...trade,
+        ago: formatTimeAgo(trade.timestamp)
+      }))
+      .slice(0, maxTradesCount); // Ensure we don't exceed max trades
+
+    // Update state with refreshed timestamps
+    setTradesData([...currentSymbolTrades]);
+  }, [selectedSymbol]);
+
+  // Start interval for timestamp updates only (no trade removal based on time)
+  useEffect(() => {
+    const interval = setInterval(updateTradeTimestamps, 1000); // Update every second
+    return () => clearInterval(interval);
+  }, [updateTradeTimestamps]);
 
   // Initial market data fetch (REST - only once on load)
   const fetchInitialMarketData = useCallback(async () => {
@@ -247,19 +308,12 @@ function TradingPage() {
           }
         }
 
-        // Handle trades updates
+        // Handle trades updates with history management
         if (data.channel === 'trades') {
           const trades = data.data;
           if (trades && Array.isArray(trades)) {
-            const formattedTrades = trades.map(trade => ({
-              price: parseFloat(trade.px),
-              size: parseFloat(trade.sz),
-              side: trade.side,
-              time: new Date(trade.time),
-              ago: formatTimeAgo(trade.time)
-            }));
-            
-            setTradesData(formattedTrades);
+            // Add trades to history (this will handle the 10-second window)
+            addTradesToHistory(trades, selectedSymbol);
           }
         }
       } catch (error) {
@@ -290,12 +344,20 @@ function TradingPage() {
     };
 
     return websocket;
-  }, [selectedSymbol, ws]);
+  }, [selectedSymbol, ws, addTradesToHistory]);
 
   // Handle symbol changes with WebSocket subscriptions
   const handleSymbolChange = useCallback((newSymbol) => {
     const previousSymbol = selectedSymbol;
     setSelectedSymbol(newSymbol);
+    
+    // Show trades for the selected symbol (up to 40 most recent)
+    const symbolTrades = tradeHistoryRef.current
+      .filter(trade => trade.symbol === newSymbol)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, maxTradesCount);
+    
+    setTradesData([...symbolTrades]);
     
     // Update market data immediately from cached data
     const tokenData = allMarketData.find(token => token.symbol === newSymbol);
@@ -358,9 +420,8 @@ function TradingPage() {
       }));
     }
 
-    // Clear existing data while waiting for new data
+    // Clear existing order book data while waiting for new data
     setOrderBookData({ asks: [], bids: [] });
-    setTradesData([]);
   }, [selectedSymbol, allMarketData, ws]);
 
   // Handle WebSocket subscription updates when selectedSymbol changes

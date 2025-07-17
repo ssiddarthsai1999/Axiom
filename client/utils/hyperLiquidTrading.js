@@ -156,7 +156,7 @@ class HyperliquidUtils {
   // Get user account state
   async getUserAccountState(address, isMainnet = true) {
     try {
-      console.log(`🔍 Fetching user state for: ${address}`);
+      // console.log(`🔍 Fetching user state for: ${address}`);
       
       const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
         method: 'POST',
@@ -172,7 +172,7 @@ class HyperliquidUtils {
       }
 
       const result = await response.json();
-      console.log(`✅ User state fetched successfully:`, result);
+      // console.log(`✅ User state fetched successfully:`, result);
       return result;
       
     } catch (error) {

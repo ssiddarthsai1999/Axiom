@@ -5,10 +5,19 @@ import React, { useState } from 'react';
 import { Bell, User, ChevronDown } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useSelector, useDispatch } from 'react-redux';
+import { useRouter } from 'next/navigation';
+import { selectUser, selectIsAuthenticated, logoutUser } from "../redux/slices/authSlice"
 
 const Navbar = ({ className = '' }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const pathname = usePathname();
+  const router = useRouter();
+  const dispatch = useDispatch();
+  
+  // Get user data from Redux store
+  const user = useSelector(selectUser);
+  const isAuthenticated = useSelector(selectIsAuthenticated);
 
   const navItems = [
     { label: 'Swap', href: '/swap' },
@@ -19,6 +28,27 @@ const Navbar = ({ className = '' }) => {
 
   const handleDropdownToggle = (dropdown) => {
     setActiveDropdown(activeDropdown === dropdown ? null : dropdown);
+  };
+
+  // Close dropdown when clicking on a link
+  const handleDropdownLinkClick = () => {
+    setActiveDropdown(null);
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    dispatch(logoutUser())
+      .unwrap()
+      .then(() => {
+        setActiveDropdown(null);
+        router.push('/auth');
+      })
+      .catch((error) => {
+        console.error('Logout failed:', error);
+        // Still close dropdown and redirect even if logout API fails
+        setActiveDropdown(null);
+        router.push('/auth');
+      });
   };
 
   // Function to check if link is active
@@ -35,11 +65,12 @@ const Navbar = ({ className = '' }) => {
         <div className="flex items-center justify-between ">
           {/* Logo */}
           <div className="flex items-center lg:gap-14">
+            <Link href="/perpetuals">
             <img 
               src="/medusalogo.svg" 
               alt="Medusa Logo" 
               className="w-[126px] h-[24px]"
-            />
+            /></Link>
             
             {/* Center Navigation - Hidden on mobile, visible on large screens */}
             <div className="hidden lg:flex items-center justify-center flex-1">
@@ -124,26 +155,58 @@ const Navbar = ({ className = '' }) => {
                 onClick={() => handleDropdownToggle('profile')}
                 className="flex items-center space-x-2 text-[#919093] text-sm bg-[#1F1E23] hover:text-white p-2 rounded-lg transition-colors cursor-pointer duration-200"
               >
-                <img 
-                  src="/profile.svg" 
-                  alt="Profile" 
-                  className="w-5 h-5"
-                />
+                {/* Show user photo if authenticated and available, otherwise show default */}
+                {isAuthenticated && user?.picture ? (
+                  <img 
+                    src={user.picture} 
+                    alt={user.name || 'User'} 
+                    className="w-5 h-5 rounded-full border border-[#323542] object-cover"
+                  />
+                ) : (
+                  <img 
+                    src="/profile.svg" 
+                    alt="Profile" 
+                    className="w-5 h-5"
+                  />
+                )}
                 <ChevronDown className="w-4 h-4 hidden sm:block" />
               </button>
               
               {activeDropdown === 'profile' && (
                 <div className="absolute right-0 mt-2 w-48 bg-[#0d0c0e] border border-[#1F1E23] rounded-lg shadow-lg z-50">
                   <div className="py-1">
-                    <a href="#" className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors">
-                      Profile
-                    </a>
-                    <a href="#" className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors">
-                      Settings
-                    </a>
-                    <a href="#" className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors">
-                      Disconnect
-                    </a>
+                    {isAuthenticated && user ? (
+                      // Authenticated user menu
+                      <>
+                        {/* User email display */}
+                        <div className="px-4 py-2 border-b border-[#1F1E23] mb-1">
+                          <p className="text-xs text-[#919093] truncate">{user.email}</p>
+                        </div>
+                        
+                        <Link 
+                          href="/dashboard" 
+                          onClick={handleDropdownLinkClick}
+                          className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors"
+                        >
+                          Dashboard
+                        </Link>
+                        <button 
+                          onClick={handleLogout}
+                          className="block w-full text-left px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors"
+                        >
+                          Logout
+                        </button>
+                      </>
+                    ) : (
+                      // Guest user menu
+                      <Link 
+                        href="/login" 
+                        onClick={handleDropdownLinkClick}
+                        className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors"
+                      >
+                        Login
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}

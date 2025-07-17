@@ -350,7 +350,7 @@ export function getOrCreateSessionAgentWallet() {
   let agentKey = sessionStorage.getItem('hl_agent_wallet');
   const createdAt = parseInt(sessionStorage.getItem('agentCreatedAt') || '0');
   const isExpired = Date.now() - createdAt > 6 * 60 * 60 * 1000;
-  console.log('🔑 isExpired:', isExpired);
+  // console.log('🔑 isExpired:', isExpired);
   // return new ethers.Wallet(agentKey);
   if (isExpired) {
     sessionStorage.removeItem('hl_agent_wallet');
@@ -360,7 +360,7 @@ export function getOrCreateSessionAgentWallet() {
   let agentWallet;
   if (agentKey) {
     agentWallet = new ethers.Wallet(agentKey);
-    console.log('🔑 Loaded agent wallet from sessionStorage:', agentWallet.address);
+    // console.log('🔑 Loaded agent wallet from sessionStorage:', agentWallet.address);
   } else {
     agentWallet = ethers.Wallet.createRandom();
     sessionStorage.setItem('hl_agent_wallet', agentWallet.privateKey);

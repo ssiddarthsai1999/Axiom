@@ -4,6 +4,8 @@ import { AppKitProvider } from "@/context/AppKitProvider";
 import Navbar from "@/components/Navbar";
 import DynamicFooter from "@/components/DynamicFooter";
 import FavoritesTicker from "@/components/FavoritesTicker";
+import ReduxProvider from "@/redux/ReduxProvider"
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -25,15 +27,16 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AppKitProvider>
-      
-          <main className="min-h-screen bg-[#0d0c0e]">
-                <Navbar />
-                {/* <FavoritesTicker/> */}
-            {children}
-          </main>
-          <DynamicFooter/>
-        </AppKitProvider>
+        <ReduxProvider>
+          <AppKitProvider>
+            <main className="min-h-screen bg-[#0d0c0e]">
+              <Navbar />
+              {/* <FavoritesTicker/> */}
+              {children}
+            </main>
+            <DynamicFooter/>
+          </AppKitProvider>
+        </ReduxProvider>
       </body>
     </html>
   );

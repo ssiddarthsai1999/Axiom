@@ -195,7 +195,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setCheckingOnboarding(true);
     try {
  const userState = await hyperliquidUtils.getUserAccountState(address, true);
-      console.log('📊 User state response:', userState);
+      // console.log('📊 User state response:', userState);
       
       if (userState && (userState.marginSummary || userState.balances)) {
         setIsOnboarded(true);
@@ -231,11 +231,11 @@ const [applyToAll, setApplyToAll] = useState(false);
           accountValue: accountValue
         }));
         
-        console.log('✅ User is onboarded with available margin:', availableMargin);
+        // console.log('✅ User is onboarded with available margin:', availableMargin);
         return true;
       } else {
         setIsOnboarded(false);
-        console.log('❌ User not onboarded - no margin summary or balances found');
+        // console.log('❌ User not onboarded - no margin summary or balances found');
         return false;
       }
     } catch (error) {
@@ -349,8 +349,8 @@ const [applyToAll, setApplyToAll] = useState(false);
       const signer = await provider.getSigner();
       const signerAddress = await signer.getAddress();
       
-      console.log('🔍 Signer address:', signerAddress);
-      console.log('🔍 Expected address:', address);
+      // console.log('🔍 Signer address:', signerAddress);
+      // console.log('🔍 Expected address:', address);
       
       const normalizedSignerAddress = signerAddress.toLowerCase();
       const normalizedExpectedAddress = address.toLowerCase();
@@ -361,7 +361,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         return;
       }
       
-      console.log('✅ Basic wallet verification passed');
+      // console.log('✅ Basic wallet verification passed');
       
       setWallet({
         address: normalizedExpectedAddress,
@@ -370,7 +370,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         walletClient: walletClient
       });
       
-      console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
+      // console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
       
       await checkOnboardingStatus();
       
