@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -101,6 +101,29 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [isUpdatingLeverage, setIsUpdatingLeverage] = useState(false);
   const [leverageError, setLeverageError] = useState(null);
   const [leverageSuccess, setLeverageSuccess] = useState(null);
+
+  // Auto-calculate TP/SL prices when percentages change
+  useEffect(() => {
+    if (tpSlEnabled && marketData?.price) {
+      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+      const isLong = side === 'Long';
+      
+      const calculatedPrices = calculateTPSLPrices(
+        entryPrice,
+        parseFloat(tpPercentage) || 0,
+        parseFloat(slPercentage) || 0,
+        isLong
+      );
+      
+      if (tpPercentage && calculatedPrices.takeProfitPrice && !tpPrice) {
+        setTpPrice(calculatedPrices.takeProfitPrice.toString());
+      }
+      
+      if (slPercentage && calculatedPrices.stopLossPrice && !slPrice) {
+        setSlPrice(calculatedPrices.stopLossPrice.toString());
+      }
+    }
+  }, [tpPercentage, slPercentage, marketData?.price, limitPrice, side, orderType, tpSlEnabled]);
 
   const handleLeverageSet = async () => {
     if (!wallet || !wallet.signer) {
@@ -502,48 +525,115 @@ const [applyToAll, setApplyToAll] = useState(false);
         reduceOnly: false,
         cloid: null
       };
-      // Place order with agent wallet
-      const result = await placeOrderWithAgentWallet(
-        orderParams,
-        true // isMainnet
-      );
-      // ... handle result as before ...
-      if (result && result.status === 'ok') {
-        const orderData = result.response?.data;
-        if (orderData?.statuses && orderData.statuses.length > 0) {
-          const status = orderData.statuses[0];
-          if (status.filled) {
-            setOrderSuccess(
-              `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
-            );
-          } else if (status.resting) {
-            setOrderSuccess(
-              `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully! Order ID: ${status.resting.oid}`
-            );
+
+      // Prepare TP/SL parameters if enabled
+      const tpSlParams = {
+        enabled: tpSlEnabled,
+        takeProfitPrice: tpSlEnabled && tpPrice ? parseFloat(tpPrice) : null,
+        stopLossPrice: tpSlEnabled && slPrice ? parseFloat(slPrice) : null
+      };
+
+      // Place order with TP/SL if enabled, otherwise place regular order
+      const result = tpSlEnabled && (tpSlParams.takeProfitPrice || tpSlParams.stopLossPrice)
+        ? await placeOrderWithTPSL(orderParams, tpSlParams, true)
+        : await placeOrderWithAgentWallet(orderParams, true);
+      // Handle result based on whether TP/SL was used
+      if (result) {
+        // TP/SL order result handling
+        if (result.mainOrder) {
+          const mainOrderSuccess = result.mainOrder.status === 'ok';
+          let successMessage = '';
+          let hasErrors = result.errors && result.errors.length > 0;
+          
+          if (mainOrderSuccess) {
+            const orderData = result.mainOrder.response?.data;
+            if (orderData?.statuses && orderData.statuses.length > 0) {
+              const status = orderData.statuses[0];
+              if (status.filled) {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`;
+              } else if (status.resting) {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+              } else {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+              }
+            } else {
+              successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+            }
+            
+            // Add TP/SL status to success message
+            if (tpSlEnabled) {
+              const tpSuccess = result.takeProfitOrder && result.takeProfitOrder.status === 'ok';
+              const slSuccess = result.stopLossOrder && result.stopLossOrder.status === 'ok';
+              
+              if (tpSuccess && slSuccess) {
+                successMessage += '\n🎯 Take Profit and Stop Loss orders placed!';
+              } else if (tpSuccess) {
+                successMessage += '\n🎯 Take Profit order placed!';
+              } else if (slSuccess) {
+                successMessage += '\n🛡️ Stop Loss order placed!';
+              }
+            }
+            
+            setOrderSuccess(successMessage);
+            
+            // Show warnings if TP/SL orders failed
+            if (hasErrors) {
+              setTimeout(() => {
+                setOrderError(`⚠️ TP/SL Issues: ${result.errors.join(', ')}`);
+              }, 3000);
+            }
+          } else {
+            setOrderError('Failed to place main order. Please try again.');
+          }
+        } 
+        // Regular order result handling
+        else if (result.status === 'ok') {
+          const orderData = result.response?.data;
+          if (orderData?.statuses && orderData.statuses.length > 0) {
+            const status = orderData.statuses[0];
+            if (status.filled) {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
+              );
+            } else if (status.resting) {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+              );
+            } else {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+              );
+            }
           } else {
             setOrderSuccess(
               `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
             );
           }
         } else {
-          setOrderSuccess(
-            `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
-          );
+          let errorMessage = 'Failed to place order. Please try again.';
+          if (result.status === 'err') {
+            errorMessage = result.response || errorMessage;
+          } else if (result.response?.type === 'error') {
+            errorMessage = result.response.data || errorMessage;
+          }
+          setOrderError(errorMessage);
         }
-        setBuyAmount('0.0');
-        setLimitPrice('');
-        setPercentage(0);
-        setTimeout(() => {
-          checkOnboardingStatus();
-        }, 2000);
+        
+        // Reset form if order was successful
+        if ((result.mainOrder && result.mainOrder.status === 'ok') || result.status === 'ok') {
+          setBuyAmount('0.0');
+          setLimitPrice('');
+          setTpPrice('');
+          setSlPrice('');
+          setTpPercentage('');
+          setSlPercentage('');
+          setPercentage(0);
+          setTimeout(() => {
+            checkOnboardingStatus();
+          }, 2000);
+        }
       } else {
-        let errorMessage = 'Failed to place order. Please try again.';
-        if (result.status === 'err') {
-          errorMessage = result.response || errorMessage;
-        } else if (result.response?.type === 'error') {
-          errorMessage = result.response.data || errorMessage;
-        }
-        setOrderError(errorMessage);
+        setOrderError('No response received. Please try again.');
       }
     } catch (orderError) {
       let errorMessage = orderError.message || 'Failed to place order. Please try again.';
@@ -785,24 +875,91 @@ const [applyToAll, setApplyToAll] = useState(false);
                 {/* TP/SL Input Fields - Show when enabled */}
                 {tpSlEnabled && (
           <div className="mb-4 space-y-4 px-4">
+            {/* TP/SL Validation Messages */}
+            {tpSlEnabled && marketData?.price && (
+              <div className="text-xs space-y-1">
+                {tpPrice && (
+                  <div className={`flex items-center space-x-1 ${
+                    (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                    (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                      ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    <span>{
+                      (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                      (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                        ? '⚠️ TP price should be in profit direction' : '✅ TP price looks good'
+                    }</span>
+                  </div>
+                )}
+                {slPrice && (
+                  <div className={`flex items-center space-x-1 ${
+                    (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                    (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                      ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    <span>{
+                      (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                      (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                        ? '⚠️ SL price should be in loss direction' : '✅ SL price looks good'
+                    }</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Take Profit Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP Price</label>
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP %</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                  TP Price {side === 'Long' ? '📈' : '📉'} 
+                  <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
+                </label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">TP %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={tpPrice}
-                  onChange={(e) => setTpPrice(e.target.value)}
+                  onChange={(e) => {
+                    setTpPrice(e.target.value);
+                    // Auto-calculate percentage when price is manually entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const newPrice = parseFloat(e.target.value);
+                      let percentage = 0;
+                      
+                      if (isLong) {
+                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+                      } else {
+                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+                      }
+                      
+                      if (percentage > 0) {
+                        setTpPercentage(percentage.toFixed(2));
+                      }
+                    }
+                  }}
                   placeholder="Enter TP price"
                   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
                 <input
                   type="number"
                   value={tpPercentage}
-                  onChange={(e) => setTpPercentage(e.target.value)}
+                  onChange={(e) => {
+                    setTpPercentage(e.target.value);
+                    // Auto-calculate price when percentage is entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const percentage = parseFloat(e.target.value);
+                      
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, percentage, 0, isLong);
+                      if (calculatedPrices.takeProfitPrice) {
+                        setTpPrice(calculatedPrices.takeProfitPrice.toString());
+                      }
+                    }
+                  }}
                   placeholder="0.0"
                    className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
@@ -812,24 +969,112 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Stop Loss Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL Price</label>
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL %</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                  SL Price {side === 'Long' ? '📉' : '📈'} 
+                  <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
+                </label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">SL %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={slPrice}
-                  onChange={(e) => setSlPrice(e.target.value)}
+                  onChange={(e) => {
+                    setSlPrice(e.target.value);
+                    // Auto-calculate percentage when price is manually entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const newPrice = parseFloat(e.target.value);
+                      let percentage = 0;
+                      
+                      if (isLong) {
+                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+                      } else {
+                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+                      }
+                      
+                      if (percentage > 0) {
+                        setSlPercentage(percentage.toFixed(2));
+                      }
+                    }
+                  }}
                   placeholder="Enter SL price"
   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
                 <input
                   type="number"
                   value={slPercentage}
-                  onChange={(e) => setSlPercentage(e.target.value)}
+                  onChange={(e) => {
+                    setSlPercentage(e.target.value);
+                    // Auto-calculate price when percentage is entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const percentage = parseFloat(e.target.value);
+                      
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percentage, isLong);
+                      if (calculatedPrices.stopLossPrice) {
+                        setSlPrice(calculatedPrices.stopLossPrice.toString());
+                      }
+                    }
+                  }}
                   placeholder="0.0"
                   className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
+              </div>
+            </div>
+
+            {/* Quick TP/SL Percentage Buttons */}
+            <div className="flex justify-between items-center mt-4">
+              <div>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono mb-2 block">Quick TP %</label>
+                <div className="flex space-x-1">
+                  {[1, 2, 5, 10].map((percent) => (
+                    <button
+                      key={`tp-${percent}`}
+                      onClick={() => {
+                        setTpPercentage(percent.toString());
+                        if (marketData?.price) {
+                          const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                          const isLong = side === 'Long';
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, percent, 0, isLong);
+                          if (calculatedPrices.takeProfitPrice) {
+                            setTpPrice(calculatedPrices.takeProfitPrice.toString());
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-[#1F1E23] hover:bg-[#2a2a2a] rounded text-[10px] font-mono text-white transition-colors"
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono mb-2 block">Quick SL %</label>
+                <div className="flex space-x-1">
+                  {[1, 2, 5, 10].map((percent) => (
+                    <button
+                      key={`sl-${percent}`}
+                      onClick={() => {
+                        setSlPercentage(percent.toString());
+                        if (marketData?.price) {
+                          const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                          const isLong = side === 'Long';
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percent, isLong);
+                          if (calculatedPrices.stopLossPrice) {
+                            setSlPrice(calculatedPrices.stopLossPrice.toString());
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-[#1F1E23] hover:bg-[#2a2a2a] rounded text-[10px] font-mono text-white transition-colors"
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
