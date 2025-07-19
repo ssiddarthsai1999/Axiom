@@ -116,8 +116,15 @@ export const checkAuthStatus = createAsyncThunk(
       }
 
       const userData = await response.json();
+      
+      // ✅ Simple, clean logging
+      console.log('🎉 [AUTH SUCCESS] Complete user data from backend:');
+      console.log(userData);
+      console.log('🔑 Available fields:', Object.keys(userData));
+      
       return userData;
     } catch (error) {
+      console.log('❌ [AUTH ERROR]:', error.message);
       removeTokenFromStorage();
       return rejectWithValue(error.message);
     }

@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
-import { 
-  selectUser, 
-  selectIsAuthenticated, 
-  selectIsLoading, 
+import {
+  selectUser,
+  selectIsAuthenticated,
+  selectIsLoading,
   selectAuthError,
   handleDashboardToken,
-  logoutUser 
-} from "../../redux/slices/authSlice"
+  logoutUser
+} from "../../redux/slices/authSlice";
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -20,7 +20,90 @@ export default function Dashboard() {
   const isLoading = useSelector(selectIsLoading);
   const error = useSelector(selectAuthError);
 
+  // Hydration state
+  const [isMounted, setIsMounted] = useState(false);
+  const [copied, setCopied] = useState(false);
+  
+  // Updated referral state to handle full referral data
+  const [referralData, setReferralData] = useState({
+    my_referral_code: null,
+    referred_by: null,
+    referred_users: [],
+    total_referred: 0
+  });
+  const [isLoadingReferral, setIsLoadingReferral] = useState(false);
+  const [referralError, setReferralError] = useState(null);
+  
+  // Apply referral state
+  const [applyReferralCode, setApplyReferralCode] = useState('');
+  const [isApplyingReferral, setIsApplyingReferral] = useState(false);
+  const [applyReferralError, setApplyReferralError] = useState(null);
+  const [applyReferralSuccess, setApplyReferralSuccess] = useState(false);
+
+  console.log("user", user);
+  console.log("referralData", referralData);
+
+  // Handle client-side mounting
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Fetch referral code from API
+  const fetchReferralCode = async () => {
+    if (!isMounted) return;
+    
+    setIsLoadingReferral(true);
+    setReferralError(null);
+    
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/my-referrals`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token is invalid, logout user
+          handleLogout();
+          return;
+        }
+        throw new Error(`Failed to fetch referral code: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Referral code response:', data);
+      
+      // Handle the API response format: { message, errors, data: { my_referral_code, referred_by, referred_users, total_referred } }
+      if (data.data) {
+        setReferralData({
+          my_referral_code: data.data.my_referral_code || null,
+          referred_by: data.data.referred_by || null,
+          referred_users: data.data.referred_users || [],
+          total_referred: data.data.total_referred || 0
+        });
+      } else {
+        console.error('Unexpected response format:', data);
+        throw new Error('Invalid response format - no referral data found');
+      }
+    } catch (error) {
+      console.error('Error fetching referral code:', error);
+      setReferralError(error.message);
+    } finally {
+      setIsLoadingReferral(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isMounted) return;
+    
     // Check for access_token in URL (from OAuth callback)
     const urlParams = new URLSearchParams(window.location.search);
     const accessToken = urlParams.get('access_token');
@@ -33,6 +116,8 @@ export default function Dashboard() {
           // Clean up URL by removing token
           const cleanUrl = window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
+          // Fetch referral code after successful authentication
+          fetchReferralCode();
         })
         .catch((error) => {
           console.error('Token handling failed:', error);
@@ -41,18 +126,107 @@ export default function Dashboard() {
     } else if (!isAuthenticated && !isLoading) {
       // No token in URL and not authenticated, redirect to login
       router.push('/login');
+    } else if (isAuthenticated && !isLoading) {
+      // User is authenticated, fetch referral code
+      fetchReferralCode();
     }
-  }, [dispatch, router, isAuthenticated, isLoading]);
+  }, [isMounted, dispatch, router, isAuthenticated, isLoading]);
 
   const handleLogout = () => {
+    if (isMounted) {
+      localStorage.removeItem('auth_token');
+    }
     dispatch(logoutUser())
       .unwrap()
       .then(() => {
         router.push('/login');
+      })
+      .catch(() => {
+        router.push('/login');
       });
   };
 
-  if (isLoading) {
+  const copyToClipboard = async () => {
+    const codeToApply = referralData.my_referral_code || user?.referral_code;
+    if (!codeToApply) return;
+    
+    try {
+      await navigator.clipboard.writeText(codeToApply);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  // Apply referral code function
+  const applyReferral = async () => {
+    if (!applyReferralCode.trim()) {
+      setApplyReferralError('Please enter a referral code');
+      return;
+    }
+
+    setIsApplyingReferral(true);
+    setApplyReferralError(null);
+    setApplyReferralSuccess(false);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user/apply-referral`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          referral_code: applyReferralCode.trim()
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleLogout();
+          return;
+        }
+        
+        // Try to get error message from response
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.detail || `Failed to apply referral code: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('Apply referral response:', data);
+      
+      setApplyReferralSuccess(true);
+      setApplyReferralCode('');
+      
+      // Refresh referral data after successful application
+      fetchReferralCode();
+      
+      // Show success message for 3 seconds
+      setTimeout(() => {
+        setApplyReferralSuccess(false);
+      }, 3000);
+
+    } catch (error) {
+      console.error('Error applying referral code:', error);
+      setApplyReferralError(error.message);
+    } finally {
+      setIsApplyingReferral(false);
+    }
+  };
+
+  const retryFetchReferral = () => {
+    fetchReferralCode();
+  };
+
+  // Show loading while mounting or authenticating
+  if (!isMounted || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex items-center gap-2">
@@ -85,6 +259,9 @@ export default function Dashboard() {
   if (!isAuthenticated || !user) {
     return null; // Will redirect to login
   }
+
+  // Use API referral code if available, fallback to user object
+  const displayReferralCode = referralData.my_referral_code || user?.referral_code;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -119,6 +296,7 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
+          {/* User Information */}
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
               <h2 className="text-lg font-medium text-gray-900 mb-4">User Information</h2>
@@ -139,21 +317,193 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="mt-6 bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
-                  Create Project
-                </button>
-                <button className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors">
-                  View Analytics
-                </button>
-                <button className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition-colors">
-                  Settings
-                </button>
+          {/* Apply Referral Code - Only show if user wasn't referred by anyone */}
+          {!referralData.referred_by && (
+            <div className="mt-6">
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Apply Referral Code</h2>
+                
+                {applyReferralSuccess ? (
+                  <div className="bg-green-100 border border-green-200 rounded-md p-4">
+                    <p className="text-sm text-green-800">✓ Referral code applied successfully!</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={applyReferralCode}
+                        onChange={(e) => setApplyReferralCode(e.target.value)}
+                        placeholder="Enter referral code"
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isApplyingReferral}
+                      />
+                      <button
+                        onClick={applyReferral}
+                        disabled={isApplyingReferral || !applyReferralCode.trim()}
+                        className={`px-6 py-3 rounded-md text-sm font-medium transition-colors ${
+                          isApplyingReferral || !applyReferralCode.trim()
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {isApplyingReferral ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Applying...
+                          </div>
+                        ) : (
+                          'Apply'
+                        )}
+                      </button>
+                    </div>
+                    
+                    {applyReferralError && (
+                      <div className="mt-3 bg-red-50 border border-red-200 rounded-md p-3">
+                        <p className="text-sm text-red-600">{applyReferralError}</p>
+                      </div>
+                    )}
+                    
+                    <p className="text-sm text-gray-600 mt-3">
+                      Have a referral code? Enter it above to get rewards and benefits!
+                    </p>
+                  </>
+                )}
               </div>
+            </div>
+          )}
+
+          {/* Referral Information */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Your Referral Code */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Your Referral Code</h2>
+              
+              {isLoadingReferral ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-gray-600">Loading referral code...</span>
+                  </div>
+                </div>
+              ) : referralError ? (
+                <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-red-800">Error loading referral code</h3>
+                      <p className="text-sm text-red-600 mt-1">{referralError}</p>
+                    </div>
+                    <button
+                      onClick={retryFetchReferral}
+                      className="px-3 py-1 bg-red-100 text-red-700 text-sm rounded hover:bg-red-200 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              ) : displayReferralCode ? (
+                <>
+                  <div className="flex items-center space-x-3">
+                    <code className="bg-white px-4 py-3 rounded-md text-xl font-mono text-blue-600 border flex-1">
+                      {displayReferralCode}
+                    </code>
+                    <button
+                      onClick={copyToClipboard}
+                      className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${
+                        copied 
+                          ? 'bg-green-100 text-green-700 border border-green-200' 
+                          : 'bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200'
+                      }`}
+                    >
+                      {copied ? '✓ Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-3">
+                    Share this code with friends to earn rewards when they sign up!
+                  </p>
+                </>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <p className="text-sm text-yellow-800">No referral code available</p>
+                  <button
+                    onClick={retryFetchReferral}
+                    className="mt-2 px-3 py-1 bg-yellow-100 text-yellow-700 text-sm rounded hover:bg-yellow-200 transition-colors"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Referral Stats */}
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Referral Statistics</h2>
+              
+              {isLoadingReferral ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-gray-600">Loading stats...</span>
+                  </div>
+                </div>
+              ) : referralError ? (
+                <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                  <p className="text-sm text-red-600">Error loading referral statistics</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Referred By */}
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Referred By</dt>
+                    <dd className="mt-1">
+                      {referralData.referred_by ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {referralData.referred_by}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">No one (organic signup)</span>
+                      )}
+                    </dd>
+                  </div>
+
+                  {/* Total Referred */}
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Total Users Referred</dt>
+                    <dd className="mt-1">
+                      <span className="text-2xl font-bold text-purple-600">
+                        {referralData.total_referred}
+                      </span>
+                    </dd>
+                  </div>
+
+                  {/* Referred Users List */}
+                  {referralData.referred_users && referralData.referred_users.length > 0 && (
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500 mb-2">Referred Users</dt>
+                      <dd className="space-y-1">
+                        {referralData.referred_users.map((referredUser, index) => (
+                          <div key={index} className="bg-white p-2 rounded border text-sm">
+                            {typeof referredUser === 'string' ? (
+                              <span className="text-gray-800">{referredUser}</span>
+                            ) : (
+                              <div>
+                                <span className="font-medium text-gray-800">
+                                  {referredUser.name || referredUser.email || referredUser.user_id || 'Anonymous User'}
+                                </span>
+                                {referredUser.joined_at && (
+                                  <span className="text-gray-500 text-xs ml-2">
+                                    ({new Date(referredUser.joined_at).toLocaleDateString()})
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
