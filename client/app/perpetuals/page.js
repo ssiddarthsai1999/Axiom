@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import TradingViewChart from '@/components/TradingViewChart'
 import OrderBook from '@/components/OrderBook'
 import TokenData from '@/components/TokenData'
@@ -8,6 +8,161 @@ import UserPositions from '@/components/UserPositions'
 import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
 import FavoritesTicker from '@/components/FavoritesTicker'
+
+// WebSocket service singleton to prevent multiple connections
+class WebSocketService {
+  static instance = null;
+  constructor() {
+    this.ws = null;
+    this.isConnected = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectTimeout = null;
+    this.subscribers = new Map();
+    this.messageQueue = [];
+    this.lastMessageTime = 0;
+    this.messageThrottleMs = 16; // ~60fps max update rate
+  }
+
+  static getInstance() {
+    if (!WebSocketService.instance) {
+      WebSocketService.instance = new WebSocketService();
+    }
+    return WebSocketService.instance;
+  }
+
+  subscribe(key, callback) {
+    if (!this.subscribers.has(key)) {
+      this.subscribers.set(key, new Set());
+    }
+    this.subscribers.get(key).add(callback);
+  }
+
+  unsubscribe(key, callback) {
+    if (this.subscribers.has(key)) {
+      this.subscribers.get(key).delete(callback);
+      if (this.subscribers.get(key).size === 0) {
+        this.subscribers.delete(key);
+      }
+    }
+  }
+
+  broadcast(key, data) {
+    // Throttle messages to prevent excessive updates
+    const now = Date.now();
+    if (now - this.lastMessageTime < this.messageThrottleMs) {
+      return;
+    }
+    this.lastMessageTime = now;
+
+    if (this.subscribers.has(key)) {
+      this.subscribers.get(key).forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error('Error in WebSocket callback:', error);
+        }
+      });
+    }
+  }
+
+  connect() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    console.log('Connecting to WebSocket...');
+    this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
+
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      this.broadcast('connection', { connected: true });
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.channel === 'subscriptionResponse') {
+          console.log('Subscription confirmed:', data.data);
+          return;
+        }
+
+        // Broadcast to relevant subscribers
+        this.broadcast(data.channel, data);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    this.ws.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason);
+      this.isConnected = false;
+      this.broadcast('connection', { connected: false });
+      
+      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+        this.reconnectTimeout = setTimeout(() => {
+          this.reconnectAttempts++;
+          this.connect();
+        }, delay);
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      this.broadcast('error', error);
+    };
+  }
+
+  disconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    if (this.ws) {
+      this.ws.close(1000, 'Manual disconnect');
+      this.ws = null;
+    }
+    this.isConnected = false;
+  }
+
+  send(message) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  subscribeToSymbol(symbol) {
+    if (!this.isConnected) return;
+    
+    this.send({
+      method: 'subscribe',
+      subscription: { type: 'l2Book', coin: symbol }
+    });
+
+    this.send({
+      method: 'subscribe',
+      subscription: { type: 'trades', coin: symbol }
+    });
+  }
+
+  unsubscribeFromSymbol(symbol) {
+    if (!this.isConnected) return;
+    
+    this.send({
+      method: 'unsubscribe',
+      subscription: { type: 'l2Book', coin: symbol }
+    });
+
+    this.send({
+      method: 'unsubscribe',
+      subscription: { type: 'trades', coin: symbol }
+    });
+  }
+}
 
 function TradingPage() {
   // Centralized state
@@ -18,24 +173,22 @@ function TradingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('positions');
+  const [wsConnected, setWsConnected] = useState(false);
 
   // Available tokens list
   const [availableTokens, setAvailableTokens] = useState([]);
   const [allMarketData, setAllMarketData] = useState([]);
 
-  // WebSocket connection state
-  const [ws, setWs] = useState(null);
-  const [wsConnected, setWsConnected] = useState(false);
-  const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
-  const reconnectTimeout = useRef(null);
-
-  // Trade history management
+  // Refs for optimization
+  const wsService = useRef(WebSocketService.getInstance());
   const tradeHistoryRef = useRef([]);
-  const maxTradesCount = 40; // Keep last 40 trades
+  const maxTradesCount = 40;
+  const lastOrderBookUpdate = useRef(0);
+  const lastTradesUpdate = useRef(0);
+  const updateThrottleMs = 100; // Throttle updates to 10fps max
 
-  // Helper functions
-  const getTokenName = (coin) => {
+  // Helper functions - memoized to prevent recreation
+  const getTokenName = useCallback((coin) => {
     const names = {
       'BTC': 'Bitcoin', 'ETH': 'Ethereum', 'SOL': 'Solana',
       'ADA': 'Cardano', 'DOT': 'Polkadot', 'AVAX': 'Avalanche',
@@ -46,9 +199,9 @@ function TradingPage() {
       'ICP': 'Internet Computer', 'FIL': 'Filecoin'
     };
     return names[coin] || coin;
-  };
+  }, []);
 
-  const formatTimeAgo = (timestamp) => {
+  const formatTimeAgo = useCallback((timestamp) => {
     const now = Date.now();
     const diff = now - timestamp;
     const seconds = Math.floor(diff / 1000);
@@ -58,15 +211,20 @@ function TradingPage() {
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     return `${hours}h`;
-  };
+  }, []);
 
-  // Trade history management functions
+  // Optimized trade history management with throttling
   const addTradesToHistory = useCallback((newTrades, symbol) => {
+    const now = Date.now();
+    if (now - lastTradesUpdate.current < updateThrottleMs) {
+      return;
+    }
+    lastTradesUpdate.current = now;
+
     if (!Array.isArray(newTrades) || newTrades.length === 0) return;
 
-    // Format new trades
     const formattedTrades = newTrades.map(trade => ({
-      id: `${trade.time}-${trade.px}-${trade.sz}-${Math.random()}`, // Create unique ID with random to avoid duplicates
+      id: `${trade.time}-${trade.px}-${trade.sz}-${Math.random()}`,
       price: parseFloat(trade.px),
       size: parseFloat(trade.sz),
       side: trade.side,
@@ -76,48 +234,117 @@ function TradingPage() {
       symbol: symbol
     }));
 
-    // Add new trades to the beginning and maintain only trades for current symbol
     const currentSymbolTrades = tradeHistoryRef.current.filter(trade => trade.symbol === symbol);
     
-    // Combine new trades with existing trades, newest first
     const updatedTrades = [
       ...formattedTrades,
       ...currentSymbolTrades
     ]
-      .sort((a, b) => b.timestamp - a.timestamp) // Sort by newest first
-      .slice(0, maxTradesCount); // Keep only the most recent 40 trades
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, maxTradesCount);
 
-    // Update the ref with all trades (including other symbols) but replace current symbol trades
     tradeHistoryRef.current = [
       ...updatedTrades,
       ...tradeHistoryRef.current.filter(trade => trade.symbol !== symbol)
     ];
 
-    // Update state with only current symbol trades
     setTradesData([...updatedTrades]);
+  }, [formatTimeAgo, updateThrottleMs]);
+
+  // Throttled orderbook update
+  const updateOrderBook = useCallback((bookData) => {
+    const now = Date.now();
+    if (now - lastOrderBookUpdate.current < updateThrottleMs) {
+      return;
+    }
+    lastOrderBookUpdate.current = now;
+
+    if (bookData && bookData.levels && bookData.levels.length >= 2) {
+      const bids = bookData.levels[0]
+        .map(level => ({
+          price: parseFloat(level.px),
+          amount: parseFloat(level.sz),
+          total: 0
+        }))
+        .sort((a, b) => b.price - a.price);
+
+      const asks = bookData.levels[1]
+        .map(level => ({
+          price: parseFloat(level.px),
+          amount: parseFloat(level.sz),
+          total: 0
+        }))
+        .sort((a, b) => a.price - b.price);
+
+      // Calculate cumulative totals
+      let askTotal = 0;
+      asks.forEach(ask => {
+        askTotal += ask.amount;
+        ask.total = askTotal;
+      });
+
+      let bidTotal = 0;
+      bids.forEach(bid => {
+        bidTotal += bid.amount;
+        bid.total = bidTotal;
+      });
+
+      setOrderBookData({ asks, bids });
+
+      // Update market data with mid price
+      if (bids.length > 0 && asks.length > 0) {
+        const midPrice = (bids[0].price + asks[0].price) / 2;
+        
+        setMarketData(prev => {
+          if (prev && prev.symbol === bookData.coin) {
+            const prevPrice = prev.prevDayPx || prev.price;
+            const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
+            
+            return {
+              ...prev,
+              price: midPrice,
+              change24h: change24h
+            };
+          }
+          return prev;
+        });
+
+        // Update allMarketData cache
+        setAllMarketData(prev => prev.map(token => {
+          if (token.symbol === bookData.coin) {
+            const prevPrice = token.prevDayPx || token.price;
+            const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
+            
+            return {
+              ...token,
+              price: midPrice,
+              change24h: change24h
+            };
+          }
+          return token;
+        }));
+      }
+    }
+  }, [updateThrottleMs]);
+
+  // WebSocket event handlers - memoized
+  const handleConnection = useCallback((data) => {
+    setWsConnected(data.connected);
   }, []);
 
-  const updateTradeTimestamps = useCallback(() => {
-    // Update "ago" timestamps for current symbol trades only
-    const currentSymbolTrades = tradeHistoryRef.current
-      .filter(trade => trade.symbol === selectedSymbol)
-      .map(trade => ({
-        ...trade,
-        ago: formatTimeAgo(trade.timestamp)
-      }))
-      .slice(0, maxTradesCount); // Ensure we don't exceed max trades
+  const handleOrderBookUpdate = useCallback((data) => {
+    if (data.data && data.data.coin === selectedSymbol) {
+      updateOrderBook(data.data);
+    }
+  }, [selectedSymbol, updateOrderBook]);
 
-    // Update state with refreshed timestamps
-    setTradesData([...currentSymbolTrades]);
-  }, [selectedSymbol]);
+  const handleTradesUpdate = useCallback((data) => {
+    if (data.data && Array.isArray(data.data)) {
+      addTradesToHistory(data.data, selectedSymbol);
+    }
+  }, [selectedSymbol, addTradesToHistory]);
 
-  // Start interval for timestamp updates only (no trade removal based on time)
-  useEffect(() => {
-    const interval = setInterval(updateTradeTimestamps, 1000); // Update every second
-    return () => clearInterval(interval);
-  }, [updateTradeTimestamps]);
-
-  // Initial market data fetch (REST - only once on load)
+  // Initial market data fetch - memoized
   const fetchInitialMarketData = useCallback(async () => {
     try {
       const response = await fetch('https://api.hyperliquid.xyz/info', {
@@ -191,167 +418,14 @@ function TradingPage() {
       setError(err.message);
       setLoading(false);
     }
-  }, [selectedSymbol]);
+  }, [selectedSymbol, getTokenName]);
 
-  // WebSocket connection management
-  const connectWebSocket = useCallback(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      return; // Already connected
-    }
-
-    console.log('Connecting to WebSocket...');
-    const websocket = new WebSocket('wss://api.hyperliquid.xyz/ws');
-
-    websocket.onopen = () => {
-      console.log('WebSocket connected');
-      setWs(websocket);
-      setWsConnected(true);
-      reconnectAttempts.current = 0;
-
-      // Subscribe to order book and trades for initial symbol
-      if (selectedSymbol) {
-        websocket.send(JSON.stringify({
-          method: 'subscribe',
-          subscription: {
-            type: 'l2Book',
-            coin: selectedSymbol
-          }
-        }));
-
-        websocket.send(JSON.stringify({
-          method: 'subscribe',
-          subscription: {
-            type: 'trades',
-            coin: selectedSymbol
-          }
-        }));
-      }
-    };
-
-    websocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        // Handle subscription confirmations
-        if (data.channel === 'subscriptionResponse') {
-          console.log('Subscription confirmed:', data.data);
-          return;
-        }
-
-        // Handle order book updates
-        if (data.channel === 'l2Book') {
-          const bookData = data.data;
-          if (bookData && bookData.levels && bookData.levels.length >= 2) {
-            const bids = bookData.levels[0]
-              .map(level => ({
-                price: parseFloat(level.px),
-                amount: parseFloat(level.sz),
-                total: 0
-              }))
-              .sort((a, b) => b.price - a.price);
-
-            const asks = bookData.levels[1]
-              .map(level => ({
-                price: parseFloat(level.px),
-                amount: parseFloat(level.sz),
-                total: 0
-              }))
-              .sort((a, b) => a.price - b.price);
-
-            // Calculate cumulative totals
-            let askTotal = 0;
-            asks.forEach(ask => {
-              askTotal += ask.amount;
-              ask.total = askTotal;
-            });
-
-            let bidTotal = 0;
-            bids.forEach(bid => {
-              bidTotal += bid.amount;
-              bid.total = bidTotal;
-            });
-
-            setOrderBookData({ asks, bids });
-
-            // Update current market data price with real-time mid price
-            if (bids.length > 0 && asks.length > 0) {
-              const midPrice = (bids[0].price + asks[0].price) / 2;
-              setMarketData(prev => {
-                if (prev && prev.symbol === bookData.coin) {
-                  const prevPrice = prev.prevDayPx || prev.price;
-                  const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
-                  
-                  return {
-                    ...prev,
-                    price: midPrice,
-                    change24h: change24h
-                  };
-                }
-                return prev;
-              });
-
-              // Also update the allMarketData cache for consistency
-              setAllMarketData(prev => prev.map(token => {
-                if (token.symbol === bookData.coin) {
-                  const prevPrice = token.prevDayPx || token.price;
-                  const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
-                  
-                  return {
-                    ...token,
-                    price: midPrice,
-                    change24h: change24h
-                  };
-                }
-                return token;
-              }));
-            }
-          }
-        }
-
-        // Handle trades updates with history management
-        if (data.channel === 'trades') {
-          const trades = data.data;
-          if (trades && Array.isArray(trades)) {
-            // Add trades to history (this will handle the 10-second window)
-            addTradesToHistory(trades, selectedSymbol);
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
-    };
-
-    websocket.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-      setWs(null);
-      setWsConnected(false);
-      
-      // Attempt to reconnect unless it was a clean close
-      if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-        console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
-        
-        reconnectTimeout.current = setTimeout(() => {
-          reconnectAttempts.current++;
-          connectWebSocket();
-        }, delay);
-      }
-    };
-
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setError('WebSocket connection error');
-    };
-
-    return websocket;
-  }, [selectedSymbol, ws, addTradesToHistory]);
-
-  // Handle symbol changes with WebSocket subscriptions
+  // Handle symbol changes
   const handleSymbolChange = useCallback((newSymbol) => {
     const previousSymbol = selectedSymbol;
     setSelectedSymbol(newSymbol);
     
-    // Show trades for the selected symbol (up to 40 most recent)
+    // Show trades for the selected symbol
     const symbolTrades = tradeHistoryRef.current
       .filter(trade => trade.symbol === newSymbol)
       .sort((a, b) => b.timestamp - a.timestamp)
@@ -359,7 +433,7 @@ function TradingPage() {
     
     setTradesData([...symbolTrades]);
     
-    // Update market data immediately from cached data
+    // Update market data from cache
     const tokenData = allMarketData.find(token => token.symbol === newSymbol);
     if (tokenData) {
       setMarketData({
@@ -382,142 +456,131 @@ function TradingPage() {
     }
 
     // Update WebSocket subscriptions
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // Unsubscribe from previous symbol
+    if (wsService.current.isConnected) {
       if (previousSymbol) {
-        ws.send(JSON.stringify({
-          method: 'unsubscribe',
-          subscription: {
-            type: 'l2Book',
-            coin: previousSymbol
-          }
-        }));
-
-        ws.send(JSON.stringify({
-          method: 'unsubscribe',
-          subscription: {
-            type: 'trades',
-            coin: previousSymbol
-          }
-        }));
+        wsService.current.unsubscribeFromSymbol(previousSymbol);
       }
-
-      // Subscribe to new symbol
-      ws.send(JSON.stringify({
-        method: 'subscribe',
-        subscription: {
-          type: 'l2Book',
-          coin: newSymbol
-        }
-      }));
-
-      ws.send(JSON.stringify({
-        method: 'subscribe',
-        subscription: {
-          type: 'trades',
-          coin: newSymbol
-        }
-      }));
+      wsService.current.subscribeToSymbol(newSymbol);
     }
 
-    // Clear existing order book data while waiting for new data
     setOrderBookData({ asks: [], bids: [] });
-  }, [selectedSymbol, allMarketData, ws]);
+  }, [selectedSymbol, allMarketData, getTokenName]);
 
-  // Handle WebSocket subscription updates when selectedSymbol changes
+  // Initialize WebSocket connection - runs only once
   useEffect(() => {
-    if (ws && ws.readyState === WebSocket.OPEN && selectedSymbol) {
-      // This effect handles the initial subscription when WebSocket connects
-      // The handleSymbolChange function handles subsequent changes
-    }
-  }, [ws, selectedSymbol, wsConnected]);
+    const ws = wsService.current;
+    
+    // Subscribe to WebSocket events
+    ws.subscribe('connection', handleConnection);
+    ws.subscribe('l2Book', handleOrderBookUpdate);
+    ws.subscribe('trades', handleTradesUpdate);
+    
+    // Connect
+    ws.connect();
+    
+    // Cleanup function
+    return () => {
+      ws.unsubscribe('connection', handleConnection);
+      ws.unsubscribe('l2Book', handleOrderBookUpdate);
+      ws.unsubscribe('trades', handleTradesUpdate);
+      ws.disconnect();
+    };
+  }, []); // Empty dependency array - runs only once
 
-  // Initialize WebSocket connection and fetch initial data
+  // Subscribe to selected symbol when WebSocket connects or symbol changes
+  useEffect(() => {
+    if (wsConnected && selectedSymbol) {
+      wsService.current.subscribeToSymbol(selectedSymbol);
+    }
+  }, [wsConnected, selectedSymbol]);
+
+  // Fetch initial data - runs only once
   useEffect(() => {
     fetchInitialMarketData();
-    connectWebSocket();
+  }, []); // Empty dependency array
 
-    // Cleanup on unmount
-    return () => {
-      if (reconnectTimeout.current) {
-        clearTimeout(reconnectTimeout.current);
-      }
-      if (ws) {
-        ws.close(1000, 'Component unmounting');
-      }
-    };
-  }, []);
-
-  // Periodic market data refresh (much less frequent than before)
+  // Periodic market data refresh - much less frequent
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchInitialMarketData();
-    }, 60000); // Only every 60 seconds for market data
-
+    const interval = setInterval(fetchInitialMarketData, 300000); // Every 5 minutes
     return () => clearInterval(interval);
   }, [fetchInitialMarketData]);
 
-  // Mobile Tab Component
-const MobileTabs = () => {
-  const tabs = [
-    { id: 'positions', label: 'Positions' },
-    { id: 'orderbook', label: 'Order Book' },
-    { id: 'trades', label: 'Trades' }
-  ];
+  // Update trade timestamps periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentSymbolTrades = tradeHistoryRef.current
+        .filter(trade => trade.symbol === selectedSymbol)
+        .map(trade => ({
+          ...trade,
+          ago: formatTimeAgo(trade.timestamp)
+        }))
+        .slice(0, maxTradesCount);
 
-  const handleTabClick = useCallback((tabId) => {
-    setActiveTab(tabId);
-  }, []);
+      setTradesData([...currentSymbolTrades]);
+    }, 5000); // Update every 5 seconds instead of every second
+
+    return () => clearInterval(interval);
+  }, [selectedSymbol, formatTimeAgo]);
+
+  // Mobile Tab Component - memoized
+  const MobileTabs = useMemo(() => {
+    const tabs = [
+      { id: 'positions', label: 'Positions' },
+      { id: 'orderbook', label: 'Order Book' },
+      { id: 'trades', label: 'Trades' }
+    ];
+
+    const handleTabClick = (tabId) => {
+      setActiveTab(tabId);
+    };
 
     return (
-    <div className="lg:hidden">
-      <div className='p-4'>
-        <div className="flex p-1 border rounded-2xl border-[#FAFAFA33]">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabClick(tab.id)}
-              className={`flex-1 py-3 px-4 text-[12px] font-mono leading-[20px] rounded-[10px] font-[500] transition-colors duration-200 ${
-                activeTab === tab.id
-                  ? 'text-[#FAFAFA] bg-[#222227]'
-                  : 'text-[#B3B9BE] hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-[#0d0c0e]">
-        {/* Solution: Use CSS display property directly, not Tailwind classes */}
-        
-        <div style={{ display: activeTab === 'positions' ? 'block' : 'none' }}>
-          <div className="p-4">
-            <UserPositions />
+      <div className="lg:hidden">
+        <div className='p-4'>
+          <div className="flex p-1 border rounded-2xl border-[#FAFAFA33]">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                className={`flex-1 py-3 px-4 text-[12px] font-mono leading-[20px] rounded-[10px] font-[500] transition-colors duration-200 ${
+                  activeTab === tab.id
+                    ? 'text-[#FAFAFA] bg-[#222227]'
+                    : 'text-[#B3B9BE] hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
-        
-        <div style={{ display: activeTab === 'orderbook' ? 'block' : 'none' }}>
-          <OrderBook 
-            selectedSymbol={selectedSymbol}
-            orderBookData={orderBookData}
-            tradesData={tradesData}
-            className="h-full"
-          />
-        </div>
-        
-        <div style={{ display: activeTab === 'trades' ? 'block' : 'none' }}>
-          <TradingPanel 
-            selectedSymbol={selectedSymbol}
-            marketData={marketData}
-            className="h-full"
-          />
+
+        <div className="bg-[#0d0c0e]">
+          <div style={{ display: activeTab === 'positions' ? 'block' : 'none' }}>
+            <div className="p-4">
+              <UserPositions />
+            </div>
+          </div>
+          
+          <div style={{ display: activeTab === 'orderbook' ? 'block' : 'none' }}>
+            <OrderBook 
+              selectedSymbol={selectedSymbol}
+              orderBookData={orderBookData}
+              tradesData={tradesData}
+              className="h-full"
+            />
+          </div>
+          
+          <div style={{ display: activeTab === 'trades' ? 'block' : 'none' }}>
+            <TradingPanel 
+              selectedSymbol={selectedSymbol}
+              marketData={marketData}
+              className="h-full"
+            />
+          </div>
         </div>
       </div>
-    </div>
     );
-  };
+  }, [activeTab, selectedSymbol, orderBookData, tradesData, marketData]);
 
   if (loading) {
     return (
@@ -547,7 +610,7 @@ const MobileTabs = () => {
                 setError(null);
                 setLoading(true);
                 fetchInitialMarketData();
-                connectWebSocket();
+                wsService.current.connect();
               }}
               className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
             >
@@ -583,10 +646,9 @@ const MobileTabs = () => {
                 selectedSymbol={selectedSymbol}
                 availableTokens={availableTokens}
                 onSymbolChange={handleSymbolChange}
-          
                 className="shrink-0"
               />
-              <div className='flex flex-1 w-full  min-h-0'>
+              <div className='flex flex-1 w-full min-h-0'>
                 <TradingViewChart 
                   symbol={`${selectedSymbol}USD`}
                   onSymbolChange={handleSymbolChange}
@@ -617,7 +679,7 @@ const MobileTabs = () => {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden flex flex-col  flex-1">
+      <div className="lg:hidden flex flex-col flex-1">
         <FavoritesTicker 
           selectedSymbol={selectedSymbol}
           setSelectedSymbol={handleSymbolChange}
@@ -636,9 +698,8 @@ const MobileTabs = () => {
             onSymbolChange={handleSymbolChange}
             className="w-full h-full"
           />
-        
         </div>
-    <MobileTabs />
+        {MobileTabs}
       </div>      
     </div>
   );

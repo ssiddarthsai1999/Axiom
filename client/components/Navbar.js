@@ -200,7 +200,7 @@ const Navbar = ({ className = '' }) => {
                     ) : (
                       // Guest user menu
                       <Link 
-                        href="/login" 
+                        href="/auth" 
                         onClick={handleDropdownLinkClick}
                         className="block px-4 py-2 text-sm text-[#919093] hover:text-white hover:bg-[#1F1E23] transition-colors"
                       >
