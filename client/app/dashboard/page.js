@@ -23,7 +23,14 @@ export default function Dashboard() {
   // Hydration state
   const [isMounted, setIsMounted] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [referralCode, setReferralCode] = useState(null);
+  
+  // Updated referral state to handle full referral data
+  const [referralData, setReferralData] = useState({
+    my_referral_code: null,
+    referred_by: null,
+    referred_users: [],
+    total_referred: 0
+  });
   const [isLoadingReferral, setIsLoadingReferral] = useState(false);
   const [referralError, setReferralError] = useState(null);
   
@@ -34,6 +41,7 @@ export default function Dashboard() {
   const [applyReferralSuccess, setApplyReferralSuccess] = useState(false);
 
   console.log("user", user);
+  console.log("referralData", referralData);
 
   // Handle client-side mounting
   useEffect(() => {
@@ -73,21 +81,17 @@ export default function Dashboard() {
       const data = await response.json();
       console.log('Referral code response:', data);
       
-      // Handle the new API response format: { message, errors, data: { my_referral_code } }
-      if (data.data && data.data.my_referral_code) {
-        setReferralCode(data.data.my_referral_code);
-      } else if (data.data && data.data.referral_code) {
-        // Fallback for referral_code property
-        setReferralCode(data.data.referral_code);
-      } else if (data.referral_code) {
-        // Fallback for direct referral_code property
-        setReferralCode(data.referral_code);
-      } else if (typeof data === 'string') {
-        // Fallback for string response
-        setReferralCode(data);
+      // Handle the API response format: { message, errors, data: { my_referral_code, referred_by, referred_users, total_referred } }
+      if (data.data) {
+        setReferralData({
+          my_referral_code: data.data.my_referral_code || null,
+          referred_by: data.data.referred_by || null,
+          referred_users: data.data.referred_users || [],
+          total_referred: data.data.total_referred || 0
+        });
       } else {
         console.error('Unexpected response format:', data);
-        throw new Error('Invalid response format - no referral code found');
+        throw new Error('Invalid response format - no referral data found');
       }
     } catch (error) {
       console.error('Error fetching referral code:', error);
@@ -143,7 +147,7 @@ export default function Dashboard() {
   };
 
   const copyToClipboard = async () => {
-    const codeToApply = referralCode || user?.referral_code;
+    const codeToApply = referralData.my_referral_code || user?.referral_code;
     if (!codeToApply) return;
     
     try {
@@ -201,6 +205,9 @@ export default function Dashboard() {
       setApplyReferralSuccess(true);
       setApplyReferralCode('');
       
+      // Refresh referral data after successful application
+      fetchReferralCode();
+      
       // Show success message for 3 seconds
       setTimeout(() => {
         setApplyReferralSuccess(false);
@@ -254,7 +261,7 @@ export default function Dashboard() {
   }
 
   // Use API referral code if available, fallback to user object
-  const displayReferralCode = referralCode || user?.referral_code;
+  const displayReferralCode = referralData.my_referral_code || user?.referral_code;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -310,62 +317,65 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Apply Referral Code */}
-          <div className="mt-6">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Apply Referral Code</h2>
-              
-              {applyReferralSuccess ? (
-                <div className="bg-green-100 border border-green-200 rounded-md p-4">
-                  <p className="text-sm text-green-800">✓ Referral code applied successfully!</p>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="text"
-                      value={applyReferralCode}
-                      onChange={(e) => setApplyReferralCode(e.target.value)}
-                      placeholder="Enter referral code"
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      disabled={isApplyingReferral}
-                    />
-                    <button
-                      onClick={applyReferral}
-                      disabled={isApplyingReferral || !applyReferralCode.trim()}
-                      className={`px-6 py-3 rounded-md text-sm font-medium transition-colors ${
-                        isApplyingReferral || !applyReferralCode.trim()
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {isApplyingReferral ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Applying...
-                        </div>
-                      ) : (
-                        'Apply'
-                      )}
-                    </button>
+          {/* Apply Referral Code - Only show if user wasn't referred by anyone */}
+          {!referralData.referred_by && (
+            <div className="mt-6">
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Apply Referral Code</h2>
+                
+                {applyReferralSuccess ? (
+                  <div className="bg-green-100 border border-green-200 rounded-md p-4">
+                    <p className="text-sm text-green-800">✓ Referral code applied successfully!</p>
                   </div>
-                  
-                  {applyReferralError && (
-                    <div className="mt-3 bg-red-50 border border-red-200 rounded-md p-3">
-                      <p className="text-sm text-red-600">{applyReferralError}</p>
+                ) : (
+                  <>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={applyReferralCode}
+                        onChange={(e) => setApplyReferralCode(e.target.value)}
+                        placeholder="Enter referral code"
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        disabled={isApplyingReferral}
+                      />
+                      <button
+                        onClick={applyReferral}
+                        disabled={isApplyingReferral || !applyReferralCode.trim()}
+                        className={`px-6 py-3 rounded-md text-sm font-medium transition-colors ${
+                          isApplyingReferral || !applyReferralCode.trim()
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {isApplyingReferral ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Applying...
+                          </div>
+                        ) : (
+                          'Apply'
+                        )}
+                      </button>
                     </div>
-                  )}
-                  
-                  <p className="text-sm text-gray-600 mt-3">
-                    Have a referral code? Enter it above to get rewards and benefits!
-                  </p>
-                </>
-              )}
+                    
+                    {applyReferralError && (
+                      <div className="mt-3 bg-red-50 border border-red-200 rounded-md p-3">
+                        <p className="text-sm text-red-600">{applyReferralError}</p>
+                      </div>
+                    )}
+                    
+                    <p className="text-sm text-gray-600 mt-3">
+                      Have a referral code? Enter it above to get rewards and benefits!
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Referral Code */}
-          <div className="mt-6">
+          {/* Referral Information */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Your Referral Code */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
               <h2 className="text-lg font-medium text-gray-900 mb-4">Your Referral Code</h2>
               
@@ -411,11 +421,6 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-600 mt-3">
                     Share this code with friends to earn rewards when they sign up!
                   </p>
-                  {referralCode && (
-                    <p className="text-xs text-blue-600 mt-2">
-                      ✓ Loaded from API
-                    </p>
-                  )}
                 </>
               ) : (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
@@ -426,6 +431,77 @@ export default function Dashboard() {
                   >
                     Refresh
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Referral Stats */}
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Referral Statistics</h2>
+              
+              {isLoadingReferral ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-gray-600">Loading stats...</span>
+                  </div>
+                </div>
+              ) : referralError ? (
+                <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                  <p className="text-sm text-red-600">Error loading referral statistics</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Referred By */}
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Referred By</dt>
+                    <dd className="mt-1">
+                      {referralData.referred_by ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {referralData.referred_by}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">No one (organic signup)</span>
+                      )}
+                    </dd>
+                  </div>
+
+                  {/* Total Referred */}
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Total Users Referred</dt>
+                    <dd className="mt-1">
+                      <span className="text-2xl font-bold text-purple-600">
+                        {referralData.total_referred}
+                      </span>
+                    </dd>
+                  </div>
+
+                  {/* Referred Users List */}
+                  {referralData.referred_users && referralData.referred_users.length > 0 && (
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500 mb-2">Referred Users</dt>
+                      <dd className="space-y-1">
+                        {referralData.referred_users.map((referredUser, index) => (
+                          <div key={index} className="bg-white p-2 rounded border text-sm">
+                            {typeof referredUser === 'string' ? (
+                              <span className="text-gray-800">{referredUser}</span>
+                            ) : (
+                              <div>
+                                <span className="font-medium text-gray-800">
+                                  {referredUser.name || referredUser.email || referredUser.user_id || 'Anonymous User'}
+                                </span>
+                                {referredUser.joined_at && (
+                                  <span className="text-gray-500 text-xs ml-2">
+                                    ({new Date(referredUser.joined_at).toLocaleDateString()})
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
