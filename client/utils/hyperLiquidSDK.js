@@ -608,4 +608,78 @@ export async function getOpenOrdersSDK(signer, isMainnet = true) {
     console.error('❌ Error getting open orders via SDK:', error);
     throw error;
   }
+}
+
+/**
+ * Update leverage using the nktkas/hyperliquid SDK
+ * @param {number} assetIndex - The asset index (0 for BTC, 1 for ETH, etc.)
+ * @param {number} leverage - The leverage value (1-50)
+ * @param {boolean} isCross - Whether to use cross margin (true) or isolated (false)
+ * @param {ethers.Signer} signer - The wallet signer
+ * @param {boolean} isMainnet - Whether to use mainnet or testnet
+ * @returns {Promise<any>} The result of the leverage update
+ */
+export async function updateLeverageSDK(assetIndex, leverage, isCross, signer, isMainnet = true) {
+  try {
+    const agentWallet = getOrCreateSessionAgentWallet();
+    const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
+    const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+    const leverageParams = {
+      asset: assetIndex,
+      isCross: isCross,
+      leverage: leverage
+    };
+    const response = await exchClient.updateLeverage(leverageParams);
+    return response;
+  } catch (error) {
+    console.error('❌ Error updating leverage:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get asset index by symbol for leverage updates
+ */
+export function getAssetIndexBySymbol(symbol) {
+  const assetMap = {
+    'BTC': 0,
+    'ETH': 1,
+    'SOL': 2,
+    'MATIC': 3,
+    'ARB': 4,
+    'OP': 5,
+    'AVAX': 6,
+    'NEAR': 7,
+    'ATOM': 8,
+    'DYDX': 9,
+    'GMX': 10,
+    'LINK': 11,
+    'UNI': 12,
+    'WIF': 13,
+    'PEPE': 14,
+    'BONK': 15,
+    'ORDI': 16,
+    'SATS': 17,
+    'TIA': 18,
+    'SEI': 19,
+    'JUP': 20,
+    'STRK': 21,
+    'PYTH': 22,
+    'INJ': 23,
+    'STX': 24,
+    'ADA': 25,
+    'DOGE': 26,
+    'SHIB': 27,
+    'TRX': 28,
+    'ETC': 29,
+    'XLM': 30,
+    // Add more as needed
+  };
+  
+  const assetIndex = assetMap[symbol];
+  if (assetIndex === undefined) {
+    throw new Error(`Unknown asset symbol: ${symbol}. Available symbols: ${Object.keys(assetMap).join(', ')}`);
+  }
+  
+  return assetIndex;
 } 

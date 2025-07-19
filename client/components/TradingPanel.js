@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -86,15 +86,79 @@ const [applyToAll, setApplyToAll] = useState(false);
   const handleLeverageClick = () => {
     setTempLeverage(leverage);
     setShowLeverageModal(true);
+    // Clear any previous error/success messages when opening modal
+    setLeverageError(null);
+    setLeverageSuccess(null);
   };
 
     const handleSliderChange = (e) => {
     setTempLeverage(parseInt(e.target.value));
+    // Clear error messages when user changes leverage
+    setLeverageError(null);
+    setLeverageSuccess(null);
   };
 
-  const handleLeverageSet = () => {
-    setLeverage(tempLeverage);
-    setShowLeverageModal(false);
+  const [isUpdatingLeverage, setIsUpdatingLeverage] = useState(false);
+  const [leverageError, setLeverageError] = useState(null);
+  const [leverageSuccess, setLeverageSuccess] = useState(null);
+
+  const handleLeverageSet = async () => {
+    if (!wallet || !wallet.signer) {
+      setLeverageError('Wallet not connected');
+      return;
+    }
+
+    if (!selectedSymbol) {
+      setLeverageError('No asset selected');
+      return;
+    }
+
+    setIsUpdatingLeverage(true);
+    setLeverageError(null);
+    setLeverageSuccess(null);
+
+    try {
+      // Get asset index for the selected symbol
+      const assetIndex = getAssetIndexBySymbol(selectedSymbol);
+      
+      // Determine if cross margin based on marginMode
+      const isCross = marginMode === 'cross';
+      
+      console.log('🔧 Updating leverage:', {
+        symbol: selectedSymbol,
+        assetIndex,
+        leverage: tempLeverage,
+        isCross,
+        applyToAll
+      });
+
+      // Update leverage using SDK
+      const result = await updateLeverageSDK(
+        assetIndex,
+        tempLeverage,
+        isCross,
+        wallet.signer,
+        true // isMainnet
+      );
+
+      console.log('✅ Leverage updated successfully:', result);
+      
+      // Update local state only after successful API call
+      setLeverage(tempLeverage);
+      setLeverageSuccess(`Leverage updated to ${tempLeverage}x for ${selectedSymbol}`);
+      
+      // Close modal after a short delay to show success message
+      setTimeout(() => {
+        setShowLeverageModal(false);
+        setLeverageSuccess(null);
+      }, 2000);
+
+    } catch (error) {
+      console.error('❌ Error updating leverage:', error);
+      setLeverageError(error.message || 'Failed to update leverage');
+    } finally {
+      setIsUpdatingLeverage(false);
+    }
   };
 
 
@@ -857,7 +921,11 @@ const [applyToAll, setApplyToAll] = useState(false);
       {/* Current Leverage Display */}
       <div className="text-center flex items-center justify-between mb-8 ">
                   <button 
-            onClick={() => setTempLeverage(Math.max(1, tempLeverage - 1))}
+            onClick={() => {
+              setTempLeverage(Math.max(1, tempLeverage - 1));
+              setLeverageError(null);
+              setLeverageSuccess(null);
+            }}
             className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
           >
             <span className="text-2xl">−</span>
@@ -866,7 +934,11 @@ const [applyToAll, setApplyToAll] = useState(false);
           {tempLeverage}x
         </div>
                   <button 
-            onClick={() => setTempLeverage(Math.min(maxLeverage, tempLeverage + 1))}
+            onClick={() => {
+              setTempLeverage(Math.min(maxLeverage, tempLeverage + 1));
+              setLeverageError(null);
+              setLeverageSuccess(null);
+            }}
                 className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
           >
             <span className="text-2xl">+</span>
@@ -952,12 +1024,38 @@ const [applyToAll, setApplyToAll] = useState(false);
         </button>
       </div>
 
+      {/* Error Message */}
+      {leverageError && (
+        <div className="mb-4 p-3 bg-red-500/20 border border-red-500 rounded-lg">
+          <p className="text-red-400 text-sm font-mono">{leverageError}</p>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {leverageSuccess && (
+        <div className="mb-4 p-3 bg-green-500/20 border border-green-500 rounded-lg">
+          <p className="text-green-400 text-sm font-mono">{leverageSuccess}</p>
+        </div>
+      )}
+
       {/* Confirm Button */}
       <button
         onClick={handleLeverageSet}
-        className="w-full py-4 text-[14px] font-[500] text-white rounded-lg cursor-pointer duration-200 ease-in  font-mono bg-[#2133FF] hover:bg-blue-600 transition-colors text-lg"
+        disabled={isUpdatingLeverage}
+        className={`w-full py-4 text-[14px] font-[500] text-white rounded-lg cursor-pointer duration-200 ease-in font-mono transition-colors text-lg ${
+          isUpdatingLeverage 
+            ? 'bg-gray-600 cursor-not-allowed' 
+            : 'bg-[#2133FF] hover:bg-blue-600'
+        }`}
       >
-        Confirm
+        {isUpdatingLeverage ? (
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            Updating Leverage...
+          </div>
+        ) : (
+          'Confirm'
+        )}
       </button>
     </div>
   </div>
