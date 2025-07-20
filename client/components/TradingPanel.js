@@ -369,9 +369,10 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   useEffect(() => {
     if (orderType === 'Limit' && marketData && !limitPrice) {
-      setLimitPrice(marketData.price.toString());
+      const formattedPrice = assetInfo ? formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot) : marketData.price.toString();
+      setLimitPrice(formattedPrice);
     }
-  }, [orderType, marketData, limitPrice]);
+  }, [orderType, marketData, limitPrice, assetInfo]);
 
 
     const handlePercentageClick = (percent) => {
@@ -392,7 +393,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Calculate token amount based on current price
     if (marketData && marketData.price > 0) {
       const tokenAmount = positionValue / marketData.price;
-      const amountStr = tokenAmount.toFixed(6); // Use more decimals for accuracy
+      const amountStr = assetInfo ? formatSizeToMaxDecimals(tokenAmount.toString(), assetInfo.szDecimals) : tokenAmount.toFixed(6);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
       
@@ -579,15 +580,22 @@ const [applyToAll, setApplyToAll] = useState(false);
         return;
       }
       setIsPlacingOrder(true);
+      
+      // Final validation and formatting of order parameters
+      const finalSize = parseFloat(formatSizeToMaxDecimals(orderSize.toString(), assetInfo.szDecimals));
+      const finalPrice = orderType === 'Limit' 
+        ? parseFloat(formatPriceToMaxDecimals(parseFloat(limitPrice).toString(), assetInfo.szDecimals, assetInfo.isSpot))
+        : parseFloat(formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot));
+      
       const orderParams = {
         symbol: selectedSymbol,
         isBuy: side === 'Long',
-        size: orderSize,
-        price: orderType === 'Limit' ? parseFloat(limitPrice) : marketData.price,
+        size: finalSize,
+        price: finalPrice,
         orderType: orderType.toLowerCase(),
         timeInForce: 'GTC',
         reduceOnly: false,
-        cloid: null
+        cloid: assetInfo.index
       };
 
       // Prepare TP/SL parameters if enabled
@@ -706,6 +714,110 @@ const [applyToAll, setApplyToAll] = useState(false);
       setIsPlacingOrder(false);
     }
   };
+
+  // Utility function to validate and format decimal places for SIZE
+  const formatSizeToMaxDecimals = (value, szDecimals) => {
+    if (!value || value === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    // Convert to string and check decimal places
+    const valueStr = value.toString();
+    const decimalIndex = valueStr.indexOf('.');
+    
+    if (decimalIndex === -1) {
+      // No decimal point, return as is
+      return valueStr;
+    }
+    
+    const decimalPlaces = valueStr.length - decimalIndex - 1;
+    if (decimalPlaces <= szDecimals) {
+      // Already within limits
+      return valueStr;
+    }
+    
+    // Truncate to max decimal places
+    return num.toFixed(szDecimals);
+  };
+
+  // Utility function to count significant figures
+  const countSignificantFigures = (value) => {
+    const cleanValue = parseFloat(value).toString();
+    const scientificMatch = cleanValue.match(/^(\d+\.?\d*)e/);
+    
+    if (scientificMatch) {
+      // Handle scientific notation
+      const mantissa = scientificMatch[1].replace('.', '');
+      return mantissa.length;
+    }
+    
+    // Remove leading zeros and decimal point
+    const withoutLeadingZeros = cleanValue.replace(/^0+/, '').replace('.', '');
+    return withoutLeadingZeros.length;
+  };
+
+  // Utility function to validate and format decimal places for PRICE
+  const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
+    if (!value || value === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    const valueStr = value.toString();
+    
+    // Check significant figures limit (max 5)
+    const sigFigs = countSignificantFigures(valueStr);
+    if (sigFigs > 5) {
+      // Truncate to 5 significant figures
+      const truncated = parseFloat(num.toPrecision(5));
+      return truncated.toString();
+    }
+    
+    // Check decimal places limit: MAX_DECIMALS - szDecimals
+    const MAX_DECIMALS = isSpot ? 8 : 6;
+    const maxDecimalPlaces = MAX_DECIMALS - szDecimals;
+    
+    const decimalIndex = valueStr.indexOf('.');
+    if (decimalIndex === -1) {
+      // No decimal point, return as is (integers are always allowed)
+      return valueStr;
+    }
+    
+    const decimalPlaces = valueStr.length - decimalIndex - 1;
+    if (decimalPlaces <= maxDecimalPlaces) {
+      // Already within limits
+      return valueStr;
+    }
+    
+    // Truncate to max decimal places
+    return num.toFixed(maxDecimalPlaces);
+  };
+
+  // Validate decimal places for size input
+  const handleBuyAmountChange = (value) => {
+    if (!assetInfo) {
+      setBuyAmount(value);
+      calculateUSDValue(value);
+      return;
+    }
+    
+    const formattedValue = formatSizeToMaxDecimals(value, assetInfo.szDecimals);
+    setBuyAmount(formattedValue);
+    calculateUSDValue(formattedValue);
+  };
+
+  // Validate decimal places for price input
+  const handleLimitPriceChange = (value) => {
+    if (!assetInfo) {
+      setLimitPrice(value);
+      return;
+    }
+    
+    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+    setLimitPrice(formattedValue);
+  };
+
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
@@ -802,9 +914,10 @@ const [applyToAll, setApplyToAll] = useState(false);
     <div className="flex items-center space-x-2">
       <button
         onClick={() => {
-          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price).toFixed(4);
-          setBuyAmount(halfAmount);
-          calculateUSDValue(halfAmount);
+          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price);
+          const formattedAmount = assetInfo ? formatSizeToMaxDecimals(halfAmount.toString(), assetInfo.szDecimals) : halfAmount.toFixed(4);
+          setBuyAmount(formattedAmount);
+          calculateUSDValue(formattedAmount);
         }}
         className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33] cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
       >
@@ -812,9 +925,10 @@ const [applyToAll, setApplyToAll] = useState(false);
       </button>
       <button
         onClick={() => {
-          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price).toFixed(4); // 95% to leave room for fees
-          setBuyAmount(maxAmount);
-          calculateUSDValue(maxAmount);
+          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price); // 95% to leave room for fees
+          const formattedAmount = assetInfo ? formatSizeToMaxDecimals(maxAmount.toString(), assetInfo.szDecimals) : maxAmount.toFixed(4);
+          setBuyAmount(formattedAmount);
+          calculateUSDValue(formattedAmount);
         }}
         className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33]  cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
       >
@@ -825,14 +939,18 @@ const [applyToAll, setApplyToAll] = useState(false);
                   
   <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
     <div className='flex flex-col items-start gap-3 '>
-      <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
+      <div className="flex justify-between items-center">
+        <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
+        {assetInfo && (
+          <span className='text-[9px] leading-[12px] font-[400] text-[#666]'>
+            Max {assetInfo.szDecimals} decimals
+          </span>
+        )}
+      </div>
       <input
         type="number"
         value={buyAmount}
-        onChange={(e) => {
-          setBuyAmount(e.target.value);
-          calculateUSDValue(e.target.value); // Calculate USD equivalent
-        }}
+        onChange={(e) => handleBuyAmountChange(e.target.value)}
         placeholder="0.0"
         className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
       />
@@ -852,11 +970,18 @@ const [applyToAll, setApplyToAll] = useState(false);
         {orderType === 'Limit' && (
           <div className="my-4 px-4">
             <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
-              <label className="text-[11px] leading-[16px] font-[500] text-[#919093]">Limit Price</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[11px] leading-[16px] font-[500] text-[#919093]">Limit Price</label>
+                {assetInfo && (
+                  <span className='text-[9px] leading-[12px] font-[400] text-[#666]'>
+                    Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 value={limitPrice}
-                onChange={(e) => setLimitPrice(e.target.value)}
+                onChange={(e) => handleLimitPriceChange(e.target.value)}
                 placeholder={marketData ? marketData.price.toString() : "0.0"}
                 className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
               />

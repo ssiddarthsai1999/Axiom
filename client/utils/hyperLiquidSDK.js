@@ -422,12 +422,12 @@ export async function placeOrderWithAgentWallet(orderParams, isMainnet = true) {
   const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
   const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
   
-  const assetId = getAssetId(orderParams.symbol);
+  // const assetId = getAssetId(orderParams.symbol);
   
   // Match HyperLiquid app format exactly
   const orderRequest = {
     orders: [{
-      a: assetId,
+      a: orderParams.cloid,
       b: orderParams.isBuy,
       p: orderParams.price.toString(),
       s: orderParams.size.toString(),

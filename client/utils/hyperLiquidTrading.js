@@ -33,6 +33,7 @@ class HyperliquidUtils {
       }
 
       const meta = await response.json();
+      console.log('meta------------------', meta);
       this.metaCache = meta;
       return meta;
     } catch (error) {
@@ -83,11 +84,12 @@ class HyperliquidUtils {
       
       if (meta?.universe) {
         const perpAsset = meta.universe.find(asset => asset.name === symbol);
+        console.log('perpAsset------------------', perpAsset);
         if (perpAsset) {
           const assetInfo = {
             index: perpAsset.index || meta.universe.indexOf(perpAsset),
             name: perpAsset.name,
-            szDecimals: perpAsset.szDecimals || 3,
+            szDecimals: perpAsset.szDecimals !== undefined ? perpAsset.szDecimals : 3,
             isSpot: false,
           };
           
@@ -115,7 +117,7 @@ class HyperliquidUtils {
           const assetInfo = {
             index: 10000 + spotIndex, // Spot assets use 10000 + index
             name: symbol,
-            szDecimals: spotAsset.szDecimals || 6,
+            szDecimals: spotAsset.szDecimals !== undefined ? spotAsset.szDecimals : 6,
             isSpot: true,
           };
           
