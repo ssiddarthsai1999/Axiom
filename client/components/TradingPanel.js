@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices, getMaxBuilderFee, approveBuilderFee } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -44,6 +44,11 @@ const [applyToAll, setApplyToAll] = useState(false);
    const [leverage, setLeverage] = useState(10);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+  const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
+  const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
+  const [approvingBuilderFee, setApprovingBuilderFee] = useState(false);
+  const [builderFeeError, setBuilderFeeError] = useState(null);
+  const [builderFeeSuccess, setBuilderFeeSuccess] = useState(null);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
   // Replace agentWallet state logic with sessionStorage-based agent wallet
@@ -460,10 +465,69 @@ const [applyToAll, setApplyToAll] = useState(false);
       // console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
       
       await checkOnboardingStatus();
+      await checkBuilderFeeStatus();
       
     } catch (error) {
       console.error('Error creating signer:', error);
       setOrderError('Failed to connect wallet: ' + error.message);
+    }
+  };
+
+  const checkBuilderFeeStatus = async () => {
+    if (!wallet || !wallet.signer) return;
+    
+    setCheckingBuilderFee(true);
+    setBuilderFeeError(null);
+    
+    try {
+      console.log('🔍 Checking builder fee status...');
+      const maxFee = await getMaxBuilderFee(wallet, true);
+      
+      // If maxFee is greater than 0, builder fee is approved
+      const isApproved = maxFee > 0;
+      setBuilderFeeApproved(isApproved);
+      
+      console.log('💰 Builder fee status:', { maxFee, isApproved });
+    } catch (error) {
+      console.error('❌ Error checking builder fee:', error);
+      setBuilderFeeError('Failed to check builder fee status');
+      setBuilderFeeApproved(false);
+    } finally {
+      setCheckingBuilderFee(false);
+    }
+  };
+
+  const handleApproveBuilderFee = async () => {
+    if (!wallet || !wallet.signer) {
+      setBuilderFeeError('Wallet not connected');
+      return;
+    }
+
+    setApprovingBuilderFee(true);
+    setBuilderFeeError(null);
+    setBuilderFeeSuccess(null);
+
+    try {
+      console.log('🔧 Approving builder fee...');
+      
+      // Approve with a reasonable max fee rate (10000 = 1%)
+      const maxFeeRate = 10000; // 1% in basis points
+      const result = await approveBuilderFee(wallet.signer, maxFeeRate, true);
+      
+      console.log('✅ Builder fee approved:', result);
+      setBuilderFeeSuccess('Builder fee approved successfully!');
+      setBuilderFeeApproved(true);
+      
+      // Clear success message after a few seconds
+      setTimeout(() => {
+        setBuilderFeeSuccess(null);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Error approving builder fee:', error);
+      setBuilderFeeError(error.message || 'Failed to approve builder fee');
+    } finally {
+      setApprovingBuilderFee(false);
     }
   };
 
@@ -1338,6 +1402,44 @@ const [applyToAll, setApplyToAll] = useState(false);
             >
               🤖 Create Agent Wallet
             </button>
+          </div>
+        )}
+
+        {/* Builder Fee Approval Button */}
+        {isConnected && isOnboarded && (
+          <div className='px-4 mt-2'>
+            {/* Builder Fee Error Display */}
+            {builderFeeError && (
+              <div className="mb-2 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
+                <p className="text-red-400">{builderFeeError}</p>
+              </div>
+            )}
+
+            {/* Builder Fee Success Display */}
+            {builderFeeSuccess && (
+              <div className="mb-2 p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
+                <p className="text-green-400">{builderFeeSuccess}</p>
+              </div>
+            )}
+
+            {builderFeeApproved ? (
+              <div className="w-full py-2 px-4 text-xs bg-green-900 bg-opacity-30 border border-green-600 rounded text-center">
+                <span className="text-green-400">✅ Builder Fee Approved</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleApproveBuilderFee}
+                disabled={approvingBuilderFee || checkingBuilderFee}
+                className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
+              >
+                {approvingBuilderFee 
+                  ? '⏳ Approving Builder Fee...' 
+                  : checkingBuilderFee 
+                  ? '🔍 Checking Status...'
+                  : '💰 Approve Builder Fee'
+                }
+              </button>
+            )}
           </div>
         )}
 

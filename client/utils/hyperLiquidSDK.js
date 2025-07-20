@@ -308,6 +308,7 @@ export function generateAgentWallet() {
 
 
 export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = true, agentName) {
+  console.log(mainSigner, 'mainSigner in approveAgentWallet');
   const nonce = Date.now();
   console.log('🔐 Approving agent wallet:', agentAddress, 'for user:', mainSigner.getAddress());
   const action = {
@@ -320,7 +321,7 @@ export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = t
   };
   console.log('🔐 Action:', action);
   const chainId = parseInt(action.signatureChainId, 16); // 42161
-
+  
   const signature = await signUserSignedAction({
     wallet: mainSigner,
     action,
@@ -876,3 +877,126 @@ export function calculateTPSLPrices(entryPrice, tpPercentage, slPercentage, isLo
     stopLossPrice: stopLossPrice ? parseFloat(stopLossPrice.toFixed(6)) : null
   };
 } 
+
+/**
+ * Get the maximum builder fee for a user
+ * @param {object} wallet - The wallet object with signer and provider
+ * @param {boolean} isMainnet - Whether to use mainnet
+ * @returns {Promise<number>} The maximum builder fee
+ */
+export async function getMaxBuilderFee(wallet, isMainnet = true) {
+  try {
+    if (!wallet || !wallet.signer) {
+      throw new Error('Wallet must have signer');
+    }
+
+    const userAddress = await wallet.signer.getAddress();
+
+    const transport = new HttpTransport({ isTestnet: !isMainnet });
+    const infoClient = new InfoClient({ transport });
+    const maxFee = await infoClient.maxBuilderFee({ user: userAddress });
+    return maxFee;
+  } catch (error) {
+    console.error('❌ Error getting max builder fee:', error);
+    throw error;
+  }
+}
+
+/**
+ * Approve builder fee for the user
+ * @param {object} wallet - The wallet object with an ethers.js signer and provider
+ * @param {number} maxFeeRate - The maximum fee rate to approve (e.g., 10000 for 1%)
+ * @param {boolean} isMainnet - Whether to use mainnet
+ * @returns {Promise<any>} The approval result
+ */
+export async function approveBuilderFee(wallet, maxFeeRate, isMainnet = true) {
+  const nonce = Date.now();
+  const action = {
+    type: "approveBuilderFee",
+    signatureChainId: "0xa4b1", // Arbitrum mainnet
+    hyperliquidChain: "Mainnet",
+    maxFeeRate,
+    nonce,
+  };
+  const chainId = parseInt(action.signatureChainId, 16); // 42161
+  const signature = await signUserSignedAction({
+    wallet: wallet,
+    action,
+    types: userSignedActionEip712Types.approveBuilderFee,
+    chainId,
+  });
+  const resp = await fetch("https://api.hyperliquid.xyz/exchange", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, signature, nonce }),
+  });
+  if (!resp.ok) {
+    throw new Error(`Approval failed: ${await resp.text()}`);
+  }
+
+  return resp.json();
+  // try {
+  //   console.log('🔧 Approving builder fee:', maxFeeRate);
+
+
+  //   const nonce = Date.now();
+
+  //   const action = {
+  //     type: "approveBuilderFee",
+  //     signatureChainId: "0xa4b1", // Arbitrum One (42161)
+  //     hyperliquidChain: isMainnet ? "Mainnet" : "Testnet",
+  //     maxFeeRate,
+  //     nonce,
+  //   };
+    
+  //   console.log('🔐 Action to be signed:', action);
+  //   const chainId = parseInt(action.signatureChainId, 16);
+
+  //   const signature = await signUserSignedAction({
+  //     wallet: connectedSigner, // Use the signer that is connected to a provider
+  //     action,
+  //     types: userSignedActionEip712Types.approveBuilderFee,
+  //     chainId,
+  //   });
+    
+  //   console.log('🔐 Signature:', signature);
+
+  //   // This is the payload for the HTTP POST request.
+  //   // According to Hyperliquid docs, the `maxFeeRate` in the JSON body should be a string.
+  //   const requestBody = {
+  //       action: {
+  //           ...action,
+  //           maxFeeRate: String(action.maxFeeRate),
+  //       },
+  //       nonce: action.nonce,
+  //       signature,
+  //   };
+    
+  //   const exchangeApiUrl = isMainnet ? "https://api.hyperliquid.xyz/exchange" : "https://api.hyperliquid-testnet.xyz/exchange";
+    
+  //   console.log('📤 Sending request to:', exchangeApiUrl);
+  //   console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+
+  //   const resp = await fetch(exchangeApiUrl, {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify(requestBody),
+  //   });
+    
+  //   const responseBodyText = await resp.text();
+  //   console.log('📥 Response status:', resp.status);
+  //   console.log('📥 Response body:', responseBodyText);
+    
+  //   if (!resp.ok) {
+  //     throw new Error(`Builder fee approval failed: ${resp.status} - ${responseBodyText}`);
+  //   }
+
+  //   const result = JSON.parse(responseBodyText);
+  //   console.log('✅ Builder fee approved:', result);
+  //   return result;
+
+  // } catch (error) {
+  //   console.error('❌ Error approving builder fee:', error);
+  //   throw error;
+  // }
+}
