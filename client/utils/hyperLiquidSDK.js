@@ -308,6 +308,7 @@ export function generateAgentWallet() {
 
 
 export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = true, agentName) {
+  console.log(mainSigner, 'mainSigner in approveAgentWallet');
   const nonce = Date.now();
   console.log('🔐 Approving agent wallet:', agentAddress, 'for user:', mainSigner.getAddress());
   const action = {
@@ -320,7 +321,7 @@ export async function approveAgentWallet(mainSigner, agentAddress, isMainnet = t
   };
   console.log('🔐 Action:', action);
   const chainId = parseInt(action.signatureChainId, 16); // 42161
-
+  
   const signature = await signUserSignedAction({
     wallet: mainSigner,
     action,
@@ -417,30 +418,31 @@ export async function placeOrderWithAgentWallet(orderParams, isMainnet = true) {
   console.log(agentWallet.address, 'agentWallet address -----')
   console.log('🚀 Starting Agent Wallet order placement...');
   console.log('📋 Order params:', orderParams);
-  // return
+  
   const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
-  // Use the Wallet object, not the private key string!
   const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
-  // Convert orderParams to SDK format if needed
-  // orderParams: { symbol, isBuy, size, price, orderType, ... }
-  const assetId = getAssetId(orderParams.symbol);
+  
+  // const assetId = getAssetId(orderParams.symbol);
+  
+  // Match HyperLiquid app format exactly
   const orderRequest = {
     orders: [{
-      a: assetId,
+      a: orderParams.cloid,
       b: orderParams.isBuy,
       p: orderParams.price.toString(),
       s: orderParams.size.toString(),
       r: false,
       t: {
         limit: {
-          // tif: orderParams.orderType === 'market' ? 'Ioc' : 'Gtc',
-          tif: 'Gtc',
+          tif: orderParams.orderType === 'market' ? 'FrontendMarket' : 'Gtc', // Use FrontendMarket for market orders
         },
       },
     }],
     grouping: 'na',
   };
-  console.log(orderRequest, 'orderRequest -----')
+  
+  console.log('📋 Order request (HyperLiquid format):', JSON.stringify(orderRequest, null, 2));
+  
   try {
     const result = await exchClient.order(orderRequest);
     console.log('✅ Order placed with agent wallet:', result);
@@ -481,34 +483,116 @@ export async function getAgentWallets(signer, isMainnet = true) {
  * Convert asset symbol to asset ID
  */
 function getAssetId(symbol) {
-  // Common asset mappings - you may need to expand this
+  // Asset mappings based on HyperLiquid API
   const assetMap = {
     'BTC': 0,
     'ETH': 1,
-    'ARB': 11,
-    'POL': 142,
+    'SOL': 2,
+    'WIF': 3,
+    'PEPE': 4,
+    'ORDI': 5,
+    'SATS': 6,
+    'TIA': 7,
+    'SEI': 8,
+    'JUP': 9,
+    'STRK': 10,
+    'PYTH': 11,
+    'INJ': 12,
+    'STX': 13,
+    'MATIC': 14,
     'ATOM': 15,
-    'SOL': 16,
-    'MATIC': 17,
-    'LINK': 18,
-    'UNI': 19,
-    'AVAX': 20,
-    'DOT': 21,
-    'LTC': 22,
-    'BCH': 23,
-    'XRP': 24,
-    'ADA': 25,
-    'DOGE': 26,
-    'SHIB': 27,
-    'TRX': 28,
-    'ETC': 29,
-    'XLM': 30,
+    'ARB': 16,
+    'OP': 17,
+    'AVAX': 18,
+    'NEAR': 19,
+    'DYDX': 20,
+    'GMX': 21,
+    'LINK': 22,
+    'UNI': 23,
+    'ADA': 24,
+    'DOGE': 25,
+    'SHIB': 26,
+    'TRX': 27,
+    'ETC': 28,
+    'XLM': 29,
+    'LTC': 30,
+    'BCH': 31,
+    'XRP': 32,
+    'DOT': 33,
+    'FIL': 34,
+    'AAVE': 35,
+    'MKR': 36,
+    'CRV': 37,
+    'LDO': 38,
+    'BLUR': 39,
+    'SUI': 40,
+    'APT': 41,
+    'FTM': 42,
+    'MANA': 43,
+    'SAND': 44,
+    'AXS': 45,
+    'ICP': 46,
+    'IMX': 47,
+    'ENS': 48,
+    'OP': 49,
+    'RUNE': 50,
+    'BONK': 51,
+    'WLD': 52,
+    'ARKM': 53,
+    'MEME': 54,
+    'JTO': 55,
+    'DYM': 56,
+    'PENDLE': 57,
+    'ALT': 58,
+    'TNSR': 59,
+    'W': 60,
+    'ENA': 61,
+    'ETHFI': 62,
+    'REZ': 63,
+    'BB': 64,
+    'LISTA': 65,
+    'ZRO': 66,
+    'IO': 67,
+    'NOT': 68,
+    'DOGS': 69,
+    'TON': 70,
+    'CATI': 71,
+    'HMSTR': 72,
+    'NEIRO': 73,
+    'TURBO': 74,
+    'EIGEN': 75,
+    'GOAT': 76,
+    'GRASS': 77,
+    'PNUT': 78,
+    'CHILLGUY': 79,
+    'VIRTUAL': 80,
+    'ACT': 81,
+    'PUFFER': 82,
+    'AI16Z': 83,
+    'ZEREBRO': 84,
+    'USUAL': 85,
+    'MOVE': 86,
+    'ONDO': 87,
+    'PENGU': 88,
+    'HYPE': 89,
+    'ME': 90,
+    'VANA': 91,
+    'VELO': 92,
+    'VELODROME': 93,
+    'AERO': 94,
+    'HIGHER': 95,
+    'SPX': 96,
+    'FARTCOIN': 97,
+    'BAN': 98,
+    'LUCE': 99,
+    'CHILLGUY': 100,
+    'POL': 142, // Polygon (MATIC rebrand)
     // Add more as needed
   };
   
   const assetId = assetMap[symbol];
   if (assetId === undefined) {
-    throw new Error(`Unknown asset symbol: ${symbol}`);
+    throw new Error(`Unknown asset symbol: ${symbol}. Available symbols: ${Object.keys(assetMap).join(', ')}`);
   }
   
   return assetId;
@@ -608,4 +692,311 @@ export async function getOpenOrdersSDK(signer, isMainnet = true) {
     console.error('❌ Error getting open orders via SDK:', error);
     throw error;
   }
+}
+
+/**
+ * Update leverage using the nktkas/hyperliquid SDK
+ * @param {number} assetIndex - The asset index (0 for BTC, 1 for ETH, etc.)
+ * @param {number} leverage - The leverage value (1-50)
+ * @param {boolean} isCross - Whether to use cross margin (true) or isolated (false)
+ * @param {ethers.Signer} signer - The wallet signer
+ * @param {boolean} isMainnet - Whether to use mainnet or testnet
+ * @returns {Promise<any>} The result of the leverage update
+ */
+export async function updateLeverageSDK(assetIndex, leverage, isCross, signer, isMainnet = true) {
+  try {
+    const agentWallet = getOrCreateSessionAgentWallet();
+    const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
+    const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+    const leverageParams = {
+      asset: assetIndex,
+      isCross: isCross,
+      leverage: leverage
+    };
+    const response = await exchClient.updateLeverage(leverageParams);
+    return response;
+  } catch (error) {
+    console.error('❌ Error updating leverage:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get asset index by symbol for leverage updates (uses same mapping as getAssetId)
+ */
+export function getAssetIndexBySymbol(symbol) {
+  // Use the same mapping as getAssetId for consistency
+  return getAssetId(symbol);
+}
+
+// Note: Individual TP/SL order functions removed - now using single request with normalTpsl grouping
+
+/**
+ * Enhanced order placement with TP/SL support (matches HyperLiquid app format)
+ * @param {object} orderParams - Main order parameters
+ * @param {object} tpSlParams - TP/SL parameters
+ * @param {boolean} isMainnet - Whether to use mainnet
+ * @returns {Promise<any>} Results of all placed orders
+ */
+export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = true) {
+  try {
+    console.log('🚀 Placing order with TP/SL (HyperLiquid format)...', { orderParams, tpSlParams });
+    
+    const agentWallet = getOrCreateSessionAgentWallet();
+    const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
+    const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+    
+    const assetId = getAssetId(orderParams.symbol);
+    const isLongPosition = orderParams.isBuy;
+    
+    // Build orders array starting with main order
+    const orders = [];
+    
+    // Main order (matches HyperLiquid app format)
+    const mainOrder = {
+      a: assetId,
+      b: orderParams.isBuy,
+      p: orderParams.price.toString(),
+      r: false,
+      s: orderParams.size.toString(),
+      t: {
+        limit: {
+          tif: orderParams.orderType === 'market' ? 'FrontendMarket' : 'Gtc'
+        }
+      }
+    };
+    orders.push(mainOrder);
+    
+    // Add TP/SL orders if enabled
+    if (tpSlParams.enabled) {
+      // Stop Loss order (opposite direction, reduce-only)
+      if (tpSlParams.stopLossPrice && tpSlParams.stopLossPrice > 0) {
+        const slOrder = {
+          a: assetId,
+          b: !isLongPosition, // Opposite of main order
+          p: tpSlParams.stopLossPrice.toString(),
+          r: true, // reduce_only
+          s: orderParams.size.toString(),
+          t: {
+            trigger: {
+              isMarket: true,
+              tpsl: 'sl',
+              triggerPx: tpSlParams.stopLossPrice.toString()
+            }
+          }
+        };
+        orders.push(slOrder);
+      }
+      
+      // Take Profit order (opposite direction, reduce-only)
+      if (tpSlParams.takeProfitPrice && tpSlParams.takeProfitPrice > 0) {
+        const tpOrder = {
+          a: assetId,
+          b: !isLongPosition, // Opposite of main order
+          p: tpSlParams.takeProfitPrice.toString(),
+          r: true, // reduce_only
+          s: orderParams.size.toString(),
+          t: {
+            trigger: {
+              isMarket: true,
+              tpsl: 'tp',
+              triggerPx: tpSlParams.takeProfitPrice.toString()
+            }
+          }
+        };
+        orders.push(tpOrder);
+      }
+    }
+    
+    // Create order request in HyperLiquid app format
+    const orderRequest = {
+      action: {
+        type: 'order',
+        orders: orders,
+        grouping: tpSlParams.enabled ? 'normalTpsl' : 'na' // Use normalTpsl when TP/SL is enabled
+      },
+      isFrontend: true, // Match HyperLiquid app
+      nonce: Date.now(),
+      vaultAddress: null
+    };
+    
+    console.log('📋 TP/SL Order request (HyperLiquid format):', JSON.stringify(orderRequest, null, 2));
+    
+    // Use the lower-level API call to match exact format
+    const result = await exchClient.order({
+      orders: orders,
+      grouping: tpSlParams.enabled ? 'normalTpsl' : 'na'
+    });
+    
+    console.log('✅ TP/SL orders placed (HyperLiquid format):', result);
+    
+    // Format response to match expected structure
+    return {
+      mainOrder: result,
+      takeProfitOrder: tpSlParams.enabled && tpSlParams.takeProfitPrice ? result : null,
+      stopLossOrder: tpSlParams.enabled && tpSlParams.stopLossPrice ? result : null,
+      errors: []
+    };
+    
+  } catch (error) {
+    console.error('❌ Error in placeOrderWithTPSL:', error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate TP/SL prices based on percentage
+ * @param {number} entryPrice - Entry price
+ * @param {number} tpPercentage - Take profit percentage
+ * @param {number} slPercentage - Stop loss percentage  
+ * @param {boolean} isLong - Whether it's a long position
+ * @returns {object} Calculated TP/SL prices
+ */
+export function calculateTPSLPrices(entryPrice, tpPercentage, slPercentage, isLong) {
+  let takeProfitPrice = null;
+  let stopLossPrice = null;
+  
+  if (tpPercentage && tpPercentage > 0) {
+    if (isLong) {
+      takeProfitPrice = entryPrice * (1 + tpPercentage / 100);
+    } else {
+      takeProfitPrice = entryPrice * (1 - tpPercentage / 100);
+    }
+  }
+  
+  if (slPercentage && slPercentage > 0) {
+    if (isLong) {
+      stopLossPrice = entryPrice * (1 - slPercentage / 100);
+    } else {
+      stopLossPrice = entryPrice * (1 + slPercentage / 100);
+    }
+  }
+  
+  return {
+    takeProfitPrice: takeProfitPrice ? parseFloat(takeProfitPrice.toFixed(6)) : null,
+    stopLossPrice: stopLossPrice ? parseFloat(stopLossPrice.toFixed(6)) : null
+  };
 } 
+
+/**
+ * Get the maximum builder fee for a user
+ * @param {object} wallet - The wallet object with signer and provider
+ * @param {boolean} isMainnet - Whether to use mainnet
+ * @returns {Promise<number>} The maximum builder fee
+ */
+export async function getMaxBuilderFee(wallet, isMainnet = true) {
+  try {
+    if (!wallet || !wallet.signer) {
+      throw new Error('Wallet must have signer');
+    }
+
+    const userAddress = await wallet.signer.getAddress();
+
+    const transport = new HttpTransport({ isTestnet: !isMainnet });
+    const infoClient = new InfoClient({ transport });
+    const maxFee = await infoClient.maxBuilderFee({ user: userAddress });
+    return maxFee;
+  } catch (error) {
+    console.error('❌ Error getting max builder fee:', error);
+    throw error;
+  }
+}
+
+/**
+ * Approve builder fee for the user
+ * @param {object} wallet - The wallet object with an ethers.js signer and provider
+ * @param {number} maxFeeRate - The maximum fee rate to approve (e.g., 10000 for 1%)
+ * @param {boolean} isMainnet - Whether to use mainnet
+ * @returns {Promise<any>} The approval result
+ */
+export async function approveBuilderFee(wallet, maxFeeRate, isMainnet = true) {
+  const nonce = Date.now();
+  const action = {
+    type: "approveBuilderFee",
+    signatureChainId: "0xa4b1", // Arbitrum mainnet
+    hyperliquidChain: "Mainnet",
+    maxFeeRate,
+    nonce,
+  };
+  const chainId = parseInt(action.signatureChainId, 16); // 42161
+  const signature = await signUserSignedAction({
+    wallet: wallet,
+    action,
+    types: userSignedActionEip712Types.approveBuilderFee,
+    chainId,
+  });
+  const resp = await fetch("https://api.hyperliquid.xyz/exchange", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, signature, nonce }),
+  });
+  if (!resp.ok) {
+    throw new Error(`Approval failed: ${await resp.text()}`);
+  }
+
+  return resp.json();
+  // try {
+  //   console.log('🔧 Approving builder fee:', maxFeeRate);
+
+
+  //   const nonce = Date.now();
+
+  //   const action = {
+  //     type: "approveBuilderFee",
+  //     signatureChainId: "0xa4b1", // Arbitrum One (42161)
+  //     hyperliquidChain: isMainnet ? "Mainnet" : "Testnet",
+  //     maxFeeRate,
+  //     nonce,
+  //   };
+    
+  //   console.log('🔐 Action to be signed:', action);
+  //   const chainId = parseInt(action.signatureChainId, 16);
+
+  //   const signature = await signUserSignedAction({
+  //     wallet: connectedSigner, // Use the signer that is connected to a provider
+  //     action,
+  //     types: userSignedActionEip712Types.approveBuilderFee,
+  //     chainId,
+  //   });
+    
+  //   console.log('🔐 Signature:', signature);
+
+  //   // This is the payload for the HTTP POST request.
+  //   // According to Hyperliquid docs, the `maxFeeRate` in the JSON body should be a string.
+  //   const requestBody = {
+  //       action: {
+  //           ...action,
+  //           maxFeeRate: String(action.maxFeeRate),
+  //       },
+  //       nonce: action.nonce,
+  //       signature,
+  //   };
+    
+  //   const exchangeApiUrl = isMainnet ? "https://api.hyperliquid.xyz/exchange" : "https://api.hyperliquid-testnet.xyz/exchange";
+    
+  //   console.log('📤 Sending request to:', exchangeApiUrl);
+  //   console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+
+  //   const resp = await fetch(exchangeApiUrl, {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify(requestBody),
+  //   });
+    
+  //   const responseBodyText = await resp.text();
+  //   console.log('📥 Response status:', resp.status);
+  //   console.log('📥 Response body:', responseBodyText);
+    
+  //   if (!resp.ok) {
+  //     throw new Error(`Builder fee approval failed: ${resp.status} - ${responseBodyText}`);
+  //   }
+
+  //   const result = JSON.parse(responseBodyText);
+  //   console.log('✅ Builder fee approved:', result);
+  //   return result;
+
+  // } catch (error) {
+  //   console.error('❌ Error approving builder fee:', error);
+  //   throw error;
+  // }
+}

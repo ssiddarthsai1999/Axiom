@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices, getMaxBuilderFee, approveBuilderFee } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -44,6 +44,11 @@ const [applyToAll, setApplyToAll] = useState(false);
    const [leverage, setLeverage] = useState(10);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+  const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
+  const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
+  const [approvingBuilderFee, setApprovingBuilderFee] = useState(false);
+  const [builderFeeError, setBuilderFeeError] = useState(null);
+  const [builderFeeSuccess, setBuilderFeeSuccess] = useState(null);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
   // Replace agentWallet state logic with sessionStorage-based agent wallet
@@ -86,15 +91,102 @@ const [applyToAll, setApplyToAll] = useState(false);
   const handleLeverageClick = () => {
     setTempLeverage(leverage);
     setShowLeverageModal(true);
+    // Clear any previous error/success messages when opening modal
+    setLeverageError(null);
+    setLeverageSuccess(null);
   };
 
     const handleSliderChange = (e) => {
     setTempLeverage(parseInt(e.target.value));
+    // Clear error messages when user changes leverage
+    setLeverageError(null);
+    setLeverageSuccess(null);
   };
 
-  const handleLeverageSet = () => {
-    setLeverage(tempLeverage);
-    setShowLeverageModal(false);
+  const [isUpdatingLeverage, setIsUpdatingLeverage] = useState(false);
+  const [leverageError, setLeverageError] = useState(null);
+  const [leverageSuccess, setLeverageSuccess] = useState(null);
+
+  // Auto-calculate TP/SL prices when percentages change
+  useEffect(() => {
+    if (tpSlEnabled && marketData?.price) {
+      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+      const isLong = side === 'Long';
+      
+      const calculatedPrices = calculateTPSLPrices(
+        entryPrice,
+        parseFloat(tpPercentage) || 0,
+        parseFloat(slPercentage) || 0,
+        isLong
+      );
+      
+      if (tpPercentage && calculatedPrices.takeProfitPrice && !tpPrice) {
+        setTpPrice(calculatedPrices.takeProfitPrice.toString());
+      }
+      
+      if (slPercentage && calculatedPrices.stopLossPrice && !slPrice) {
+        setSlPrice(calculatedPrices.stopLossPrice.toString());
+      }
+    }
+  }, [tpPercentage, slPercentage, marketData?.price, limitPrice, side, orderType, tpSlEnabled]);
+
+  const handleLeverageSet = async () => {
+    if (!wallet || !wallet.signer) {
+      setLeverageError('Wallet not connected');
+      return;
+    }
+
+    if (!selectedSymbol) {
+      setLeverageError('No asset selected');
+      return;
+    }
+
+    setIsUpdatingLeverage(true);
+    setLeverageError(null);
+    setLeverageSuccess(null);
+
+    try {
+      // Get asset index for the selected symbol
+      const assetIndex = getAssetIndexBySymbol(selectedSymbol);
+      
+      // Determine if cross margin based on marginMode
+      const isCross = marginMode === 'cross';
+      
+      console.log('🔧 Updating leverage:', {
+        symbol: selectedSymbol,
+        assetIndex,
+        leverage: tempLeverage,
+        isCross,
+        applyToAll
+      });
+
+      // Update leverage using SDK
+      const result = await updateLeverageSDK(
+        assetIndex,
+        tempLeverage,
+        isCross,
+        wallet.signer,
+        true // isMainnet
+      );
+
+      console.log('✅ Leverage updated successfully:', result);
+      
+      // Update local state only after successful API call
+      setLeverage(tempLeverage);
+      setLeverageSuccess(`Leverage updated to ${tempLeverage}x for ${selectedSymbol}`);
+      
+      // Close modal after a short delay to show success message
+      setTimeout(() => {
+        setShowLeverageModal(false);
+        setLeverageSuccess(null);
+      }, 2000);
+
+    } catch (error) {
+      console.error('❌ Error updating leverage:', error);
+      setLeverageError(error.message || 'Failed to update leverage');
+    } finally {
+      setIsUpdatingLeverage(false);
+    }
   };
 
 
@@ -277,9 +369,10 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   useEffect(() => {
     if (orderType === 'Limit' && marketData && !limitPrice) {
-      setLimitPrice(marketData.price.toString());
+      const formattedPrice = assetInfo ? formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot) : marketData.price.toString();
+      setLimitPrice(formattedPrice);
     }
-  }, [orderType, marketData, limitPrice]);
+  }, [orderType, marketData, limitPrice, assetInfo]);
 
 
     const handlePercentageClick = (percent) => {
@@ -300,7 +393,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Calculate token amount based on current price
     if (marketData && marketData.price > 0) {
       const tokenAmount = positionValue / marketData.price;
-      const amountStr = tokenAmount.toFixed(6); // Use more decimals for accuracy
+      const amountStr = assetInfo ? formatSizeToMaxDecimals(tokenAmount.toString(), assetInfo.szDecimals) : tokenAmount.toFixed(6);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
       
@@ -373,10 +466,69 @@ const [applyToAll, setApplyToAll] = useState(false);
       // console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
       
       await checkOnboardingStatus();
+      await checkBuilderFeeStatus();
       
     } catch (error) {
       console.error('Error creating signer:', error);
       setOrderError('Failed to connect wallet: ' + error.message);
+    }
+  };
+
+  const checkBuilderFeeStatus = async () => {
+    if (!wallet || !wallet.signer) return;
+    
+    setCheckingBuilderFee(true);
+    setBuilderFeeError(null);
+    
+    try {
+      console.log('🔍 Checking builder fee status...');
+      const maxFee = await getMaxBuilderFee(wallet, true);
+      
+      // If maxFee is greater than 0, builder fee is approved
+      const isApproved = maxFee > 0;
+      setBuilderFeeApproved(isApproved);
+      
+      console.log('💰 Builder fee status:', { maxFee, isApproved });
+    } catch (error) {
+      console.error('❌ Error checking builder fee:', error);
+      setBuilderFeeError('Failed to check builder fee status');
+      setBuilderFeeApproved(false);
+    } finally {
+      setCheckingBuilderFee(false);
+    }
+  };
+
+  const handleApproveBuilderFee = async () => {
+    if (!wallet || !wallet.signer) {
+      setBuilderFeeError('Wallet not connected');
+      return;
+    }
+
+    setApprovingBuilderFee(true);
+    setBuilderFeeError(null);
+    setBuilderFeeSuccess(null);
+
+    try {
+      console.log('🔧 Approving builder fee...');
+      
+      // Approve with a reasonable max fee rate (10000 = 1%)
+      const maxFeeRate = 10000; // 1% in basis points
+      const result = await approveBuilderFee(wallet.signer, maxFeeRate, true);
+      
+      console.log('✅ Builder fee approved:', result);
+      setBuilderFeeSuccess('Builder fee approved successfully!');
+      setBuilderFeeApproved(true);
+      
+      // Clear success message after a few seconds
+      setTimeout(() => {
+        setBuilderFeeSuccess(null);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Error approving builder fee:', error);
+      setBuilderFeeError(error.message || 'Failed to approve builder fee');
+    } finally {
+      setApprovingBuilderFee(false);
     }
   };
 
@@ -428,58 +580,132 @@ const [applyToAll, setApplyToAll] = useState(false);
         return;
       }
       setIsPlacingOrder(true);
+      
+      // Final validation and formatting of order parameters
+      const finalSize = parseFloat(formatSizeToMaxDecimals(orderSize.toString(), assetInfo.szDecimals));
+      const finalPrice = orderType === 'Limit' 
+        ? parseFloat(formatPriceToMaxDecimals(parseFloat(limitPrice).toString(), assetInfo.szDecimals, assetInfo.isSpot))
+        : parseFloat(formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot));
+      
       const orderParams = {
         symbol: selectedSymbol,
         isBuy: side === 'Long',
-        size: orderSize,
-        price: orderType === 'Limit' ? parseFloat(limitPrice) : marketData.price,
+        size: finalSize,
+        price: finalPrice,
         orderType: orderType.toLowerCase(),
         timeInForce: 'GTC',
         reduceOnly: false,
-        cloid: null
+        cloid: assetInfo.index
       };
-      // Place order with agent wallet
-      const result = await placeOrderWithAgentWallet(
-        orderParams,
-        true // isMainnet
-      );
-      // ... handle result as before ...
-      if (result && result.status === 'ok') {
-        const orderData = result.response?.data;
-        if (orderData?.statuses && orderData.statuses.length > 0) {
-          const status = orderData.statuses[0];
-          if (status.filled) {
-            setOrderSuccess(
-              `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
-            );
-          } else if (status.resting) {
-            setOrderSuccess(
-              `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully! Order ID: ${status.resting.oid}`
-            );
+
+      // Prepare TP/SL parameters if enabled
+      const tpSlParams = {
+        enabled: tpSlEnabled,
+        takeProfitPrice: tpSlEnabled && tpPrice ? parseFloat(tpPrice) : null,
+        stopLossPrice: tpSlEnabled && slPrice ? parseFloat(slPrice) : null
+      };
+
+      // Place order with TP/SL if enabled, otherwise place regular order
+      const result = tpSlEnabled && (tpSlParams.takeProfitPrice || tpSlParams.stopLossPrice)
+        ? await placeOrderWithTPSL(orderParams, tpSlParams, true)
+        : await placeOrderWithAgentWallet(orderParams, true);
+      // Handle result based on whether TP/SL was used
+      if (result) {
+        // TP/SL order result handling
+        if (result.mainOrder) {
+          const mainOrderSuccess = result.mainOrder.status === 'ok';
+          let successMessage = '';
+          let hasErrors = result.errors && result.errors.length > 0;
+          
+          if (mainOrderSuccess) {
+            const orderData = result.mainOrder.response?.data;
+            if (orderData?.statuses && orderData.statuses.length > 0) {
+              const status = orderData.statuses[0];
+              if (status.filled) {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`;
+              } else if (status.resting) {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+              } else {
+                successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+              }
+            } else {
+              successMessage = `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`;
+            }
+            
+            // Add TP/SL status to success message
+            if (tpSlEnabled) {
+              const tpSuccess = result.takeProfitOrder && result.takeProfitOrder.status === 'ok';
+              const slSuccess = result.stopLossOrder && result.stopLossOrder.status === 'ok';
+              
+              if (tpSuccess && slSuccess) {
+                successMessage += '\n🎯 Take Profit and Stop Loss orders placed!';
+              } else if (tpSuccess) {
+                successMessage += '\n🎯 Take Profit order placed!';
+              } else if (slSuccess) {
+                successMessage += '\n🛡️ Stop Loss order placed!';
+              }
+            }
+            
+            setOrderSuccess(successMessage);
+            
+            // Show warnings if TP/SL orders failed
+            if (hasErrors) {
+              setTimeout(() => {
+                setOrderError(`⚠️ TP/SL Issues: ${result.errors.join(', ')}`);
+              }, 3000);
+            }
+          } else {
+            setOrderError('Failed to place main order. Please try again.');
+          }
+        } 
+        // Regular order result handling
+        else if (result.status === 'ok') {
+          const orderData = result.response?.data;
+          if (orderData?.statuses && orderData.statuses.length > 0) {
+            const status = orderData.statuses[0];
+            if (status.filled) {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} filled at ${status.filled.avgPx}!`
+              );
+            } else if (status.resting) {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+              );
+            } else {
+              setOrderSuccess(
+                `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
+              );
+            }
           } else {
             setOrderSuccess(
               `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
             );
           }
         } else {
-          setOrderSuccess(
-            `✅ ${side} order for ${buyAmount} ${selectedSymbol} placed successfully!`
-          );
+          let errorMessage = 'Failed to place order. Please try again.';
+          if (result.status === 'err') {
+            errorMessage = result.response || errorMessage;
+          } else if (result.response?.type === 'error') {
+            errorMessage = result.response.data || errorMessage;
+          }
+          setOrderError(errorMessage);
         }
-        setBuyAmount('0.0');
-        setLimitPrice('');
-        setPercentage(0);
-        setTimeout(() => {
-          checkOnboardingStatus();
-        }, 2000);
+        
+        // Reset form if order was successful
+        if ((result.mainOrder && result.mainOrder.status === 'ok') || result.status === 'ok') {
+          setBuyAmount('0.0');
+          setLimitPrice('');
+          setTpPrice('');
+          setSlPrice('');
+          setTpPercentage('');
+          setSlPercentage('');
+          setPercentage(0);
+          setTimeout(() => {
+            checkOnboardingStatus();
+          }, 2000);
+        }
       } else {
-        let errorMessage = 'Failed to place order. Please try again.';
-        if (result.status === 'err') {
-          errorMessage = result.response || errorMessage;
-        } else if (result.response?.type === 'error') {
-          errorMessage = result.response.data || errorMessage;
-        }
-        setOrderError(errorMessage);
+        setOrderError('No response received. Please try again.');
       }
     } catch (orderError) {
       let errorMessage = orderError.message || 'Failed to place order. Please try again.';
@@ -488,6 +714,110 @@ const [applyToAll, setApplyToAll] = useState(false);
       setIsPlacingOrder(false);
     }
   };
+
+  // Utility function to validate and format decimal places for SIZE
+  const formatSizeToMaxDecimals = (value, szDecimals) => {
+    if (!value || value === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    // Convert to string and check decimal places
+    const valueStr = value.toString();
+    const decimalIndex = valueStr.indexOf('.');
+    
+    if (decimalIndex === -1) {
+      // No decimal point, return as is
+      return valueStr;
+    }
+    
+    const decimalPlaces = valueStr.length - decimalIndex - 1;
+    if (decimalPlaces <= szDecimals) {
+      // Already within limits
+      return valueStr;
+    }
+    
+    // Truncate to max decimal places
+    return num.toFixed(szDecimals);
+  };
+
+  // Utility function to count significant figures
+  const countSignificantFigures = (value) => {
+    const cleanValue = parseFloat(value).toString();
+    const scientificMatch = cleanValue.match(/^(\d+\.?\d*)e/);
+    
+    if (scientificMatch) {
+      // Handle scientific notation
+      const mantissa = scientificMatch[1].replace('.', '');
+      return mantissa.length;
+    }
+    
+    // Remove leading zeros and decimal point
+    const withoutLeadingZeros = cleanValue.replace(/^0+/, '').replace('.', '');
+    return withoutLeadingZeros.length;
+  };
+
+  // Utility function to validate and format decimal places for PRICE
+  const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
+    if (!value || value === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    const valueStr = value.toString();
+    
+    // Check significant figures limit (max 5)
+    const sigFigs = countSignificantFigures(valueStr);
+    if (sigFigs > 5) {
+      // Truncate to 5 significant figures
+      const truncated = parseFloat(num.toPrecision(5));
+      return truncated.toString();
+    }
+    
+    // Check decimal places limit: MAX_DECIMALS - szDecimals
+    const MAX_DECIMALS = isSpot ? 8 : 6;
+    const maxDecimalPlaces = MAX_DECIMALS - szDecimals;
+    
+    const decimalIndex = valueStr.indexOf('.');
+    if (decimalIndex === -1) {
+      // No decimal point, return as is (integers are always allowed)
+      return valueStr;
+    }
+    
+    const decimalPlaces = valueStr.length - decimalIndex - 1;
+    if (decimalPlaces <= maxDecimalPlaces) {
+      // Already within limits
+      return valueStr;
+    }
+    
+    // Truncate to max decimal places
+    return num.toFixed(maxDecimalPlaces);
+  };
+
+  // Validate decimal places for size input
+  const handleBuyAmountChange = (value) => {
+    if (!assetInfo) {
+      setBuyAmount(value);
+      calculateUSDValue(value);
+      return;
+    }
+    
+    const formattedValue = formatSizeToMaxDecimals(value, assetInfo.szDecimals);
+    setBuyAmount(formattedValue);
+    calculateUSDValue(formattedValue);
+  };
+
+  // Validate decimal places for price input
+  const handleLimitPriceChange = (value) => {
+    if (!assetInfo) {
+      setLimitPrice(value);
+      return;
+    }
+    
+    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+    setLimitPrice(formattedValue);
+  };
+
   return (
     <>
       <div className={`bg-[#0d0c0e] text-white  ${className} border-l border-l-[#1F1E23] relative`}>
@@ -584,9 +914,10 @@ const [applyToAll, setApplyToAll] = useState(false);
     <div className="flex items-center space-x-2">
       <button
         onClick={() => {
-          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price).toFixed(4);
-          setBuyAmount(halfAmount);
-          calculateUSDValue(halfAmount);
+          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price);
+          const formattedAmount = assetInfo ? formatSizeToMaxDecimals(halfAmount.toString(), assetInfo.szDecimals) : halfAmount.toFixed(4);
+          setBuyAmount(formattedAmount);
+          calculateUSDValue(formattedAmount);
         }}
         className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33] cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
       >
@@ -594,9 +925,10 @@ const [applyToAll, setApplyToAll] = useState(false);
       </button>
       <button
         onClick={() => {
-          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price).toFixed(4); // 95% to leave room for fees
-          setBuyAmount(maxAmount);
-          calculateUSDValue(maxAmount);
+          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price); // 95% to leave room for fees
+          const formattedAmount = assetInfo ? formatSizeToMaxDecimals(maxAmount.toString(), assetInfo.szDecimals) : maxAmount.toFixed(4);
+          setBuyAmount(formattedAmount);
+          calculateUSDValue(formattedAmount);
         }}
         className="px-2 py-1 text-[10px] font-[400] text-[#65FB9E] bg-[#4FFFAB33]  cursor-pointer rounded hover:bg-[#4FFFAB55] transition-colors"
       >
@@ -607,14 +939,18 @@ const [applyToAll, setApplyToAll] = useState(false);
                   
   <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
     <div className='flex flex-col items-start gap-3 '>
-      <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
+      <div className="flex justify-between items-center">
+        <span className='text-[11px] leading-[16px] font-[500] text-[#919093]'>Buy amount</span>
+        {assetInfo && (
+          <span className='text-[9px] leading-[12px] font-[400] text-[#666]'>
+            Max {assetInfo.szDecimals} decimals
+          </span>
+        )}
+      </div>
       <input
         type="number"
         value={buyAmount}
-        onChange={(e) => {
-          setBuyAmount(e.target.value);
-          calculateUSDValue(e.target.value); // Calculate USD equivalent
-        }}
+        onChange={(e) => handleBuyAmountChange(e.target.value)}
         placeholder="0.0"
         className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
       />
@@ -634,11 +970,18 @@ const [applyToAll, setApplyToAll] = useState(false);
         {orderType === 'Limit' && (
           <div className="my-4 px-4">
             <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
-              <label className="text-[11px] leading-[16px] font-[500] text-[#919093]">Limit Price</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[11px] leading-[16px] font-[500] text-[#919093]">Limit Price</label>
+                {assetInfo && (
+                  <span className='text-[9px] leading-[12px] font-[400] text-[#666]'>
+                    Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 value={limitPrice}
-                onChange={(e) => setLimitPrice(e.target.value)}
+                onChange={(e) => handleLimitPriceChange(e.target.value)}
                 placeholder={marketData ? marketData.price.toString() : "0.0"}
                 className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
               />
@@ -721,24 +1064,91 @@ const [applyToAll, setApplyToAll] = useState(false);
                 {/* TP/SL Input Fields - Show when enabled */}
                 {tpSlEnabled && (
           <div className="mb-4 space-y-4 px-4">
+            {/* TP/SL Validation Messages */}
+            {tpSlEnabled && marketData?.price && (
+              <div className="text-xs space-y-1">
+                {tpPrice && (
+                  <div className={`flex items-center space-x-1 ${
+                    (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                    (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                      ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    <span>{
+                      (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                      (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                        ? '⚠️ TP price should be in profit direction' : '✅ TP price looks good'
+                    }</span>
+                  </div>
+                )}
+                {slPrice && (
+                  <div className={`flex items-center space-x-1 ${
+                    (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                    (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                      ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    <span>{
+                      (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
+                      (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
+                        ? '⚠️ SL price should be in loss direction' : '✅ SL price looks good'
+                    }</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Take Profit Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP Price</label>
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">TP %</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                  TP Price {side === 'Long' ? '📈' : '📉'} 
+                  <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
+                </label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">TP %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={tpPrice}
-                  onChange={(e) => setTpPrice(e.target.value)}
+                  onChange={(e) => {
+                    setTpPrice(e.target.value);
+                    // Auto-calculate percentage when price is manually entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const newPrice = parseFloat(e.target.value);
+                      let percentage = 0;
+                      
+                      if (isLong) {
+                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+                      } else {
+                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+                      }
+                      
+                      if (percentage > 0) {
+                        setTpPercentage(percentage.toFixed(2));
+                      }
+                    }
+                  }}
                   placeholder="Enter TP price"
                   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
                 <input
                   type="number"
                   value={tpPercentage}
-                  onChange={(e) => setTpPercentage(e.target.value)}
+                  onChange={(e) => {
+                    setTpPercentage(e.target.value);
+                    // Auto-calculate price when percentage is entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const percentage = parseFloat(e.target.value);
+                      
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, percentage, 0, isLong);
+                      if (calculatedPrices.takeProfitPrice) {
+                        setTpPrice(calculatedPrices.takeProfitPrice.toString());
+                      }
+                    }
+                  }}
                   placeholder="0.0"
                    className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
@@ -748,24 +1158,112 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Stop Loss Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL Price</label>
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">SL %</label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                  SL Price {side === 'Long' ? '📉' : '📈'} 
+                  <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
+                </label>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">SL %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={slPrice}
-                  onChange={(e) => setSlPrice(e.target.value)}
+                  onChange={(e) => {
+                    setSlPrice(e.target.value);
+                    // Auto-calculate percentage when price is manually entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const newPrice = parseFloat(e.target.value);
+                      let percentage = 0;
+                      
+                      if (isLong) {
+                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+                      } else {
+                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+                      }
+                      
+                      if (percentage > 0) {
+                        setSlPercentage(percentage.toFixed(2));
+                      }
+                    }
+                  }}
                   placeholder="Enter SL price"
   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
                 <input
                   type="number"
                   value={slPercentage}
-                  onChange={(e) => setSlPercentage(e.target.value)}
+                  onChange={(e) => {
+                    setSlPercentage(e.target.value);
+                    // Auto-calculate price when percentage is entered
+                    if (e.target.value && marketData?.price) {
+                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                      const isLong = side === 'Long';
+                      const percentage = parseFloat(e.target.value);
+                      
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percentage, isLong);
+                      if (calculatedPrices.stopLossPrice) {
+                        setSlPrice(calculatedPrices.stopLossPrice.toString());
+                      }
+                    }
+                  }}
                   placeholder="0.0"
                   className="w-20 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
+              </div>
+            </div>
+
+            {/* Quick TP/SL Percentage Buttons */}
+            <div className="flex justify-between items-center mt-4">
+              <div>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono mb-2 block">Quick TP %</label>
+                <div className="flex space-x-1">
+                  {[1, 2, 5, 10].map((percent) => (
+                    <button
+                      key={`tp-${percent}`}
+                      onClick={() => {
+                        setTpPercentage(percent.toString());
+                        if (marketData?.price) {
+                          const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                          const isLong = side === 'Long';
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, percent, 0, isLong);
+                          if (calculatedPrices.takeProfitPrice) {
+                            setTpPrice(calculatedPrices.takeProfitPrice.toString());
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-[#1F1E23] hover:bg-[#2a2a2a] rounded text-[10px] font-mono text-white transition-colors"
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono mb-2 block">Quick SL %</label>
+                <div className="flex space-x-1">
+                  {[1, 2, 5, 10].map((percent) => (
+                    <button
+                      key={`sl-${percent}`}
+                      onClick={() => {
+                        setSlPercentage(percent.toString());
+                        if (marketData?.price) {
+                          const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                          const isLong = side === 'Long';
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percent, isLong);
+                          if (calculatedPrices.stopLossPrice) {
+                            setSlPrice(calculatedPrices.stopLossPrice.toString());
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-[#1F1E23] hover:bg-[#2a2a2a] rounded text-[10px] font-mono text-white transition-colors"
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -857,7 +1355,11 @@ const [applyToAll, setApplyToAll] = useState(false);
       {/* Current Leverage Display */}
       <div className="text-center flex items-center justify-between mb-8 ">
                   <button 
-            onClick={() => setTempLeverage(Math.max(1, tempLeverage - 1))}
+            onClick={() => {
+              setTempLeverage(Math.max(1, tempLeverage - 1));
+              setLeverageError(null);
+              setLeverageSuccess(null);
+            }}
             className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
           >
             <span className="text-2xl">−</span>
@@ -866,7 +1368,11 @@ const [applyToAll, setApplyToAll] = useState(false);
           {tempLeverage}x
         </div>
                   <button 
-            onClick={() => setTempLeverage(Math.min(maxLeverage, tempLeverage + 1))}
+            onClick={() => {
+              setTempLeverage(Math.min(maxLeverage, tempLeverage + 1));
+              setLeverageError(null);
+              setLeverageSuccess(null);
+            }}
                 className="w-12 h-12 cursor-pointer  rounded-full flex items-center justify-center text-white hover:brightness-125 transition-colors"
           >
             <span className="text-2xl">+</span>
@@ -952,12 +1458,38 @@ const [applyToAll, setApplyToAll] = useState(false);
         </button>
       </div>
 
+      {/* Error Message */}
+      {leverageError && (
+        <div className="mb-4 p-3 bg-red-500/20 border border-red-500 rounded-lg">
+          <p className="text-red-400 text-sm font-mono">{leverageError}</p>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {leverageSuccess && (
+        <div className="mb-4 p-3 bg-green-500/20 border border-green-500 rounded-lg">
+          <p className="text-green-400 text-sm font-mono">{leverageSuccess}</p>
+        </div>
+      )}
+
       {/* Confirm Button */}
       <button
         onClick={handleLeverageSet}
-        className="w-full py-4 text-[14px] font-[500] text-white rounded-lg cursor-pointer duration-200 ease-in  font-mono bg-[#2133FF] hover:bg-blue-600 transition-colors text-lg"
+        disabled={isUpdatingLeverage}
+        className={`w-full py-4 text-[14px] font-[500] text-white rounded-lg cursor-pointer duration-200 ease-in font-mono transition-colors text-lg ${
+          isUpdatingLeverage 
+            ? 'bg-gray-600 cursor-not-allowed' 
+            : 'bg-[#2133FF] hover:bg-blue-600'
+        }`}
       >
-        Confirm
+        {isUpdatingLeverage ? (
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            Updating Leverage...
+          </div>
+        ) : (
+          'Confirm'
+        )}
       </button>
     </div>
   </div>
@@ -995,6 +1527,44 @@ const [applyToAll, setApplyToAll] = useState(false);
             >
               🤖 Create Agent Wallet
             </button>
+          </div>
+        )}
+
+        {/* Builder Fee Approval Button */}
+        {isConnected && isOnboarded && (
+          <div className='px-4 mt-2'>
+            {/* Builder Fee Error Display */}
+            {builderFeeError && (
+              <div className="mb-2 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
+                <p className="text-red-400">{builderFeeError}</p>
+              </div>
+            )}
+
+            {/* Builder Fee Success Display */}
+            {builderFeeSuccess && (
+              <div className="mb-2 p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
+                <p className="text-green-400">{builderFeeSuccess}</p>
+              </div>
+            )}
+
+            {builderFeeApproved ? (
+              <div className="w-full py-2 px-4 text-xs bg-green-900 bg-opacity-30 border border-green-600 rounded text-center">
+                <span className="text-green-400">✅ Builder Fee Approved</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleApproveBuilderFee}
+                disabled={approvingBuilderFee || checkingBuilderFee}
+                className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
+              >
+                {approvingBuilderFee 
+                  ? '⏳ Approving Builder Fee...' 
+                  : checkingBuilderFee 
+                  ? '🔍 Checking Status...'
+                  : '💰 Approve Builder Fee'
+                }
+              </button>
+            )}
           </div>
         )}
 
