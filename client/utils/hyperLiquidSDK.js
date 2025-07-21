@@ -8,16 +8,34 @@ import * as hl from "@nktkas/hyperliquid";
  * Custom signer wrapper for the @nktkas/hyperliquid SDK
  */
 class CustomSigner {
-  constructor(signer) {
+  constructor(signer, address = null) {
     this.signer = signer;
-    this.address = null;
+    this.address = address;
   }
 
   async getAddress() {
-    if (!this.address) {
-      this.address = await this.signer.getAddress();
+    if (this.address) {
+      return this.address;
     }
-    return this.address;
+    
+    // Try wagmi wallet client format first
+    if (this.signer && this.signer.account && this.signer.account.address) {
+      this.address = this.signer.account.address;
+      return this.address;
+    }
+    
+    // Try ethers signer format
+    if (this.signer && typeof this.signer.getAddress === 'function') {
+      this.address = await this.signer.getAddress();
+      return this.address;
+    }
+    
+    // If address was passed in constructor, use it
+    if (this.address) {
+      return this.address;
+    }
+    
+    throw new Error('Unable to get address from signer. Please provide address explicitly.');
   }
 
   async signTypedData(domain, types, message) {
@@ -482,7 +500,7 @@ export async function getAgentWallets(signer, isMainnet = true) {
 /**
  * Convert asset symbol to asset ID
  */
-function getAssetId(symbol) {
+export function getAssetId(symbol) {
   // Asset mappings based on HyperLiquid API
   const assetMap = {
     'BTC': 0,
@@ -601,15 +619,11 @@ function getAssetId(symbol) {
 /**
  * Get user account state using SDK
  */
-export async function getUserAccountStateSDK(signer, isMainnet = true) {
+export async function getUserAccountStateSDK(signer, address, isMainnet = true) {
   try {
-    console.log('📊 Getting user account state via SDK...');
+    console.log('📊 Getting user account state via SDK...', { address });
     
-    // Get wallet address
-    const customSigner = new CustomSigner(signer);
-    const address = await customSigner.getAddress();
-    
-    // Use InfoClient for read-only operations
+    // Use InfoClient for read-only operations (no signer needed for this)
     const infoClient = initializeInfoClient(isMainnet);
     
     // Get account state using the correct method
@@ -671,15 +685,11 @@ export async function cancelOrderSDK(orderId, signer, isMainnet = true) {
 /**
  * Get open orders using SDK
  */
-export async function getOpenOrdersSDK(signer, isMainnet = true) {
+export async function getOpenOrdersSDK(signer, address, isMainnet = true) {
   try {
-    console.log('📋 Getting open orders via SDK...');
+    console.log('📋 Getting open orders via SDK...', { address });
     
-    // Get wallet address
-    const customSigner = new CustomSigner(signer);
-    const address = await customSigner.getAddress();
-    
-    // Use InfoClient for read-only operations
+    // Use InfoClient for read-only operations (no signer needed for this)
     const infoClient = initializeInfoClient(isMainnet);
     
     // Get open orders using the correct method
