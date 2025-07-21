@@ -86,7 +86,7 @@ export default function Dashboard() {
         setReferralData({
           my_referral_code: data.data.my_referral_code || null,
           referred_by: data.data.referred_by || null,
-          referred_users: data.data.referred_users || [],
+          referred_users: Array.isArray(data.data.referred_users) ? data.data.referred_users : [],
           total_referred: data.data.total_referred || 0
         });
       } else {
@@ -223,6 +223,49 @@ export default function Dashboard() {
 
   const retryFetchReferral = () => {
     fetchReferralCode();
+  };
+
+  // Helper function to safely render referrer information
+  const renderReferrerInfo = (referredBy) => {
+    if (!referredBy) return null;
+    
+    if (typeof referredBy === 'string') {
+      return referredBy;
+    }
+    
+    if (typeof referredBy === 'object' && referredBy !== null) {
+      // Handle the new API format where referred_by is an object
+      return referredBy.name || referredBy.email || 'Unknown User';
+    }
+    
+    return 'Unknown User';
+  };
+
+  // Helper function to safely render user information
+  const renderUserInfo = (referredUser) => {
+    if (typeof referredUser === 'string') {
+      return referredUser;
+    }
+    
+    if (typeof referredUser === 'object' && referredUser !== null) {
+      // Extract displayable information from the user object
+      const displayName = referredUser.name || referredUser.email || referredUser.user_id || 'Anonymous User';
+      return displayName;
+    }
+    
+    return 'Unknown User';
+  };
+
+  // Helper function to get join date
+  const getJoinDate = (referredUser) => {
+    if (typeof referredUser === 'object' && referredUser !== null && referredUser.joined_at) {
+      try {
+        return new Date(referredUser.joined_at).toLocaleDateString();
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   };
 
   // Show loading while mounting or authenticating
@@ -458,7 +501,7 @@ export default function Dashboard() {
                     <dd className="mt-1">
                       {referralData.referred_by ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {referralData.referred_by}
+                          {renderReferrerInfo(referralData.referred_by)}
                         </span>
                       ) : (
                         <span className="text-sm text-gray-400">No one (organic signup)</span>
@@ -481,24 +524,23 @@ export default function Dashboard() {
                     <div>
                       <dt className="text-sm font-medium text-gray-500 mb-2">Referred Users</dt>
                       <dd className="space-y-1">
-                        {referralData.referred_users.map((referredUser, index) => (
-                          <div key={index} className="bg-white p-2 rounded border text-sm">
-                            {typeof referredUser === 'string' ? (
-                              <span className="text-gray-800">{referredUser}</span>
-                            ) : (
-                              <div>
-                                <span className="font-medium text-gray-800">
-                                  {referredUser.name || referredUser.email || referredUser.user_id || 'Anonymous User'}
+                        {referralData.referred_users.map((referredUser, index) => {
+                          const userDisplayName = renderUserInfo(referredUser);
+                          const joinDate = getJoinDate(referredUser);
+                          
+                          return (
+                            <div key={index} className="bg-white p-2 rounded border text-sm">
+                              <span className="font-medium text-gray-800">
+                                {userDisplayName}
+                              </span>
+                              {joinDate && (
+                                <span className="text-gray-500 text-xs ml-2">
+                                  ({joinDate})
                                 </span>
-                                {referredUser.joined_at && (
-                                  <span className="text-gray-500 text-xs ml-2">
-                                    ({new Date(referredUser.joined_at).toLocaleDateString()})
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                              )}
+                            </div>
+                          );
+                        })}
                       </dd>
                     </div>
                   )}

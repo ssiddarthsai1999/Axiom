@@ -132,6 +132,15 @@ const UserPositions = ({ className = '' }) => {
     }
   };
 
+  // Empty state message component
+  const EmptyStateMessage = ({ message }) => (
+    <tr>
+      <td colSpan="100%" className="p-8 text-center text-gray-400">
+        {message}
+      </td>
+    </tr>
+  );
+
   const tabs = ['Positions', 'Open Orders', 'Trades'];
 
   return (
@@ -142,9 +151,9 @@ const UserPositions = ({ className = '' }) => {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-3 font-[500] text-[14px] leading-[21px]  font-mono transition-colors ease-in duration-200 cursor-pointer ${
+            className={`px-4 py-3 font-[500] text-[14px] leading-[21px] font-mono transition-colors ease-in duration-200 cursor-pointer ${
               activeTab === tab
-                ? 'text-[#C9C9C9]  border-b-2 border-white '
+                ? 'text-[#C9C9C9] border-b-2 border-white'
                 : 'text-[#919093] hover:text-white hover:bg-[#1a1a1f]'
             }`}
           >
@@ -156,180 +165,287 @@ const UserPositions = ({ className = '' }) => {
       {/* Content Area */}
       <div className="min-h-[10px]">
         {!isConnected ? (
-          <div className="flex items-center justify-center ">
-            <div className="text-center">
-              <div className="text-gray-400 text-lg mb-2">Connect your wallet</div>
-              <div className="text-gray-500 text-sm">to view your {activeTab.toLowerCase()}</div>
-            </div>
+          <div className="overflow-x-auto">
+            {/* Show appropriate table header based on active tab */}
+            {activeTab === 'Positions' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Entry Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Mark Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">PnL</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Liquidation Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Margin Used (USDC)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <EmptyStateMessage message="Connect your wallet to view your positions" />
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'Open Orders' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Type</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Filled</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trigger Condition</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <EmptyStateMessage message="Connect your wallet to view your orders" />
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'Trades' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Time</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trade Value</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Fee</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Closed PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <EmptyStateMessage message="Connect your wallet to view your trades" />
+                </tbody>
+              </table>
+            )}
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center ">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="overflow-x-auto">
+            {/* Show table headers with loading state */}
+            {activeTab === 'Positions' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbosl</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Entry Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Mark Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">PnL</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Liquidation Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Margin Used (USDC)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan="7" className="p-8 text-center">
+                      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'Open Orders' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Type</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Filled</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trigger Condition</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan="8" className="p-8 text-center">
+                      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'Trades' && (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Time</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trade Value</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Fee</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Closed PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan="8" className="p-8 text-center">
+                      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
         ) : (
-          <>
+          <div className="overflow-x-auto">
             {/* Positions Tab */}
             {activeTab === 'Positions' && (
-              <div>
-                {positions.length === 0 ? (
-                  <div className="flex items-center justify-center ">
-                    <div className="text-gray-400">No open positions</div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-[1F1E23]">
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Entry Price</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Mark Price</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">PnL</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Liquidation Price</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Margin Used (USDC)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {positions.map((position, index) => (
-                          <tr key={`${position.symbol}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                            <td className="p-4">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium">{position.symbol}</span>
-                                <span className={`px-2 py-1 text-xs rounded ${
-                                  position.side === 'Long' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
-                                }`}>
-                                  {position.side}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="p-4 text-right font-mono">{formatNumber(Math.abs(position.size), 4)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(position.entryPrice)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(position.markPrice)}</td>
-                            <td className={`p-4 text-right font-mono ${
-                              position.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Entry Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Mark Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">PnL</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Liquidation Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Margin Used (USDC)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.length === 0 ? (
+                    <EmptyStateMessage message="No open positions" />
+                  ) : (
+                    positions.map((position, index) => (
+                      <tr key={`${position.symbol}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-4">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium">{position.symbol}</span>
+                            <span className={`px-2 py-1 text-xs rounded ${
+                              position.side === 'Long' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
                             }`}>
-                              {position.pnl >= 0 ? '+' : ''}${formatNumber(position.pnl)}
-                            </td>
-                            <td className="p-4 text-right font-mono">${formatNumber(position.liquidationPrice)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(position.marginUsed)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                              {position.side}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right font-mono">{formatNumber(Math.abs(position.size), 4)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(position.entryPrice)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(position.markPrice)}</td>
+                        <td className={`p-4 text-right font-mono ${
+                          position.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {position.pnl >= 0 ? '+' : ''}${formatNumber(position.pnl)}
+                        </td>
+                        <td className="p-4 text-right font-mono">${formatNumber(position.liquidationPrice)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(position.marginUsed)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
 
             {/* Open Orders Tab */}
             {activeTab === 'Open Orders' && (
-              <div>
-                {openOrders.length === 0 ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="text-gray-400">No open orders</div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-[1F1E23]">
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Side</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Type</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Price</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Filled</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Trigger Condition</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {openOrders.map((order, index) => (
-                          <tr key={`${order.orderId}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                            <td className="p-4 font-medium">{order.symbol}</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-1 text-xs rounded ${
-                                order.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
-                              }`}>
-                                {order.side}
-                              </span>
-                            </td>
-                            <td className="p-4 text-gray-300">{order.type}</td>
-                            <td className="p-4 text-right font-mono">{formatNumber(order.size, 4)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(order.price)}</td>
-                            <td className="p-4 text-right font-mono">{formatNumber(order.filled, 4)}</td>
-                            <td className="p-4 text-right text-gray-400">{order.triggerCondition}</td>
-                            <td className="p-4 text-right">
-                              <button
-                                onClick={() => cancelOrder(order.orderId, order.symbol)}
-                                className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Type</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Filled</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trigger Condition</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openOrders.length === 0 ? (
+                    <EmptyStateMessage message="No open orders" />
+                  ) : (
+                    openOrders.map((order, index) => (
+                      <tr key={`${order.orderId}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-4 font-medium">{order.symbol}</td>
+                        <td className="p-4">
+                          <span className={`px-2 py-1 text-xs rounded ${
+                            order.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
+                          }`}>
+                            {order.side}
+                          </span>
+                        </td>
+                        <td className="p-4 text-gray-300">{order.type}</td>
+                        <td className="p-4 text-right font-mono">{formatNumber(order.size, 4)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(order.price)}</td>
+                        <td className="p-4 text-right font-mono">{formatNumber(order.filled, 4)}</td>
+                        <td className="p-4 text-right text-gray-400">{order.triggerCondition}</td>
+                        <td className="p-4 text-right">
+                          <button
+                            onClick={() => cancelOrder(order.orderId, order.symbol)}
+                            className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
 
             {/* Trades Tab */}
             {activeTab === 'Trades' && (
-              <div>
-                {trades.length === 0 ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="text-gray-400">No trades yet</div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-[1F1E23]">
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Time</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Symbol</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Side</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Size</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Price</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Trade Value</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Fee</th>
-                          <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px]  font-mono uppercase">Closed PnL</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {trades.map((trade, index) => (
-                          <tr key={`${trade.symbol}-${trade.time}-${index}`} className="border-b border-[1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                            <td className="p-4 text-gray-300 font-mono text-sm">{formatTime(trade.time)}</td>
-                            <td className="p-4 font-medium">{trade.symbol}</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-1 text-xs rounded ${
-                                trade.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
-                              }`}>
-                                {trade.side}
-                              </span>
-                            </td>
-                            <td className="p-4 text-right font-mono">{formatNumber(trade.size, 4)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(trade.price)}</td>
-                            <td className="p-4 text-right font-mono">${formatNumber(trade.size * trade.price)}</td>
-                            <td className="p-4 text-right font-mono text-gray-400">${formatNumber(trade.fee, 4)}</td>
-                            <td className={`p-4 text-right font-mono ${
-                              trade.closed === null ? 'text-gray-400' : 
-                              trade.closed >= 0 ? 'text-green-400' : 'text-red-400'
-                            }`}>
-                              {trade.closed === null ? '—' : 
-                               `${trade.closed >= 0 ? '+' : ''}$${formatNumber(trade.closed)}`}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Time</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Symbol</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Side</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Size</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Price</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Trade Value</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Fee</th>
+                    <th className="text-left p-4 font-[400] text-[#919093] text-[12px] leading-[16px] font-mono ">Closed PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.length === 0 ? (
+                    <EmptyStateMessage message="No trades yet" />
+                  ) : (
+                    trades.map((trade, index) => (
+                      <tr key={`${trade.symbol}-${trade.time}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-4 text-gray-300 font-mono text-sm">{formatTime(trade.time)}</td>
+                        <td className="p-4 font-medium">{trade.symbol}</td>
+                        <td className="p-4">
+                          <span className={`px-2 py-1 text-xs rounded ${
+                            trade.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
+                          }`}>
+                            {trade.side}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right font-mono">{formatNumber(trade.size, 4)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(trade.price)}</td>
+                        <td className="p-4 text-right font-mono">${formatNumber(trade.size * trade.price)}</td>
+                        <td className="p-4 text-right font-mono text-gray-400">${formatNumber(trade.fee, 4)}</td>
+                        <td className={`p-4 text-right font-mono ${
+                          trade.closed === null ? 'text-gray-400' : 
+                          trade.closed >= 0 ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {trade.closed === null ? '—' : 
+                           `${trade.closed >= 0 ? '+' : ''}$${formatNumber(trade.closed)}`}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

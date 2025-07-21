@@ -39,7 +39,7 @@ const OrderBook = ({
   };
 
   return (
-    <div className={`min-h-[200px] max-h-[1000px] font-mono text-white ${className}  border-l border-l-[#1F1E23]`}>
+    <div className={`min-h-[200px] overflow-auto max-h-[1000px] font-mono text-white ${className}   border-l border-l-[#1F1E23]`}>
       {/* Header Tabs */}
       <div className="flex border-b border-[#1F1E23]">
         <button 

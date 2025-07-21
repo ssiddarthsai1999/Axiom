@@ -680,7 +680,7 @@ function TradingPage() {
   }
 
   return (
-    <div className='min-h-screen flex flex-col bg-[#0d0c0e]'>
+    <div className=' min-h-[94vh] flex flex-col bg-[#0d0c0e]'>
       {/* WebSocket connection status indicator */}
       {!wsConnected && (
         <div className="bg-yellow-600 text-black text-center py-1 text-xs">
@@ -691,7 +691,7 @@ function TradingPage() {
       {/* Desktop Layout */}
       <div className="hidden lg:flex flex-1 min-h-0">
         <div className='flex flex-col flex-1 min-w-0'>
-          <div className='flex flex-1 min-h-0 max-h-[1100px]'>
+          <div className='flex min-h-0 '>
             <div className='flex flex-col flex-1 min-w-0'>
               <FavoritesTicker 
                 selectedSymbol={selectedSymbol}
@@ -713,7 +713,7 @@ function TradingPage() {
                 />
               </div>
             </div>
-            <div className='w-80 flex-shrink-0 border-l border-r border-[#1F1E23]'>
+            <div className='w-80  border-l border-r border-[#1F1E23]'>
               <OrderBook 
                 selectedSymbol={selectedSymbol}
                 orderBookData={orderBookData}
@@ -722,7 +722,7 @@ function TradingPage() {
               />
             </div>
           </div>
-          <div className='border-t border-[#1F1E23] shrink-0'>
+          <div className='border-t border-[#1F1E23] '>
             <UserPositions />
           </div>
         </div>
