@@ -583,10 +583,19 @@ const [applyToAll, setApplyToAll] = useState(false);
       
       // Final validation and formatting of order parameters
       const finalSize = parseFloat(formatSizeToMaxDecimals(orderSize.toString(), assetInfo.szDecimals));
+      // --- Adjust price for market orders as requested ---
+      let rawPrice = marketData.price;
+      if (orderType === 'Market') {
+        if (side === 'Long') {
+          rawPrice = rawPrice * 1.05; // Increase by 5% for Long
+        } else if (side === 'Short') {
+          rawPrice = rawPrice * 0.95; // Decrease by 5% for Short
+        }
+      }
       const finalPrice = orderType === 'Limit' 
         ? parseFloat(formatPriceToMaxDecimals(parseFloat(limitPrice).toString(), assetInfo.szDecimals, assetInfo.isSpot))
-        : parseFloat(formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot));
-      
+        : parseFloat(formatPriceToMaxDecimals(rawPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot));
+      // --- End price adjustment ---
       const orderParams = {
         symbol: selectedSymbol,
         isBuy: side === 'Long',
