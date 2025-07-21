@@ -367,13 +367,9 @@ const UserPositions = ({ className = '' }) => {
   );
 
   const tabs = [
-    { name: 'Balances', count: balances.length },
     { name: 'Positions', count: positions.length },
     { name: 'Open Orders', count: openOrders.length },
-    { name: 'TWAP', count: 0 },
-    { name: 'Trade History', count: trades.length },
-    { name: 'Funding History', count: 0 },
-    { name: 'Order History', count: 0 }
+    { name: 'Trade History', count: trades.length }
   ];
 
   return (
@@ -429,21 +425,6 @@ const UserPositions = ({ className = '' }) => {
         {!isConnected ? (
           <div className="overflow-x-auto">
             {/* Show appropriate table header based on active tab */}
-            {activeTab === 'Balances' && (
-              <table className="w-full text-[14px]">
-                <thead>
-                  <tr className="border-b border-[#1F1E23]">
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Balance</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <EmptyStateMessage message="Connect your wallet to view your balances" />
-                </tbody>
-              </table>
-            )}
-
             {activeTab === 'Positions' && (
               <table className="w-full text-[14px]">
                 <thead>
@@ -511,26 +492,6 @@ const UserPositions = ({ className = '' }) => {
         ) : loading ? (
           <div className="overflow-x-auto">
             {/* Show table headers with loading state */}
-            {activeTab === 'Balances' && (
-              <table className="w-full text-[14px]">
-                <thead>
-                  <tr className="border-b border-[#1F1E23]">
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Balance</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan="3" className="p-8 text-center">
-                      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                      <p className="text-gray-400 mt-2">Loading balances...</p>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
-
             {activeTab === 'Positions' && (
               <table className="w-full text-[14px]">
                 <thead>
@@ -612,34 +573,6 @@ const UserPositions = ({ className = '' }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            {/* Balances Tab */}
-            {activeTab === 'Balances' && (
-              <table className="w-full text-[14px]">
-                <thead>
-                  <tr className="border-b border-[#1F1E23]">
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Balance</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {balances.length === 0 ? (
-                    <EmptyStateMessage message="No balances available" />
-                  ) : (
-                    balances.map((balance, index) => (
-                      <tr key={`${balance.coin}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                        <td className="p-3">
-                          <span className="font-medium">{balance.coin}</span>
-                        </td>
-                        <td className="p-3 text-right font-mono">{formatNumber(balance.balance, 6)}</td>
-                        <td className="p-3 text-right font-mono">${formatNumber(balance.value)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
-
             {/* Positions Tab */}
             {activeTab === 'Positions' && (
               <table className="w-full text-[14px]">
@@ -861,13 +794,6 @@ const UserPositions = ({ className = '' }) => {
                   )}
                 </tbody>
               </table>
-            )}
-
-            {/* Placeholder tabs */}
-            {(activeTab === 'TWAP' || activeTab === 'Funding History' || activeTab === 'Order History') && (
-              <div className="p-8 text-center text-gray-400">
-                <p>{activeTab} functionality coming soon...</p>
-              </div>
             )}
           </div>
         )}
