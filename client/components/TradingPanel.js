@@ -196,6 +196,11 @@ const [applyToAll, setApplyToAll] = useState(false);
     isConnected: false,
     address: null
   });
+
+  // Margin validation state
+  const [marginRequirement, setMarginRequirement] = useState(0);
+  const [hasEnoughMargin, setHasEnoughMargin] = useState(true);
+  const [marginErrorMessage, setMarginErrorMessage] = useState('');
   const calculateUSDValue = (tokenAmount) => {
     if (!tokenAmount || !marketData?.price || parseFloat(tokenAmount) <= 0) {
       setUsdEquivalent('0.00');
@@ -204,6 +209,59 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     const usdValue = parseFloat(tokenAmount) * marketData.price;
     setUsdEquivalent(usdValue.toFixed(2));
+  };
+
+  // Calculate margin requirement for a trade (based on Hyperliquid formula)
+  const calculateMarginRequirement = (orderSize, price, leverage) => {
+    if (!orderSize || !price || !leverage || orderSize <= 0 || price <= 0 || leverage <= 0) {
+      return 0;
+    }
+    
+    const positionValue = parseFloat(orderSize) * parseFloat(price);
+    
+    // Hyperliquid formula: position_size * mark_price / leverage
+    const initialMarginRequired = positionValue / parseFloat(leverage);
+    
+    // Add minimal safety buffer for fees and slippage (0.5%)
+    const safetyBuffer = initialMarginRequired * 0.005;
+    
+    const totalMarginRequired = initialMarginRequired + safetyBuffer;
+    
+    // console.log('🧮 Margin calculation breakdown:', {
+    //   orderSize: parseFloat(orderSize),
+    //   price: parseFloat(price),
+    //   leverage: parseFloat(leverage),
+    //   positionValue: positionValue,
+    //   initialMarginRequired: initialMarginRequired,
+    //   safetyBuffer: safetyBuffer,
+    //   totalMarginRequired: totalMarginRequired,
+    //   symbol: selectedSymbol,
+    //   hyperliquidComparison: `If official app shows $38.16 for this trade, implied leverage would be ${(positionValue / 38.16).toFixed(2)}x`
+    // });
+    
+    return totalMarginRequired;
+  };
+
+  // Validate if there's enough margin for the trade
+  const validateMarginRequirement = (orderSize, price, leverage, availableMargin) => {
+    if (!orderSize || !price || !leverage) {
+      return { hasEnoughMargin: true, marginRequired: 0, errorMessage: '' };
+    }
+
+    const marginRequired = calculateMarginRequirement(orderSize, price, leverage);
+    const hasEnoughMargin = availableMargin >= marginRequired;
+    
+    let errorMessage = '';
+    if (!hasEnoughMargin && marginRequired > 0) {
+      const deficit = marginRequired - availableMargin;
+      errorMessage = `Insufficient margin. Need ${marginRequired.toFixed(2)} USDC but only have ${availableMargin.toFixed(2)} USDC available. Missing ${deficit.toFixed(2)} USDC.`;
+    }
+
+    return {
+      hasEnoughMargin,
+      marginRequired,
+      errorMessage
+    };
   };
 
     const getETHPrice = async () => {
@@ -281,13 +339,67 @@ const [applyToAll, setApplyToAll] = useState(false);
     fetchWalletBalances();
   }, [isConnected, address, wallet]);
 
+  // Check actual leverage setting from Hyperliquid API
+  const checkActualLeverage = async () => {
+    if (!address || !selectedSymbol || !assetInfo) return;
+    
+    try {
+      console.log('🔍 Checking actual leverage from Hyperliquid API...');
+      const userState = await hyperliquidUtils.getUserAccountState(address, true);
+      
+      if (userState && userState.assetPositions) {
+        // Look for existing position with this asset
+        const existingPosition = userState.assetPositions.find(pos => 
+          pos.position && pos.position.coin === selectedSymbol
+        );
+        
+        if (existingPosition && existingPosition.position.leverage) {
+          const actualLeverage = existingPosition.position.leverage.value;
+          console.log('📊 Found existing position with leverage:', {
+            symbol: selectedSymbol,
+            actualLeverage: actualLeverage,
+            appLeverage: leverage,
+            match: actualLeverage === leverage
+          });
+          
+          // Update app leverage if it doesn't match
+          if (actualLeverage !== leverage) {
+            console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
+            setLeverage(actualLeverage);
+          }
+        } else {
+          console.log('📊 No existing position found for', selectedSymbol, '- using app leverage setting:', leverage);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking actual leverage:', error);
+    }
+  };
+
+  // Sync leverage with Hyperliquid (manual trigger)
+  const syncLeverageWithHyperliquid = async () => {
+    setLeverageError(null);
+    setLeverageSuccess(null);
+    
+    try {
+      console.log('🔄 Manually syncing leverage with Hyperliquid...');
+      await checkActualLeverage();
+      setLeverageSuccess('Leverage synced with Hyperliquid');
+      setTimeout(() => setLeverageSuccess(null), 3000);
+    } catch (error) {
+      console.error('❌ Error syncing leverage:', error);
+      setLeverageError('Failed to sync leverage');
+      setTimeout(() => setLeverageError(null), 3000);
+    }
+  };
+
   const checkOnboardingStatus = async () => {
     if (!address) return false;
     
     setCheckingOnboarding(true);
     try {
- const userState = await hyperliquidUtils.getUserAccountState(address, true);
-      // console.log('📊 User state response:', userState);
+      const userState = await hyperliquidUtils.getUserAccountState(address, true);
+      console.log('📊 Full user state response:', userState);
       
       if (userState && (userState.marginSummary || userState.balances)) {
         setIsOnboarded(true);
@@ -295,17 +407,34 @@ const [applyToAll, setApplyToAll] = useState(false);
         let accountValue = 0;
         let availableMargin = 0;
         
+        // Use marginSummary as the primary source for accurate margin calculations
         if (userState.marginSummary) {
           accountValue = parseFloat(userState.marginSummary.accountValue || 0);
           const marginUsed = parseFloat(userState.marginSummary.marginUsed || 0);
-          availableMargin = accountValue - marginUsed;
+          
+          // Available margin = Account Value - Margin Used - some buffer for safety
+          availableMargin = Math.max(0, accountValue - marginUsed);
+          
+          console.log('💰 Margin Summary:', {
+            accountValue: accountValue,
+            marginUsed: marginUsed,
+            calculatedAvailableMargin: availableMargin
+          });
         }
         
+        // Cross-reference with withdrawable amount (should be similar to available margin)
         if (userState.withdrawable) {
-          availableMargin = Math.max(availableMargin, parseFloat(userState.withdrawable));
+          const withdrawable = parseFloat(userState.withdrawable);
+          console.log('💸 Withdrawable amount:', withdrawable);
+          
+          // Use the more conservative estimate
+          if (withdrawable > 0) {
+            availableMargin = Math.min(availableMargin, withdrawable);
+          }
         }
         
-        if (userState.balances) {
+        // If we don't have marginSummary, fall back to balance calculation
+        if (!userState.marginSummary && userState.balances) {
           userState.balances.forEach(balance => {
             if (balance.coin === 'USDC') {
               const total = parseFloat(balance.total || 0);
@@ -313,6 +442,12 @@ const [applyToAll, setApplyToAll] = useState(false);
               const available = total - hold;
               availableMargin = Math.max(availableMargin, available);
               accountValue = Math.max(accountValue, total);
+              
+              console.log('💰 USDC Balance fallback:', {
+                total,
+                hold,
+                available
+              });
             }
           });
         }
@@ -323,11 +458,19 @@ const [applyToAll, setApplyToAll] = useState(false);
           accountValue: accountValue
         }));
         
-        // console.log('✅ User is onboarded with available margin:', availableMargin);
+        console.log('✅ Final account data:', {
+          availableMargin: availableMargin,
+          accountValue: accountValue,
+          address: address
+        });
+        
+        // Check actual leverage after getting account data
+        await checkActualLeverage();
+        
         return true;
       } else {
         setIsOnboarded(false);
-        // console.log('❌ User not onboarded - no margin summary or balances found');
+        console.log('❌ User not onboarded - no margin summary or balances found');
         return false;
       }
     } catch (error) {
@@ -374,19 +517,49 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   }, [orderType, marketData, limitPrice, assetInfo]);
 
+  // Real-time margin validation whenever order parameters change
+  useEffect(() => {
+    if (!buyAmount || !marketData?.price || !leverage) {
+      setMarginRequirement(0);
+      setHasEnoughMargin(true);
+      setMarginErrorMessage('');
+      return;
+    }
+
+    const orderSize = parseFloat(buyAmount);
+    const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+    
+    if (orderSize > 0 && currentPrice > 0) {
+      const validation = validateMarginRequirement(
+        orderSize, 
+        currentPrice, 
+        leverage, 
+        accountData.availableMargin
+      );
+      
+      setMarginRequirement(validation.marginRequired);
+      setHasEnoughMargin(validation.hasEnoughMargin);
+      setMarginErrorMessage(validation.errorMessage);
+    } else {
+      setMarginRequirement(0);
+      setHasEnoughMargin(true);
+      setMarginErrorMessage('');
+    }
+  }, [buyAmount, limitPrice, leverage, accountData.availableMargin, marketData?.price, orderType]);
+
 
     const handlePercentageClick = (percent) => {
     setPercentage(percent);
     
-    // Use either Hyperliquid available margin or wallet USDC balance
-    const availableBalance = Math.max(accountData.availableMargin, usdcBalance);
+    // Use Hyperliquid available margin as the primary source
+    const availableBalance = accountData.availableMargin;
     
     if (availableBalance <= 0) {
       setOrderError('No available margin. Please deposit USDC to Hyperliquid.');
       return;
     }
     
-    // Calculate position size based on leverage
+    // Calculate position size based on leverage and available margin
     const marginToUse = (availableBalance * percent) / 100;
     const positionValue = marginToUse * leverage;
     
@@ -397,8 +570,8 @@ const [applyToAll, setApplyToAll] = useState(false);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
       
-      console.log('📊 Position calculation:', {
-        availableBalance,
+      console.log('📊 Position calculation (margin-based):', {
+        availableMargin: availableBalance,
         marginToUse,
         leverage,
         positionValue,
@@ -577,6 +750,15 @@ const [applyToAll, setApplyToAll] = useState(false);
       }
       if (!marketData || !marketData.price) {
         setOrderError('Market data not available. Please try again.');
+        return;
+      }
+
+      // CRITICAL: Validate margin requirement before placing order
+      const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+      const marginValidation = validateMarginRequirement(orderSize, currentPrice, leverage, accountData.availableMargin);
+      
+      if (!marginValidation.hasEnoughMargin) {
+        setOrderError(marginValidation.errorMessage || 'Insufficient margin for this trade');
         return;
       }
       setIsPlacingOrder(true);
@@ -906,24 +1088,55 @@ const [applyToAll, setApplyToAll] = useState(false);
             Limit
           </button>
                
-<button onClick={handleLeverageClick} className="ml-auto text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
-  <span>Leverage: {leverage}x ({marginMode})</span>
-  <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
-</button>
+<div className="ml-auto flex items-center space-x-1">
+  <button onClick={handleLeverageClick} className="text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
+    <span>Leverage: {leverage}x ({marginMode})</span>
+    <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
+  </button>
+  <button 
+    onClick={syncLeverageWithHyperliquid}
+    className="text-[10px] font-mono leading-[16px] font-[500] text-[#65FB9E] bg-[#4FFFAB33] px-1 py-0 rounded-md hover:text-white transition-colors cursor-pointer"
+    title="Sync leverage with Hyperliquid"
+  >
+    ↻
+  </button>
+</div>
         </div></div>
+
+        {/* Leverage sync status messages */}
+        {leverageError && (
+          <div className='px-4 mb-2'>
+            <div className="p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
+              <p className="text-red-400">{leverageError}</p>
+            </div>
+          </div>
+        )}
+        
+        {leverageSuccess && (
+          <div className='px-4 mb-2'>
+            <div className="p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
+              <p className="text-green-400">{leverageSuccess}</p>
+            </div>
+          </div>
+        )}
 
       {/* Buy Amount */}
 <div className="my-4 px-4">
   <div className="flex justify-between items-center mb-2">
     <label className="text-[#919093] text-[11px] font-[500] fomt-mono ">
-      Available to trade {usdcBalance} USDC
+      Available Margin: {accountData.availableMargin.toFixed(2)} USDC
     </label>
     
     {/* Half/Max Buttons */}
     <div className="flex items-center space-x-2">
       <button
         onClick={() => {
-          const halfAmount = (parseFloat(usdcBalance) / 2 / marketData?.price);
+          // Use available margin with leverage for half calculation
+          const availableMargin = accountData.availableMargin;
+          if (availableMargin <= 0 || !marketData?.price) return;
+          
+          const halfPositionValue = (availableMargin * 0.5 * leverage);
+          const halfAmount = halfPositionValue / marketData.price;
           const formattedAmount = assetInfo ? formatSizeToMaxDecimals(halfAmount.toString(), assetInfo.szDecimals) : halfAmount.toFixed(4);
           setBuyAmount(formattedAmount);
           calculateUSDValue(formattedAmount);
@@ -934,7 +1147,12 @@ const [applyToAll, setApplyToAll] = useState(false);
       </button>
       <button
         onClick={() => {
-          const maxAmount = (parseFloat(usdcBalance) * 0.95 / marketData?.price); // 95% to leave room for fees
+          // Use available margin with leverage for max calculation (90% to leave room for fees)
+          const availableMargin = accountData.availableMargin;
+          if (availableMargin <= 0 || !marketData?.price) return;
+          
+          const maxPositionValue = (availableMargin * 0.9 * leverage); // 90% to leave room for fees
+          const maxAmount = maxPositionValue / marketData.price;
           const formattedAmount = assetInfo ? formatSizeToMaxDecimals(maxAmount.toString(), assetInfo.szDecimals) : maxAmount.toFixed(4);
           setBuyAmount(formattedAmount);
           calculateUSDValue(formattedAmount);
@@ -1318,14 +1536,47 @@ const [applyToAll, setApplyToAll] = useState(false);
           )}
         </div>
 
+        {/* Margin Requirement Display */}
+        {marginRequirement > 0 && (
+          <div className='px-4 mb-2'>
+            <div className="space-y-2 text-sm bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg p-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[#919093] text-[12px] leading-[13px] font-[500] font-mono">Margin Required</span>
+                <span className="text-white text-[14px] leading-[13px] font-[600] font-mono">
+                  ${marginRequirement.toFixed(2)}
+                </span>
+              </div>
+              
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[#666] font-mono">Leverage: {leverage}x ({marginMode})</span>
+                <span className="text-[#666] font-mono">Position: ${usdEquivalent}</span>
+              </div>
+              
+              {/* {parseFloat(buyAmount) > 0 && parseFloat(usdEquivalent) > 0 && (
+                <div className="text-[10px] text-[#888] font-mono border-t border-[#2a2a2c] pt-2">
+                  💡 Compare with official app: If Hyperliquid shows ~${(parseFloat(usdEquivalent) * 0.98).toFixed(2)} for this trade, your leverage there is likely 1x
+                </div>
+              )} */}
+              
+              {!hasEnoughMargin && marginErrorMessage && (
+                <div className="p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs mt-2">
+                  <p className="text-red-400">{marginErrorMessage}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Trade Button */}
         <div className='px-4 mt-4'>
         <button
           onClick={handleTrade}
-          disabled={isPlacingOrder}
+          disabled={isPlacingOrder || !hasEnoughMargin}
           className={`w-full py-3 mt-4 px-4 rounded-xl font-mono font-[500] text-[12px] duration-200 ease-in] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
             !isConnected
               ? 'bg-[#202022]  hover:bg-[#2b2b2e] border border-[#FAFAFA33] text-white'
+              : !hasEnoughMargin
+              ? 'bg-[#ff4757] text-white'
               : side === 'Long'
               ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
               : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-white'
@@ -1335,6 +1586,8 @@ const [applyToAll, setApplyToAll] = useState(false);
             ? 'Placing Order...' 
             : !isConnected 
             ? 'Connect Wallet'
+            : !hasEnoughMargin
+            ? 'Not Enough Margin'
             : `${side} ${selectedSymbol}`
           }
         </button></div>
