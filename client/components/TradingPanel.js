@@ -117,7 +117,8 @@ const [applyToAll, setApplyToAll] = useState(false);
         entryPrice,
         parseFloat(tpPercentage) || 0,
         parseFloat(slPercentage) || 0,
-        isLong
+        isLong,
+        assetInfo
       );
       
       if (tpPercentage && calculatedPrices.takeProfitPrice && !tpPrice) {
@@ -128,7 +129,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         setSlPrice(calculatedPrices.stopLossPrice.toString());
       }
     }
-  }, [tpPercentage, slPercentage, marketData?.price, limitPrice, side, orderType, tpSlEnabled]);
+  }, [tpPercentage, slPercentage, marketData?.price, limitPrice, side, orderType, tpSlEnabled, assetInfo]);
 
   const handleLeverageSet = async () => {
     if (!wallet || !wallet.signer) {
@@ -798,7 +799,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
       // Place order with TP/SL if enabled, otherwise place regular order
       const result = tpSlEnabled && (tpSlParams.takeProfitPrice || tpSlParams.stopLossPrice)
-        ? await placeOrderWithTPSL(orderParams, tpSlParams, true)
+        ? await placeOrderWithTPSL(orderParams, tpSlParams, true, assetInfo)
         : await placeOrderWithAgentWallet(orderParams, true);
       // Handle result based on whether TP/SL was used
       if (result) {
@@ -948,11 +949,30 @@ const [applyToAll, setApplyToAll] = useState(false);
     return withoutLeadingZeros.length;
   };
 
+  // Calculate HyperLiquid-compatible tick size based on szDecimals
+  const getHyperLiquidTickSize = (price, szDecimals) => {
+    // HyperLiquid tick size is 1 unit at the allowed decimal precision
+    const MAX_DECIMALS = 6; // For perpetuals (spot uses 8)
+    const maxPriceDecimals = MAX_DECIMALS - szDecimals;
+    const tickSize = Math.pow(10, -maxPriceDecimals);
+    return tickSize;
+  };
+
+  // Round price to HyperLiquid tick size
+  const roundToHyperLiquidTick = (price, szDecimals) => {
+    const tickSize = getHyperLiquidTickSize(price, szDecimals);
+    const rounded = Math.round(price / tickSize) * tickSize;
+    
+    // Ensure we don't have floating point precision issues
+    const maxPriceDecimals = 6 - szDecimals;
+    return parseFloat(rounded.toFixed(maxPriceDecimals));
+  };
+
   // Utility function to validate and format decimal places for PRICE
   const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
     if (!value || value === '') return value;
     
-    const num = parseFloat(value);
+    let num = parseFloat(value);
     if (isNaN(num)) return value;
     
     const valueStr = value.toString();
@@ -960,29 +980,25 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Check significant figures limit (max 5)
     const sigFigs = countSignificantFigures(valueStr);
     if (sigFigs > 5) {
-      // Truncate to 5 significant figures
-      const truncated = parseFloat(num.toPrecision(5));
-      return truncated.toString();
+      // Truncate to 5 significant figures - no recursion!
+      num = parseFloat(num.toPrecision(5));
     }
     
-    // Check decimal places limit: MAX_DECIMALS - szDecimals
-    const MAX_DECIMALS = isSpot ? 8 : 6;
-    const maxDecimalPlaces = MAX_DECIMALS - szDecimals;
+    // Apply HyperLiquid tick size rounding
+    const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-    const decimalIndex = valueStr.indexOf('.');
-    if (decimalIndex === -1) {
-      // No decimal point, return as is (integers are always allowed)
-      return valueStr;
-    }
+    console.log('🎯 TradingPanel HyperLiquid formatting:', {
+      original: value,
+      parsed: parseFloat(value),
+      adjustedNum: num,
+      szDecimals,
+      isSpot,
+      tickRounded,
+      tickSize: getHyperLiquidTickSize(num, szDecimals),
+      symbol: selectedSymbol
+    });
     
-    const decimalPlaces = valueStr.length - decimalIndex - 1;
-    if (decimalPlaces <= maxDecimalPlaces) {
-      // Already within limits
-      return valueStr;
-    }
-    
-    // Truncate to max decimal places
-    return num.toFixed(maxDecimalPlaces);
+    return tickRounded.toString();
   };
 
   // Validate decimal places for size input
@@ -1007,6 +1023,68 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
     setLimitPrice(formattedValue);
+  };
+
+  // Validate decimal places for TP price input
+  const handleTpPriceChange = (value) => {
+    if (!assetInfo) {
+      setTpPrice(value);
+      return;
+    }
+    
+    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+    setTpPrice(formattedValue);
+    
+    // Auto-calculate percentage when price is manually entered
+    if (formattedValue && marketData?.price) {
+      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+      const isLong = side === 'Long';
+      const newPrice = parseFloat(formattedValue);
+      if (!isNaN(newPrice)) {
+        let percentage = 0;
+        
+        if (isLong) {
+          percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+        } else {
+          percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+        }
+        
+        if (percentage > 0) {
+          setTpPercentage(percentage.toFixed(2));
+        }
+      }
+    }
+  };
+
+  // Validate decimal places for SL price input
+  const handleSlPriceChange = (value) => {
+    if (!assetInfo) {
+      setSlPrice(value);
+      return;
+    }
+    
+    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+    setSlPrice(formattedValue);
+    
+    // Auto-calculate percentage when price is manually entered
+    if (formattedValue && marketData?.price) {
+      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+      const isLong = side === 'Long';
+      const newPrice = parseFloat(formattedValue);
+      if (!isNaN(newPrice)) {
+        let percentage = 0;
+        
+        if (isLong) {
+          percentage = ((entryPrice - newPrice) / entryPrice) * 100;
+        } else {
+          percentage = ((newPrice - entryPrice) / entryPrice) * 100;
+        }
+        
+        if (percentage > 0) {
+          setSlPercentage(percentage.toFixed(2));
+        }
+      }
+    }
   };
 
   return (
@@ -1326,36 +1404,24 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Take Profit Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
-                  TP Price {side === 'Long' ? '📈' : '📉'} 
-                  <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
-                </label>
+                <div>
+                  <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                    TP Price {side === 'Long' ? '📈' : '📉'} 
+                    <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
+                  </label>
+                  {assetInfo && (
+                    <div className="text-[9px] leading-[12px] font-[400] text-[#666] mt-1">
+                      Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                    </div>
+                  )}
+                </div>
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">TP %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={tpPrice}
-                  onChange={(e) => {
-                    setTpPrice(e.target.value);
-                    // Auto-calculate percentage when price is manually entered
-                    if (e.target.value && marketData?.price) {
-                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
-                      const isLong = side === 'Long';
-                      const newPrice = parseFloat(e.target.value);
-                      let percentage = 0;
-                      
-                      if (isLong) {
-                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
-                      } else {
-                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
-                      }
-                      
-                      if (percentage > 0) {
-                        setTpPercentage(percentage.toFixed(2));
-                      }
-                    }
-                  }}
+                  onChange={(e) => handleTpPriceChange(e.target.value)}
                   placeholder="Enter TP price"
                   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
@@ -1370,7 +1436,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       const isLong = side === 'Long';
                       const percentage = parseFloat(e.target.value);
                       
-                      const calculatedPrices = calculateTPSLPrices(entryPrice, percentage, 0, isLong);
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, percentage, 0, isLong, assetInfo);
                       if (calculatedPrices.takeProfitPrice) {
                         setTpPrice(calculatedPrices.takeProfitPrice.toString());
                       }
@@ -1385,36 +1451,24 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Stop Loss Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
-                  SL Price {side === 'Long' ? '📉' : '📈'} 
-                  <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
-                </label>
+                <div>
+                  <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                    SL Price {side === 'Long' ? '📉' : '📈'} 
+                    <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
+                  </label>
+                  {assetInfo && (
+                    <div className="text-[9px] leading-[12px] font-[400] text-[#666] mt-1">
+                      Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                    </div>
+                  )}
+                </div>
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">SL %</label>
               </div>
               <div className="flex space-x-2">
                 <input
                   type="number"
                   value={slPrice}
-                  onChange={(e) => {
-                    setSlPrice(e.target.value);
-                    // Auto-calculate percentage when price is manually entered
-                    if (e.target.value && marketData?.price) {
-                      const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
-                      const isLong = side === 'Long';
-                      const newPrice = parseFloat(e.target.value);
-                      let percentage = 0;
-                      
-                      if (isLong) {
-                        percentage = ((entryPrice - newPrice) / entryPrice) * 100;
-                      } else {
-                        percentage = ((newPrice - entryPrice) / entryPrice) * 100;
-                      }
-                      
-                      if (percentage > 0) {
-                        setSlPercentage(percentage.toFixed(2));
-                      }
-                    }
-                  }}
+                  onChange={(e) => handleSlPriceChange(e.target.value)}
                   placeholder="Enter SL price"
   className="flex-1 placeholder:text-white  border border-[#1F1E23] font-mono rounded-[10px] px-3 py-3 text-white text-[14px] leading-[100%] font-[400] focus:outline-none 0"
                 />
@@ -1429,7 +1483,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       const isLong = side === 'Long';
                       const percentage = parseFloat(e.target.value);
                       
-                      const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percentage, isLong);
+                      const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percentage, isLong, assetInfo);
                       if (calculatedPrices.stopLossPrice) {
                         setSlPrice(calculatedPrices.stopLossPrice.toString());
                       }
@@ -1454,7 +1508,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                         if (marketData?.price) {
                           const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
                           const isLong = side === 'Long';
-                          const calculatedPrices = calculateTPSLPrices(entryPrice, percent, 0, isLong);
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, percent, 0, isLong, assetInfo);
                           if (calculatedPrices.takeProfitPrice) {
                             setTpPrice(calculatedPrices.takeProfitPrice.toString());
                           }
@@ -1479,7 +1533,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                         if (marketData?.price) {
                           const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
                           const isLong = side === 'Long';
-                          const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percent, isLong);
+                          const calculatedPrices = calculateTPSLPrices(entryPrice, 0, percent, isLong, assetInfo);
                           if (calculatedPrices.stopLossPrice) {
                             setSlPrice(calculatedPrices.stopLossPrice.toString());
                           }

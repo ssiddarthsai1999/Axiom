@@ -746,9 +746,10 @@ export function getAssetIndexBySymbol(symbol) {
  * @param {object} orderParams - Main order parameters
  * @param {object} tpSlParams - TP/SL parameters
  * @param {boolean} isMainnet - Whether to use mainnet
+ * @param {object} assetInfo - Asset information for proper price formatting
  * @returns {Promise<any>} Results of all placed orders
  */
-export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = true) {
+export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = true, assetInfo = null) {
   try {
     console.log('🚀 Placing order with TP/SL (HyperLiquid format)...', { orderParams, tpSlParams });
     
@@ -756,7 +757,6 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
     const transport = new hl.HttpTransport({ isTestnet: !isMainnet });
     const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
     
-    const assetId = getAssetId(orderParams.symbol);
     const isLongPosition = orderParams.isBuy;
     
     // Build orders array starting with main order
@@ -764,7 +764,7 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
     
     // Main order (matches HyperLiquid app format)
     const mainOrder = {
-      a: assetId,
+      a: orderParams.cloid,
       b: orderParams.isBuy,
       p: orderParams.price.toString(),
       r: false,
@@ -781,40 +781,62 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
     if (tpSlParams.enabled) {
       // Stop Loss order (opposite direction, reduce-only)
       if (tpSlParams.stopLossPrice && tpSlParams.stopLossPrice > 0) {
+        // Format the SL price using the same logic as main order
+        const formattedSLPrice = assetInfo 
+          ? formatPriceToMaxDecimals(tpSlParams.stopLossPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
+          : tpSlParams.stopLossPrice.toString();
+        
         const slOrder = {
-          a: assetId,
+          a: orderParams.cloid,
           b: !isLongPosition, // Opposite of main order
-          p: tpSlParams.stopLossPrice.toString(),
+          p: formattedSLPrice,
           r: true, // reduce_only
           s: orderParams.size.toString(),
           t: {
             trigger: {
               isMarket: true,
               tpsl: 'sl',
-              triggerPx: tpSlParams.stopLossPrice.toString()
+              triggerPx: formattedSLPrice
             }
           }
         };
         orders.push(slOrder);
+        
+        console.log('🛡️ Stop Loss order formatted:', {
+          originalPrice: tpSlParams.stopLossPrice,
+          formattedPrice: formattedSLPrice,
+          order: slOrder
+        });
       }
       
       // Take Profit order (opposite direction, reduce-only)
       if (tpSlParams.takeProfitPrice && tpSlParams.takeProfitPrice > 0) {
+        // Format the TP price using the same logic as main order
+        const formattedTPPrice = assetInfo 
+          ? formatPriceToMaxDecimals(tpSlParams.takeProfitPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
+          : tpSlParams.takeProfitPrice.toString();
+        
         const tpOrder = {
-          a: assetId,
+          a: orderParams.cloid,
           b: !isLongPosition, // Opposite of main order
-          p: tpSlParams.takeProfitPrice.toString(),
+          p: formattedTPPrice,
           r: true, // reduce_only
           s: orderParams.size.toString(),
           t: {
             trigger: {
               isMarket: true,
               tpsl: 'tp',
-              triggerPx: tpSlParams.takeProfitPrice.toString()
+              triggerPx: formattedTPPrice
             }
           }
         };
         orders.push(tpOrder);
+        
+        console.log('🎯 Take Profit order formatted:', {
+          originalPrice: tpSlParams.takeProfitPrice,
+          formattedPrice: formattedTPPrice,
+          order: tpOrder
+        });
       }
     }
     
@@ -854,15 +876,86 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
   }
 }
 
+// Utility function to count significant figures
+function countSignificantFigures(value) {
+  const cleanValue = parseFloat(value).toString();
+  const scientificMatch = cleanValue.match(/^(\d+\.?\d*)e/);
+  
+  if (scientificMatch) {
+    // Handle scientific notation
+    const mantissa = scientificMatch[1].replace('.', '');
+    return mantissa.length;
+  }
+  
+  // Remove leading zeros and decimal point
+  const withoutLeadingZeros = cleanValue.replace(/^0+/, '').replace('.', '');
+  return withoutLeadingZeros.length;
+}
+
+/**
+ * Calculate HyperLiquid-compatible tick size based on price level and szDecimals
+ * This ensures prices follow HyperLiquid's actual tick size rules
+ */
+function getHyperLiquidTickSize(price, szDecimals) {
+  const p = Math.abs(price);
+  
+  // HyperLiquid uses a combination of price level and szDecimals for tick sizes
+  // The tick size is generally 1 unit at the allowed decimal precision
+  
+  // Calculate max allowed decimal places for prices
+  const MAX_DECIMALS = 6; // For perpetuals (spot uses 8)
+  const maxPriceDecimals = MAX_DECIMALS - szDecimals;
+  
+  // Tick size is 1 unit at the max allowed decimal place
+  const tickSize = Math.pow(10, -maxPriceDecimals);
+  
+  return tickSize;
+}
+
+/**
+ * Round price to HyperLiquid tick size
+ */
+function roundToHyperLiquidTick(price, szDecimals) {
+  const tickSize = getHyperLiquidTickSize(price, szDecimals);
+  const rounded = Math.round(price / tickSize) * tickSize;
+  
+  // Ensure we don't have floating point precision issues
+  const maxPriceDecimals = 6 - szDecimals;
+  return parseFloat(rounded.toFixed(maxPriceDecimals));
+}
+
+// Utility function to format prices for HyperLiquid
+function formatPriceToMaxDecimals(value, szDecimals, isSpot = false) {
+  if (!value || value === '') return value;
+  
+  let num = parseFloat(value);
+  if (isNaN(num)) return value;
+  
+  const valueStr = value.toString();
+  
+  // Check significant figures limit (max 5)
+  const sigFigs = countSignificantFigures(valueStr);
+  if (sigFigs > 5) {
+    // Truncate to 5 significant figures - no recursion!
+    num = parseFloat(num.toPrecision(5));
+  }
+  
+  // Apply HyperLiquid tick size rounding
+  const tickRounded = roundToHyperLiquidTick(num, szDecimals);
+
+  return tickRounded.toString();
+}
+
 /**
  * Calculate TP/SL prices based on percentage
  * @param {number} entryPrice - Entry price
  * @param {number} tpPercentage - Take profit percentage
  * @param {number} slPercentage - Stop loss percentage  
  * @param {boolean} isLong - Whether it's a long position
+ * @param {object} assetInfo - Asset information for proper price formatting
  * @returns {object} Calculated TP/SL prices
  */
-export function calculateTPSLPrices(entryPrice, tpPercentage, slPercentage, isLong) {
+export function calculateTPSLPrices(entryPrice, tpPercentage, slPercentage, isLong, assetInfo = null) {
   let takeProfitPrice = null;
   let stopLossPrice = null;
   
@@ -882,11 +975,29 @@ export function calculateTPSLPrices(entryPrice, tpPercentage, slPercentage, isLo
     }
   }
   
+  // Apply proper price formatting if assetInfo is available
+  if (assetInfo) {
+    if (takeProfitPrice !== null) {
+      takeProfitPrice = parseFloat(formatPriceToMaxDecimals(takeProfitPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot));
+    }
+    if (stopLossPrice !== null) {
+      stopLossPrice = parseFloat(formatPriceToMaxDecimals(stopLossPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot));
+    }
+  } else {
+    // Fallback to toFixed(6) if no assetInfo available
+    if (takeProfitPrice !== null) {
+      takeProfitPrice = parseFloat(takeProfitPrice.toFixed(6));
+    }
+    if (stopLossPrice !== null) {
+      stopLossPrice = parseFloat(stopLossPrice.toFixed(6));
+    }
+  }
+  
   return {
-    takeProfitPrice: takeProfitPrice ? parseFloat(takeProfitPrice.toFixed(6)) : null,
-    stopLossPrice: stopLossPrice ? parseFloat(stopLossPrice.toFixed(6)) : null
+    takeProfitPrice,
+    stopLossPrice
   };
-} 
+}
 
 /**
  * Get the maximum builder fee for a user
