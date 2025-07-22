@@ -681,7 +681,7 @@ function TradingPage() {
 
   return (
     <div className=' min-h-[94vh] flex flex-col bg-[#0d0c0e]'>
-      {/* WebSocket connection status indicator */}
+      {/* WebSocket connection status indicators */}
       {!wsConnected && (
         <div className="bg-yellow-600 text-black text-center py-1 text-xs">
           Connecting to real-time data...
