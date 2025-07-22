@@ -398,8 +398,12 @@ export function getOrCreateSessionAgentWallet() {
  */
 export async function isAgentWalletApproved(mainSigner, agentWallet, isMainnet = true) {
   const agents = await getAgentWallets(mainSigner, isMainnet);
-  if (agents && agents.agents && Array.isArray(agents.agents)) {
-    return agents.agents.some(a => a.address?.toLowerCase() === agentWallet.address.toLowerCase());
+  if (agents && agents.length > 0) {
+    const agent = agents.find(a => a.address?.toLowerCase() === agentWallet.address.toLowerCase() && a.validUntil > Date.now());
+    if (agent) {
+      console.log('✅ Agent wallet already approved:', agentWallet.address);
+      return true;
+    }
   }
   return false;
 }
@@ -476,21 +480,12 @@ export async function placeOrderWithAgentWallet(orderParams, isMainnet = true) {
  */
 export async function getAgentWallets(signer, isMainnet = true) {
   try {
-    console.log('🔍 Getting agent wallets...');
-    
-    // Get wallet address directly from signer
     const address = await signer.getAddress();
-    console.log('🔍 Getting agent wallets for address:', address);
-    
-    // Use InfoClient for read-only operations
     const infoClient = initializeInfoClient(isMainnet);
-    
-    // Get user details (includes agent information)
-    const userDetails = await infoClient.userDetails({ user: address });
-    
-    console.log('✅ Agent wallets for', address, ':', userDetails);
-    return userDetails;
-    
+
+    const extraAgents = await infoClient.extraAgents({ user: address });
+    console.log('Extra agents for', address, ':', extraAgents);
+    return extraAgents;
   } catch (error) {
     console.error('❌ Error getting agent wallets:', error);
     throw error;

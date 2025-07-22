@@ -1832,11 +1832,9 @@ const [applyToAll, setApplyToAll] = useState(false);
                   // Generate a new agent wallet using the already imported ethers
                   const agentWallet = await getOrCreateSessionAgentWallet()
                   // Approve the agent wallet with the main wallet
-                  await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
-                  alert('✅ New Agent Wallet created, saved, and approved!');
+                  await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'medusa-agent');
                 } catch (error) {
                   console.error('❌ Error creating/approving agent wallet:', error);
-                  alert('❌ Failed to create/approve agent wallet. Please try again or visit app.hyperliquid.xyz');
                 }
               }}
               className="w-full py-2 px-4 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors cursor-pointer"
