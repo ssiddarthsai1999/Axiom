@@ -694,7 +694,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       const maxFeeRate = 10000; // 1% in basis points
       
       // Option 1: Use a specific builder address (requires that address to have 100 USDC in Hyperliquid)
-      const builderAddress = '0x22292e03144af56597C8237C5364F002C1253167';
+      const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';
       
       // Option 2: Use your own address as builder (you need 100 USDC in Hyperliquid)
       // const builderAddress = await wallet.signer.getAddress();
