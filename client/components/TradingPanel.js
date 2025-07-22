@@ -654,13 +654,20 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     try {
       console.log('🔍 Checking builder fee status...');
-      const maxFee = await getMaxBuilderFee(wallet, true);
+      
+      // Option 1: Check specific builder address (requires that address to have 100 USDC in Hyperliquid)
+      const builderAddress = '0x22292e03144af56597C8237C5364F002C1253167';
+      
+      // Option 2: Check your own address as builder (you need 100 USDC in Hyperliquid)
+      // const builderAddress = await wallet.signer.getAddress();
+      
+      const maxFee = await getMaxBuilderFee(wallet.signer, true, builderAddress);
       
       // If maxFee is greater than 0, builder fee is approved
       const isApproved = maxFee > 0;
       setBuilderFeeApproved(isApproved);
       
-      console.log('💰 Builder fee status:', { maxFee, isApproved });
+      console.log('💰 Builder fee status:', { maxFee, isApproved, builderAddress });
     } catch (error) {
       console.error('❌ Error checking builder fee:', error);
       setBuilderFeeError('Failed to check builder fee status');
@@ -685,7 +692,14 @@ const [applyToAll, setApplyToAll] = useState(false);
       
       // Approve with a reasonable max fee rate (10000 = 1%)
       const maxFeeRate = 10000; // 1% in basis points
-      const result = await approveBuilderFee(wallet.signer, maxFeeRate, true);
+      
+      // Option 1: Use a specific builder address (requires that address to have 100 USDC in Hyperliquid)
+      const builderAddress = '0x22292e03144af56597C8237C5364F002C1253167';
+      
+      // Option 2: Use your own address as builder (you need 100 USDC in Hyperliquid)
+      // const builderAddress = await wallet.signer.getAddress();
+      
+      const result = await approveBuilderFee(wallet.signer, maxFeeRate, true, builderAddress);
       
       console.log('✅ Builder fee approved:', result);
       setBuilderFeeSuccess('Builder fee approved successfully!');
