@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
-import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices, getMaxBuilderFee, approveBuilderFee } from '@/utils/hyperLiquidSDK'
+import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, enableMetaMaskDeveloperMode, generateAgentWallet, approveAgentWallet, getOrCreateSessionAgentWallet, ensureAgentWalletApproved, updateLeverageSDK, getAssetIndexBySymbol, placeOrderWithTPSL, calculateTPSLPrices, getMaxBuilderFee, approveBuilderFee, isAgentWalletApproved } from '@/utils/hyperLiquidSDK'
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
@@ -49,44 +49,42 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [approvingBuilderFee, setApprovingBuilderFee] = useState(false);
   const [builderFeeError, setBuilderFeeError] = useState(null);
   const [builderFeeSuccess, setBuilderFeeSuccess] = useState(null);
+  // Agent wallet approval state
+  const [isAgentWalletReady, setIsAgentWalletReady] = useState(false);
+  const [checkingAgentWallet, setCheckingAgentWallet] = useState(false);
+  const [approvingAgent, setApprovingAgent] = useState(false);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
-  // Replace agentWallet state logic with sessionStorage-based agent wallet
-  // Instead of useState for agentWallet, just call getOrCreateSessionAgentWallet() when needed
-  // In handleTrade, before placing an order:
-  //   const agentWallet = getOrCreateSessionAgentWallet();
-  //   await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
-  //   await placeOrderWithAgentWallet(agentWallet, orderParams, true);
-  // Remove any legacy agent wallet state, approval, or creation logic
 
-  // Generate agent wallet on mount (or first connect)
-  useEffect(() => {
+  // Check agent wallet approval status
+  const checkAgentWalletStatus = async () => {
     if (!wallet || !wallet.signer) {
-      const wallet = getOrCreateSessionAgentWallet();
-      setWallet({
-        address: wallet.address,
-        signer: wallet.signer,
-        provider: wallet.provider,
-        walletClient: wallet.walletClient
-      });
+      setIsAgentWalletReady(false);
+      return;
     }
-  }, [wallet]);
 
-  // Update ensureAgentWalletApproved to always check the current agent wallet in sessionStorage
-  // const ensureAgentWalletApproved = async () => {
-  //   if (!wallet || !wallet.signer) return false;
-  //   try {
-  //     // Always get the current agent wallet from sessionStorage
-  //     const agentKey = sessionStorage.getItem('hl_agent_wallet');
-  //     if (!agentKey) throw new Error('No agent wallet found in sessionStorage');
-  //     const agentWallet = new ethers.Wallet(agentKey);
-  //     await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'SessionAgent');
-  //     return true;
-  //   } catch (e) {
-  //     setOrderError('Failed to approve agent wallet: ' + (e.message || e));
-  //     return false;
-  //   }
-  // };
+    setCheckingAgentWallet(true);
+    try {
+      const agentWallet = getOrCreateSessionAgentWallet();
+      const approved = await isAgentWalletApproved(wallet.signer, agentWallet, true);
+      setIsAgentWalletReady(approved);
+      console.log('🤖 Agent wallet status:', { approved, agentAddress: agentWallet.address });
+    } catch (error) {
+      console.error('❌ Error checking agent wallet status:', error);
+      setIsAgentWalletReady(false);
+    } finally {
+      setCheckingAgentWallet(false);
+    }
+  };
+
+  // Check agent wallet status when wallet connects
+  useEffect(() => {
+    if (wallet && wallet.signer && isOnboarded) {
+      checkAgentWalletStatus();
+    } else {
+      setIsAgentWalletReady(false);
+    }
+  }, [wallet, isOnboarded]);
 
   const handleLeverageClick = () => {
     setTempLeverage(leverage);
@@ -706,7 +704,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  // UPDATED TRADE HANDLER WITH AGENT WALLET
+  // UPDATED TRADE HANDLER WITH MERGED AGENT WALLET LOGIC
   const handleTrade = async () => {
     if (!isConnected) {
       await connectWallet();
@@ -715,6 +713,33 @@ const [applyToAll, setApplyToAll] = useState(false);
 
     if (!wallet || !wallet.signer) {
       setOrderError('Wallet not properly connected. Please try reconnecting.');
+      return;
+    }
+
+    if (!isOnboarded) {
+      // If not onboarded, redirect to Hyperliquid onboarding
+      window.open('https://app.hyperliquid.xyz/trade', '_blank');
+      return;
+    }
+
+    // If agent wallet is not ready, approve it first
+    if (!isAgentWalletReady) {
+      setApprovingAgent(true);
+      setOrderError(null);
+      setOrderSuccess(null);
+      
+      try {
+        const agentWallet = getOrCreateSessionAgentWallet();
+        await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'medusa-agent');
+        setIsAgentWalletReady(true);
+        setOrderSuccess('✅ Trading enabled! You can now place orders.');
+        setTimeout(() => setOrderSuccess(null), 3000);
+      } catch (error) {
+        console.error('❌ Error approving agent wallet:', error);
+        setOrderError('Failed to enable trading: ' + (error.message || error));
+      } finally {
+        setApprovingAgent(false);
+      }
       return;
     }
 
@@ -1625,10 +1650,14 @@ const [applyToAll, setApplyToAll] = useState(false);
         <div className='px-4 mt-4'>
         <button
           onClick={handleTrade}
-          disabled={isPlacingOrder || !hasEnoughMargin}
+          disabled={isPlacingOrder || (isAgentWalletReady && !hasEnoughMargin) || approvingAgent || checkingAgentWallet}
           className={`w-full py-3 mt-4 px-4 rounded-xl font-mono font-[500] text-[12px] duration-200 ease-in] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
             !isConnected
               ? 'bg-[#202022]  hover:bg-[#2b2b2e] border border-[#FAFAFA33] text-white'
+              : !isOnboarded
+              ? 'bg-[#2133FF] hover:bg-blue-700 text-white'
+              : !isAgentWalletReady
+              ? 'bg-[#f39c12] hover:bg-[#e67e22] text-white'
               : !hasEnoughMargin
               ? 'bg-[#ff4757] text-white'
               : side === 'Long'
@@ -1638,8 +1667,16 @@ const [applyToAll, setApplyToAll] = useState(false);
         >
           {isPlacingOrder 
             ? 'Placing Order...' 
+            : approvingAgent
+            ? 'Enabling Trade...'
+            : checkingAgentWallet
+            ? 'Checking...'
             : !isConnected 
             ? 'Connect Wallet'
+            : !isOnboarded
+            ? '🚀 Onboard to Hyperliquid'
+            : !isAgentWalletReady
+            ? '⚡ Enable Trade'
             : !hasEnoughMargin
             ? 'Not Enough Margin'
             : `${side} ${selectedSymbol}`
@@ -1811,38 +1848,7 @@ const [applyToAll, setApplyToAll] = useState(false);
   </div>
 )}
 
-        {/* Onboard Button for non-onboarded users */}
-        {isConnected && !isOnboarded && (
-          <div className='px-4 mt-2'>
-            <button
-              onClick={() => window.open('https://app.hyperliquid.xyz/trade', '_blank')}
-              className="w-full py-2 px-4 text-[14px] font-[500] bg-[#2133FF] hover:bg-blue-700  text-white rounded transition-colors cursor-pointer"
-            >
-              🚀 Onboard to Hyperliquid
-            </button>
-          </div>
-        )}
 
-        {/* Agent Wallet Button for onboarded users */}
-        {isConnected && isOnboarded && (
-          <div className='px-4 mt-2'>
-            <button
-              onClick={async () => {
-                try {
-                  // Generate a new agent wallet using the already imported ethers
-                  const agentWallet = await getOrCreateSessionAgentWallet()
-                  // Approve the agent wallet with the main wallet
-                  await ensureAgentWalletApproved(wallet.signer, agentWallet, true, 'medusa-agent');
-                } catch (error) {
-                  console.error('❌ Error creating/approving agent wallet:', error);
-                }
-              }}
-              className="w-full py-2 px-4 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors cursor-pointer"
-            >
-              🤖 Create Agent Wallet
-            </button>
-          </div>
-        )}
 
         {/* Builder Fee Approval Button */}
         {isConnected && isOnboarded && (
