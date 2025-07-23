@@ -690,8 +690,8 @@ const [applyToAll, setApplyToAll] = useState(false);
     try {
       console.log('🔧 Approving builder fee...');
       
-      // Approve with a reasonable max fee rate (10000 = 1%)
-      const maxFeeRate = 10000; // 1% in basis points
+      // Approve with a reasonable max fee rate (1% as percentage string)
+      const maxFeeRate = "1%"; // 1% as percentage string format required by HyperLiquid API
       
       // Option 1: Use a specific builder address (requires that address to have 100 USDC in Hyperliquid)
       const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';

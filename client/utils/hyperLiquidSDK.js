@@ -1034,7 +1034,7 @@ export async function getMaxBuilderFee(signer, isMainnet = true, builderAddress 
 /**
  * Approve builder fee using the same pattern as approveAgentWallet
  * @param {ethers.Signer} signer - The ethers.js signer
- * @param {number} maxFeeRate - The maximum fee rate to approve (e.g., 10000 for 1%)
+ * @param {string} maxFeeRate - The maximum fee rate to approve as percentage string (e.g., "1%" for 1%)
  * @param {boolean} isMainnet - Whether to use mainnet
  * @param {string} builderAddress - Optional builder address to approve (defaults to user's own address)
  * @returns {Promise<any>} The approval result
@@ -1056,7 +1056,7 @@ export async function approveBuilderFee(signer, maxFeeRate, isMainnet = true, bu
       type: "approveBuilderFee",
       signatureChainId: "0xa4b1", // Arbitrum mainnet
       hyperliquidChain: isMainnet ? "Mainnet" : "Testnet", 
-      maxFeeRate: maxFeeRate.toString(),
+      maxFeeRate: maxFeeRate,
       builder: builder,
       nonce,
     };
