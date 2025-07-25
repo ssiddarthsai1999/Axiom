@@ -656,7 +656,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       console.log('🔍 Checking builder fee status...');
       
       // Option 1: Check specific builder address (requires that address to have 100 USDC in Hyperliquid)
-      const builderAddress = '0x22292e03144af56597C8237C5364F002C1253167';
+      const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';
       
       // Option 2: Check your own address as builder (you need 100 USDC in Hyperliquid)
       // const builderAddress = await wallet.signer.getAddress();
@@ -1125,6 +1125,13 @@ const [applyToAll, setApplyToAll] = useState(false);
       }
     }
   };
+
+  // Always check builder fee status when wallet, address, or connection changes
+  useEffect(() => {
+    if (wallet && wallet.signer && isConnected && address) {
+      checkBuilderFeeStatus();
+    }
+  }, [wallet, address, isConnected]);
 
   return (
     <>
@@ -1660,16 +1667,58 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div>
         )}
 
+        {/* Builder Fee Approval Button (now above trade button) */}
+        {isConnected && isOnboarded && !builderFeeApproved && (
+          <div className='px-4 mt-2'>
+            {/* Builder Fee Error Display */}
+            {builderFeeError && (
+              <div className="mb-2 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
+                <p className="text-red-400">{builderFeeError}</p>
+              </div>
+            )}
+
+            {/* Builder Fee Success Display */}
+            {builderFeeSuccess && (
+              <div className="mb-2 p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
+                <p className="text-green-400">{builderFeeSuccess}</p>
+              </div>
+            )}
+
+            <button
+              onClick={handleApproveBuilderFee}
+              disabled={approvingBuilderFee || checkingBuilderFee}
+              className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
+            >
+              {approvingBuilderFee 
+                ? '⏳ Approving Builder Fee...' 
+                : checkingBuilderFee 
+                ? '🔍 Checking Status...'
+                : '💰 Approve Builder Fee'
+              }
+            </button>
+          </div>
+        )}
+
         {/* Trade Button */}
         <div className='px-4 mt-4'>
         <button
-          onClick={handleTrade}
-          disabled={isPlacingOrder || (isAgentWalletReady && !hasEnoughMargin) || approvingAgent || checkingAgentWallet}
+          onClick={!isConnected ? connectWallet : handleTrade}
+          disabled={
+            isPlacingOrder ||
+            (isConnected && (
+              !builderFeeApproved ||
+              (isAgentWalletReady && !hasEnoughMargin) ||
+              approvingAgent ||
+              checkingAgentWallet
+            ))
+          }
           className={`w-full py-3 mt-4 px-4 rounded-xl font-mono font-[500] text-[12px] duration-200 ease-in] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
             !isConnected
               ? 'bg-[#202022]  hover:bg-[#2b2b2e] border border-[#FAFAFA33] text-white'
               : !isOnboarded
               ? 'bg-[#2133FF] hover:bg-blue-700 text-white'
+              : !builderFeeApproved
+              ? 'bg-gray-600 text-white'
               : !isAgentWalletReady
               ? 'bg-[#f39c12] hover:bg-[#e67e22] text-white'
               : !hasEnoughMargin
@@ -1679,14 +1728,14 @@ const [applyToAll, setApplyToAll] = useState(false);
               : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-white'
           }`}
         >
-          {isPlacingOrder 
+          {!isConnected
+            ? 'Connect Wallet'
+            : isPlacingOrder 
             ? 'Placing Order...' 
             : approvingAgent
             ? 'Enabling Trade...'
             : checkingAgentWallet
             ? 'Checking...'
-            : !isConnected 
-            ? 'Connect Wallet'
             : !isOnboarded
             ? '🚀 Onboard to Hyperliquid'
             : !isAgentWalletReady
@@ -1695,7 +1744,8 @@ const [applyToAll, setApplyToAll] = useState(false);
             ? 'Not Enough Margin'
             : `${side} ${selectedSymbol}`
           }
-        </button></div>
+        </button>
+        </div>
 
 
          {/* Leverage Modal */}
@@ -1862,45 +1912,6 @@ const [applyToAll, setApplyToAll] = useState(false);
   </div>
 )}
 
-
-
-        {/* Builder Fee Approval Button */}
-        {isConnected && isOnboarded && (
-          <div className='px-4 mt-2'>
-            {/* Builder Fee Error Display */}
-            {builderFeeError && (
-              <div className="mb-2 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
-                <p className="text-red-400">{builderFeeError}</p>
-              </div>
-            )}
-
-            {/* Builder Fee Success Display */}
-            {builderFeeSuccess && (
-              <div className="mb-2 p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
-                <p className="text-green-400">{builderFeeSuccess}</p>
-              </div>
-            )}
-
-            {builderFeeApproved ? (
-              <div className="w-full py-2 px-4 text-xs bg-green-900 bg-opacity-30 border border-green-600 rounded text-center">
-                <span className="text-green-400">✅ Builder Fee Approved</span>
-              </div>
-            ) : (
-              <button
-                onClick={handleApproveBuilderFee}
-                disabled={approvingBuilderFee || checkingBuilderFee}
-                className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
-              >
-                {approvingBuilderFee 
-                  ? '⏳ Approving Builder Fee...' 
-                  : checkingBuilderFee 
-                  ? '🔍 Checking Status...'
-                  : '💰 Approve Builder Fee'
-                }
-              </button>
-            )}
-          </div>
-        )}
 
 
       </div>
