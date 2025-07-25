@@ -205,45 +205,64 @@ const MarketCloseModal = ({ isOpen, onClose, position, onConfirm }) => {
             <span className="text-gray-400 text-sm">Close Amount</span>
             <span className="text-white text-sm">{formatNumber(sizePercentage, 0)}%</span>
           </div>
-          
-          {/* Custom slider */}
-          <div className="relative">
-            <div className="flex items-center space-x-2">
-              {/* Percentage buttons */}
+          {/* Improved Custom slider */}
+          <div className="relative flex flex-col items-center">
+            <div className="flex w-full justify-between mb-2">
               {[25, 50, 75, 100].map((percent) => (
                 <button
                   key={percent}
+                  type="button"
                   onClick={() => handlePercentageChange(percent)}
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    Math.abs(sizePercentage - percent) < 1 
-                      ? 'bg-[#00D4AA]' 
-                      : 'bg-gray-600 hover:bg-gray-500'
-                  }`}
-                />
+                  className={`w-10 h-8 rounded-lg border transition-colors text-sm font-medium
+                    ${Math.abs(sizePercentage - percent) < 1
+                      ? 'bg-[#00D4AA] text-black border-[#00D4AA]'
+                      : 'bg-[#18181b] text-gray-300 border-[#23232a] hover:bg-[#23232a]'}
+                  `}
+                  style={{ outline: 'none' }}
+                >
+                  {percent}%
+                </button>
               ))}
-              
-              {/* Connecting line */}
-              <div className="flex-1 h-0.5 bg-gray-600 relative">
-                <div 
-                  className="absolute h-0.5 bg-[#00D4AA] left-0 top-0"
-                  style={{ width: `${sizePercentage}%` }}
-                />
-                <div 
-                  className="absolute w-4 h-4 bg-[#00D4AA] rounded-full transform -translate-y-1.5 -translate-x-2 cursor-pointer"
-                  style={{ left: `${sizePercentage}%` }}
+            </div>
+            <div className="relative w-full flex items-center" style={{ height: '32px' }}>
+              {/* Track */}
+              <div className="absolute left-0 right-0 top-1/2 transform -translate-y-1/2 h-2 rounded-full bg-gray-700" />
+              {/* Filled Track */}
+              <div
+                className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 rounded-full bg-[#00D4AA] transition-all"
+                style={{ width: `${sizePercentage}%`, zIndex: 1 }}
+              />
+              {/* Slider Handle */}
+              <div
+                className="absolute top-1/2 transform -translate-y-1/2"
+                style={{ left: `calc(${sizePercentage}% - 16px)` }}
+              >
+                <div
+                  className="w-8 h-8 bg-[#00D4AA] border-4 border-[#0d0c0e] rounded-full shadow-lg cursor-pointer transition-transform hover:scale-110 focus:scale-110"
+                  tabIndex={0}
+                  role="slider"
+                  aria-valuenow={sizePercentage}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Close Amount Percentage"
+                  onKeyDown={e => {
+                    if (e.key === 'ArrowLeft') handlePercentageChange(Math.max(0, sizePercentage - 1));
+                    if (e.key === 'ArrowRight') handlePercentageChange(Math.min(100, sizePercentage + 1));
+                  }}
+                  style={{ outline: 'none' }}
                 />
               </div>
+              {/* Range input for drag */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sizePercentage}
+                onChange={e => handlePercentageChange(parseFloat(e.target.value))}
+                className="absolute left-0 right-0 w-full h-8 opacity-0 cursor-pointer z-10"
+                aria-label="Close Amount Slider"
+              />
             </div>
-            
-            {/* Hidden range input for better UX */}
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={sizePercentage}
-              onChange={(e) => handlePercentageChange(parseFloat(e.target.value))}
-              className="absolute inset-0 w-full opacity-0 cursor-pointer"
-            />
           </div>
         </div>
 
