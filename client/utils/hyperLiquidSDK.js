@@ -461,6 +461,10 @@ export async function placeOrderWithAgentWallet(orderParams, isMainnet = true) {
       },
     }],
     grouping: 'na',
+    builder: {
+      b: '0xD4418418F6673B48E1828F539bED0340F78114E1',
+      f: 100
+    }
   };
   
   console.log('📋 Order request (HyperLiquid format):', JSON.stringify(orderRequest, null, 2));
@@ -768,6 +772,10 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
         limit: {
           tif: orderParams.orderType === 'market' ? 'FrontendMarket' : 'Gtc'
         }
+      },
+      builder: {
+        b: '0xD4418418F6673B48E1828F539bED0340F78114E1',
+        f: 100
       }
     };
     orders.push(mainOrder);
@@ -793,6 +801,10 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
               tpsl: 'sl',
               triggerPx: formattedSLPrice
             }
+          },
+          builder: {
+            b: '0xD4418418F6673B48E1828F539bED0340F78114E1',
+            f: 100
           }
         };
         orders.push(slOrder);
@@ -823,6 +835,10 @@ export async function placeOrderWithTPSL(orderParams, tpSlParams, isMainnet = tr
               tpsl: 'tp',
               triggerPx: formattedTPPrice
             }
+          },
+          builder: {
+            b: '0xD4418418F6673B48E1828F539bED0340F78114E1',
+            f: 100
           }
         };
         orders.push(tpOrder);
