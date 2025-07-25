@@ -1,8 +1,12 @@
 // components/UserPositions.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
-import { getUserAccountStateSDK, getOpenOrdersSDK } from '@/utils/hyperLiquidSDK';
+import { getUserAccountStateSDK, getOpenOrdersSDK, getOrCreateSessionAgentWallet } from '@/utils/hyperLiquidSDK';
+import hyperliquidUtils from '@/utils/hyperLiquidTrading';
+import * as hl from '@nktkas/hyperliquid';
 import TPSLModal from './TPSLModal';
+import LimitCloseModal from './LimitCloseModal';
+import MarketCloseModal from './MarketCloseModal';
 import numeral from 'numeral';
 
 const UserPositions = ({ className = '' }) => {
@@ -16,6 +20,8 @@ const UserPositions = ({ className = '' }) => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [currentPrices, setCurrentPrices] = useState({});
   const [tpslModalOpen, setTpslModalOpen] = useState(false);
+  const [limitCloseModalOpen, setLimitCloseModalOpen] = useState(false);
+  const [marketCloseModalOpen, setMarketCloseModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(null);
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -261,7 +267,7 @@ const UserPositions = ({ className = '' }) => {
       console.log(`🔒 Closing position for ${symbol}`);
       // Implementation would need proper position closing with nktkas SDK
       // This would require implementing position closing in the hyperLiquidSDK.js
-      alert(`Position closing for ${symbol} - Implementation needed`);
+      // alert(`Position closing for ${symbol} - Implementation needed`);
     } catch (error) {
       console.error('❌ Error closing position:', error);
     }
@@ -280,6 +286,225 @@ const UserPositions = ({ className = '' }) => {
       fetchUserData();
       fetchCurrentPrices();
     }, 1000); // Small delay to ensure orders are processed
+  };
+
+  const openLimitCloseModal = (position) => {
+    setSelectedPosition(position);
+    setLimitCloseModalOpen(true);
+  };
+
+  const closeLimitCloseModal = () => {
+    setLimitCloseModalOpen(false);
+    setSelectedPosition(null);
+  };
+
+  const openMarketCloseModal = (position) => {
+    setSelectedPosition(position);
+    setMarketCloseModalOpen(true);
+  };
+
+  const closeMarketCloseModal = () => {
+    setMarketCloseModalOpen(false);
+    setSelectedPosition(null);
+  };
+
+  const handleClosePosition = async (orderData) => {
+    if (!address) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    try {
+      console.log('🔒 Closing position with order:', orderData);
+      
+      // Get asset information for the symbol
+      const assetInfo = await hyperliquidUtils.getAssetInfo(orderData.symbol, true);
+      if (!assetInfo) {
+        throw new Error(`Could not find asset information for ${orderData.symbol}`);
+      }
+      
+      console.log('📊 Asset info:', assetInfo);
+      
+      // Show loading state
+      const loadingMessage = `Submitting ${orderData.type.toUpperCase()} close order for ${orderData.symbol}...`;
+      console.log(loadingMessage);
+      
+      // Use agent wallet approach like placeOrderWithAgentWallet
+      const agentWallet = getOrCreateSessionAgentWallet();
+      const transport = new hl.HttpTransport({ isTestnet: false }); // true for mainnet
+      const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+      
+      // Find the position being closed
+      const positionToClose = positions.find(pos => pos.coin === orderData.symbol);
+      if (!positionToClose) {
+        throw new Error(`Position not found for ${orderData.symbol}`);
+      }
+
+      // Get current market price for market orders (like TradingPanel.js does)
+      let finalPrice;
+      if (orderData.type === 'market') {
+        // For market orders, start with current market price
+        let basePrice = currentPrices[orderData.symbol] || positionToClose.markPrice;
+        
+        // Apply price adjustment for market orders (matching TradingPanel.js logic)
+        if (orderData.side === 'Buy') {
+          // Buying to close short position - increase price by 5% to ensure fill
+          finalPrice = basePrice * 1.05;
+        } else {
+          // Selling to close long position - decrease price by 5% to ensure fill
+          finalPrice = basePrice * 0.95;
+        }
+      } else {
+        // For limit orders, use the specified price
+        finalPrice = orderData.price;
+      }
+
+      // Format price to prevent floating point precision issues
+      const formattedPrice = assetInfo 
+        ? formatPriceToMaxDecimals(finalPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
+        : parseFloat(finalPrice.toFixed(6)).toString();
+
+      console.log('💰 Using price for order:', {
+        type: orderData.type,
+        side: orderData.side,
+        specifiedPrice: orderData.price,
+        currentPrice: currentPrices[orderData.symbol],
+        markPrice: positionToClose.markPrice,
+        basePrice: orderData.type === 'market' ? (currentPrices[orderData.symbol] || positionToClose.markPrice) : null,
+        adjustment: orderData.type === 'market' ? (orderData.side === 'Buy' ? '+5%' : '-5%') : 'none',
+        rawFinalPrice: finalPrice,
+        formattedPrice: formattedPrice
+      });
+
+      // Prepare order in nktkas SDK format
+      const orderRequest = {
+        orders: [{
+          a: assetInfo.index, // asset index
+          b: orderData.side === 'Buy', // isBuy
+          p: formattedPrice, // Use properly formatted price to prevent deserialization errors
+          s: orderData.size.toString(), // size as string
+          r: true, // reduceOnly for closing positions
+          t: {
+            limit: {
+              tif: orderData.type === 'market' ? 'FrontendMarket' : 'Gtc' // Use limit format for both market and limit orders
+            }
+          }
+          // No client order ID needed for close orders
+        }],
+        grouping: 'na'
+      };
+      
+      console.log('📋 Order request (HyperLiquid format):', JSON.stringify(orderRequest, null, 2));
+      
+      // Place the order using agent wallet
+      const result = await exchClient.order(orderRequest);
+      
+      console.log('✅ Order placed successfully:', result);
+      
+      // Check if the order was successful
+      if (result?.status === 'ok') {
+        const orderResponse = result.response?.data?.statuses?.[0];
+        
+        if (orderResponse?.resting) {
+          // alert(`✅ ${orderData.type.toUpperCase()} close order placed successfully!\n` +
+          //       `Order ID: ${orderResponse.resting.oid}\n` +
+          //       `Symbol: ${orderData.symbol}\n` +
+          //       `Side: ${orderData.side}\n` +
+          //       `Size: ${orderData.size}\n` +
+          //       (orderData.price ? `Price: ${orderData.price}` : 'Price: Market'));
+        } else if (orderResponse?.filled) {
+          // alert(`✅ ${orderData.type.toUpperCase()} close order filled immediately!\n` +
+          //       `Symbol: ${orderData.symbol}\n` +
+          //       `Size: ${orderResponse.filled.totalSz}\n` +
+          //       `Average Price: ${orderResponse.filled.avgPx}\n` +
+          //       `Order ID: ${orderResponse.filled.oid}`);
+        } else if (orderResponse?.error) {
+          throw new Error(orderResponse.error);
+        } else {
+          // Generic success
+          // alert(`✅ ${orderData.type.toUpperCase()} close order submitted successfully for ${orderData.symbol}`);
+        }
+      } else {
+        throw new Error(result?.error || 'Unknown error occurred');
+      }
+      
+      // Refresh data to reflect the new order/position change
+      setTimeout(() => {
+        fetchUserData();
+        fetchCurrentPrices();
+      }, 2000); // Increased delay to ensure order is processed
+      
+    } catch (error) {
+      console.error('❌ Error closing position:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = error.message;
+      if (errorMessage.includes('Insufficient')) {
+        errorMessage = 'Insufficient balance to place this order';
+      } else if (errorMessage.includes('Invalid size')) {
+        errorMessage = 'Invalid position size - check your available position';
+      } else if (errorMessage.includes('Agent wallet')) {
+        errorMessage = 'Agent wallet not properly configured. Please refresh and try again.';
+      }
+      
+      // alert(`❌ Error closing position: ${errorMessage}\n\nPlease check:\n- Wallet is connected\n- Sufficient balance\n- Valid position size\n- Network connection`);
+    }
+  };
+
+  // Generate a unique client order ID (cloid)
+  const generateCloid = () => {
+    // Generate a 128-bit hex string as required by HyperLiquid
+    const hex = '0x' + Array.from({length: 32}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    return hex;
+  };
+
+  // Utility functions for price formatting (from TradingPanel.js)
+  const countSignificantFigures = (value) => {
+    const cleanValue = parseFloat(value).toString();
+    const scientificMatch = cleanValue.match(/^(\d+\.?\d*)e/);
+    
+    if (scientificMatch) {
+      const mantissa = scientificMatch[1].replace('.', '');
+      return mantissa.length;
+    }
+    
+    const withoutLeadingZeros = cleanValue.replace(/^0+/, '').replace('.', '');
+    return withoutLeadingZeros.length;
+  };
+
+  const getHyperLiquidTickSize = (price, szDecimals) => {
+    const MAX_DECIMALS = 6; // For perpetuals (spot uses 8)
+    const maxPriceDecimals = MAX_DECIMALS - szDecimals;
+    const tickSize = Math.pow(10, -maxPriceDecimals);
+    return tickSize;
+  };
+
+  const roundToHyperLiquidTick = (price, szDecimals) => {
+    const tickSize = getHyperLiquidTickSize(price, szDecimals);
+    const rounded = Math.round(price / tickSize) * tickSize;
+    
+    const maxPriceDecimals = 6 - szDecimals;
+    return parseFloat(rounded.toFixed(maxPriceDecimals));
+  };
+
+  const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
+    if (!value || value === '') return value;
+    
+    let num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    const valueStr = value.toString();
+    
+    // Check significant figures limit (max 5)
+    const sigFigs = countSignificantFigures(valueStr);
+    if (sigFigs > 5) {
+      num = parseFloat(num.toPrecision(5));
+    }
+    
+    // Apply HyperLiquid tick size rounding
+    const tickRounded = roundToHyperLiquidTick(num, szDecimals);
+    
+    return tickRounded.toString();
   };
 
   // Function to get TP/SL prices for a position
@@ -549,10 +774,16 @@ const UserPositions = ({ className = '' }) => {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex space-x-1">
-                            <button className="px-2 py-1 text-xs bg-[#1a1a1f] hover:bg-[#2a2a2f] text-gray-300 rounded transition-colors border border-[#1F1E23]">
+                            <button 
+                              onClick={() => openLimitCloseModal(position)}
+                              className="px-2 py-1 text-xs bg-[#1a1a1f] hover:bg-[#2a2a2f] text-gray-300 rounded transition-colors border border-[#1F1E23] cursor-pointer"
+                            >
                               Limit
                             </button>
-                            <button className="px-2 py-1 text-xs bg-[#1a1a1f] hover:bg-[#2a2a2f] text-gray-300 rounded transition-colors border border-[#1F1E23]">
+                            <button 
+                              onClick={() => openMarketCloseModal(position)}
+                              className="px-2 py-1 text-xs bg-[#1a1a1f] hover:bg-[#2a2a2f] text-gray-300 rounded transition-colors border border-[#1F1E23] cursor-pointer"
+                            >
                               Market
                             </button>
                           </div>
@@ -723,6 +954,23 @@ const UserPositions = ({ className = '' }) => {
         onClose={closeTPSLModal}
         position={selectedPosition}
         currentPrice={selectedPosition ? currentPrices[selectedPosition.coin] || selectedPosition.markPrice : 0}
+      />
+
+      {/* Limit Close Modal */}
+      <LimitCloseModal 
+        isOpen={limitCloseModalOpen}
+        onClose={closeLimitCloseModal}
+        position={selectedPosition}
+        currentPrice={selectedPosition ? currentPrices[selectedPosition.coin] || selectedPosition.markPrice : 0}
+        onConfirm={handleClosePosition}
+      />
+
+      {/* Market Close Modal */}
+      <MarketCloseModal 
+        isOpen={marketCloseModalOpen}
+        onClose={closeMarketCloseModal}
+        position={selectedPosition}
+        onConfirm={handleClosePosition}
       />
     </div>
   );
