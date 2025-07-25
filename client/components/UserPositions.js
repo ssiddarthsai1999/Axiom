@@ -115,6 +115,9 @@ const UserPositions = ({ className = '' }) => {
               const pnl = parseFloat(pos.position.unrealizedPnl || 0);
               const positionValue = Math.abs(size) * markPrice;
               const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
+              const leverage = parseFloat(pos.leverage?.value || 1);
+              // Calculate margin used for open positions
+              const marginUsed = leverage > 0 ? positionValue / leverage : 0;
               
               return {
                 coin: pos.position.coin,
@@ -124,9 +127,9 @@ const UserPositions = ({ className = '' }) => {
                 markPrice: markPrice,
                 pnl: pnl,
                 pnlPercentage: pnlPercentage,
-                leverage: parseFloat(pos.leverage?.value || 1),
+                leverage: leverage,
                 liquidationPrice: parseFloat(pos.liquidationPx || 0),
-                marginUsed: parseFloat(pos.marginUsed || 0),
+                marginUsed: parseFloat(pos.position.marginUsed || 0),
                 side: size > 0 ? 'Long' : 'Short',
                 funding: 0 // Will be calculated from funding data
               };
