@@ -15,6 +15,8 @@ const TokenData = ({
   const [fundingCountdown, setFundingCountdown] = useState('00:00:00');
   const [favorites, setFavorites] = useState(new Set());
 
+  
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -124,13 +126,13 @@ const TokenData = ({
   };
 
   // Format funding rate (convert hourly to 8-hour rate)
-  const formatFunding = (funding) => {
-    if (!funding && funding !== 0) return '0.00000%';
-    // Hyperliquid API returns hourly funding rate, multiply by 8 for 8-hour display
-    const eightHourRate = funding * 8;
-    const percentage = eightHourRate * 100;
-    return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(5)}%`;
-  };
+// In your TokenData.js component, replace this:
+const formatFunding = (funding) => {
+  if (!funding && funding !== 0) return '0.00000%';
+  // Remove this line: const eightHourRate = funding * 8;
+  const percentage = funding * 100;  // Just convert to percentage
+  return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(5)}%`;
+};
 
   // Format price change (amount + percentage)
   const formatPriceChange = (currentPrice, change24h) => {

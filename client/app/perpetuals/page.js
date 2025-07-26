@@ -10,8 +10,10 @@ import Navbar from '@/components/Navbar'
 import FavoritesTicker from '@/components/FavoritesTicker'
 
 // WebSocket service singleton to prevent multiple connections
+// WebSocket service singleton to prevent multiple connections
 class WebSocketService {
   static instance = null;
+  
   constructor() {
     this.ws = null;
     this.isConnected = false;
@@ -91,14 +93,52 @@ class WebSocketService {
           return;
         }
 
-        // Handle different channel types and route messages properly
-        if (data.channel === 'l2Book' && data.data && data.data.coin) {
+        // Handle allMids updates (contains real-time mid prices for all symbols)
+        if (data.channel === 'allMids' && data.data && data.data.mids) {
+          this.broadcast('allMids', data);
+        }
+        // Handle webData2 updates (comprehensive user and market data)
+        else if (data.channel === 'webData2' && data.data) {
+          this.broadcast('webData2', data);
+        }
+        // Handle l2Book updates
+        else if (data.channel === 'l2Book' && data.data && data.data.coin) {
           const coin = data.data.coin;
           this.broadcast(`l2Book:${coin}`, data);
-        } else if (data.channel === 'trades' && data.data && Array.isArray(data.data) && data.data.length > 0) {
-          const coin = data.data[0].coin; // Get coin from first trade
+        }
+        // Handle trades updates
+        else if (data.channel === 'trades' && data.data && Array.isArray(data.data) && data.data.length > 0) {
+          const coin = data.data[0].coin;
           this.broadcast(`trades:${coin}`, data);
-        } else {
+        }
+        // Handle user funding updates
+        else if (data.channel === 'userFundings' && data.data) {
+          this.broadcast('userFundings', data);
+        }
+        // Handle user fills updates
+        else if (data.channel === 'userFills' && data.data) {
+          this.broadcast('userFills', data);
+        }
+        // Handle user events
+        else if (data.channel === 'user' && data.data) {
+          this.broadcast('userEvents', data);
+        }
+        // Handle BBO (Best Bid Offer) updates
+        else if (data.channel === 'bbo' && data.data && data.data.coin) {
+          const coin = data.data.coin;
+          this.broadcast(`bbo:${coin}`, data);
+        }
+        // Handle candle updates
+        else if (data.channel === 'candle' && data.data) {
+          const coin = data.data.s;
+          const interval = data.data.i;
+          this.broadcast(`candle:${coin}:${interval}`, data);
+        }
+        // Handle notification updates
+        else if (data.channel === 'notification' && data.data) {
+          this.broadcast('notification', data);
+        }
+        else {
           // Fallback for other message types
           this.broadcast(data.channel, data);
         }
@@ -147,6 +187,154 @@ class WebSocketService {
     }
   }
 
+  // Subscribe to real-time mid prices for all symbols
+  subscribeToAllMids() {
+    if (!this.isConnected) return;
+    
+    const allMidsKey = 'allMids';
+    
+    if (!this.activeSubscriptions.has(allMidsKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'allMids' }
+      });
+      this.activeSubscriptions.add(allMidsKey);
+      console.log('Subscribed to allMids for real-time price updates');
+    }
+  }
+
+subscribeToAllSymbolData() {
+  if (!this.isConnected) return;
+  
+  // Subscribe to a few major symbols' BBO data which updates every 3 seconds
+  const majorSymbols = ['BTC', 'ETH', 'SOL', 'AVAX', 'LINK']; // Add more as needed
+  
+  majorSymbols.forEach(symbol => {
+    const bboKey = `bbo:${symbol}`;
+    if (!this.activeSubscriptions.has(bboKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'bbo', coin: symbol }
+      });
+      this.activeSubscriptions.add(bboKey);
+      console.log(`Subscribed to BBO for ${symbol}`);
+    }
+  });
+}
+
+  // Subscribe to comprehensive user and market data
+  subscribeToWebData2(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const webData2Key = `webData2:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(webData2Key)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'webData2', user: userAddress }
+      });
+      this.activeSubscriptions.add(webData2Key);
+      console.log(`Subscribed to webData2 for ${userAddress}`);
+    }
+  }
+
+  // Subscribe to user funding updates
+  subscribeToUserFundings(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const userFundingsKey = `userFundings:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(userFundingsKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'userFundings', user: userAddress }
+      });
+      this.activeSubscriptions.add(userFundingsKey);
+      console.log(`Subscribed to userFundings for ${userAddress}`);
+    }
+  }
+
+  // Subscribe to user fills
+  subscribeToUserFills(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const userFillsKey = `userFills:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(userFillsKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'userFills', user: userAddress }
+      });
+      this.activeSubscriptions.add(userFillsKey);
+      console.log(`Subscribed to userFills for ${userAddress}`);
+    }
+  }
+
+  // Subscribe to user events
+  subscribeToUserEvents(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const userEventsKey = `userEvents:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(userEventsKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'user', user: userAddress }
+      });
+      this.activeSubscriptions.add(userEventsKey);
+      console.log(`Subscribed to userEvents for ${userAddress}`);
+    }
+  }
+
+  // Subscribe to BBO (Best Bid Offer) for a symbol
+  subscribeToBBO(symbol) {
+    if (!this.isConnected) return;
+    
+    const bboKey = `bbo:${symbol}`;
+    
+    if (!this.activeSubscriptions.has(bboKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'bbo', coin: symbol }
+      });
+      this.activeSubscriptions.add(bboKey);
+      console.log(`Subscribed to BBO for ${symbol}`);
+    }
+  }
+
+  // Subscribe to candles for a symbol
+  subscribeToCandles(symbol, interval = '1m') {
+    if (!this.isConnected) return;
+    
+    const candleKey = `candle:${symbol}:${interval}`;
+    
+    if (!this.activeSubscriptions.has(candleKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      this.activeSubscriptions.add(candleKey);
+      console.log(`Subscribed to candles for ${symbol} with ${interval} interval`);
+    }
+  }
+
+  // Subscribe to notifications for a user
+  subscribeToNotifications(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const notificationKey = `notification:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(notificationKey)) {
+      this.send({
+        method: 'subscribe',
+        subscription: { type: 'notification', user: userAddress }
+      });
+      this.activeSubscriptions.add(notificationKey);
+      console.log(`Subscribed to notifications for ${userAddress}`);
+    }
+  }
+
+  // Original symbol subscription methods (for l2Book and trades)
   subscribeToSymbol(symbol) {
     if (!this.isConnected) return;
     
@@ -198,6 +386,126 @@ class WebSocketService {
       console.log(`Unsubscribed from trades for ${symbol}`);
     }
   }
+
+  // Unsubscribe from allMids
+  unsubscribeFromAllMids() {
+    if (!this.isConnected) return;
+    
+    const allMidsKey = 'allMids';
+    
+    if (this.activeSubscriptions.has(allMidsKey)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'allMids' }
+      });
+      this.activeSubscriptions.delete(allMidsKey);
+      console.log('Unsubscribed from allMids');
+    }
+  }
+
+  // Unsubscribe from webData2
+  unsubscribeFromWebData2(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const webData2Key = `webData2:${userAddress}`;
+    
+    if (this.activeSubscriptions.has(webData2Key)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'webData2', user: userAddress }
+      });
+      this.activeSubscriptions.delete(webData2Key);
+      console.log(`Unsubscribed from webData2 for ${userAddress}`);
+    }
+  }
+
+  // Unsubscribe from user-specific feeds
+  unsubscribeFromUserFundings(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const userFundingsKey = `userFundings:${userAddress}`;
+    
+    if (this.activeSubscriptions.has(userFundingsKey)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'userFundings', user: userAddress }
+      });
+      this.activeSubscriptions.delete(userFundingsKey);
+      console.log(`Unsubscribed from userFundings for ${userAddress}`);
+    }
+  }
+
+  unsubscribeFromUserFills(userAddress) {
+    if (!this.isConnected || !userAddress) return;
+    
+    const userFillsKey = `userFills:${userAddress}`;
+    
+    if (this.activeSubscriptions.has(userFillsKey)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'userFills', user: userAddress }
+      });
+      this.activeSubscriptions.delete(userFillsKey);
+      console.log(`Unsubscribed from userFills for ${userAddress}`);
+    }
+  }
+
+  unsubscribeFromBBO(symbol) {
+    if (!this.isConnected) return;
+    
+    const bboKey = `bbo:${symbol}`;
+    
+    if (this.activeSubscriptions.has(bboKey)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'bbo', coin: symbol }
+      });
+      this.activeSubscriptions.delete(bboKey);
+      console.log(`Unsubscribed from BBO for ${symbol}`);
+    }
+  }
+
+  unsubscribeFromCandles(symbol, interval = '1m') {
+    if (!this.isConnected) return;
+    
+    const candleKey = `candle:${symbol}:${interval}`;
+    
+    if (this.activeSubscriptions.has(candleKey)) {
+      this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      this.activeSubscriptions.delete(candleKey);
+      console.log(`Unsubscribed from candles for ${symbol} with ${interval} interval`);
+    }
+  }
+
+  // Utility methods
+  getActiveSubscriptions() {
+    return Array.from(this.activeSubscriptions);
+  }
+
+  getSubscriberCount(key) {
+    return this.subscribers.has(key) ? this.subscribers.get(key).size : 0;
+  }
+
+  isSubscribedTo(subscriptionKey) {
+    return this.activeSubscriptions.has(subscriptionKey);
+  }
+
+  // Send POST requests via WebSocket
+  sendPostRequest(requestData, requestId = Date.now()) {
+    if (!this.isConnected) {
+      console.error('WebSocket not connected');
+      return;
+    }
+
+    this.send({
+      method: 'post',
+      id: requestId,
+      request: requestData
+    });
+  }
 }
 
 function TradingPage() {
@@ -236,6 +544,145 @@ function TradingPage() {
     };
     return names[coin] || coin;
   }, []);
+
+const handleAllMidsUpdate = useCallback((data) => {
+  if (data.data && data.data.mids) {
+    const midsData = data.data.mids;
+    
+    // Update allMarketData with real-time mid prices
+    setAllMarketData(prev => prev.map(token => {
+      const midPrice = midsData[token.symbol];
+      if (midPrice) {
+        const newPrice = parseFloat(midPrice);
+        const prevPrice = token.prevDayPx || token.price;
+        const change24h = prevPrice > 0 ? ((newPrice - prevPrice) / prevPrice) * 100 : 0;
+        
+        return {
+          ...token,
+          price: newPrice,
+          midPx: newPrice,
+          change24h: change24h
+        };
+      }
+      return token;
+    }));
+    
+    // Update current market data if it's for the selected symbol
+    const selectedSymbolMid = midsData[selectedSymbol];
+    if (selectedSymbolMid) {
+      setMarketData(prev => {
+        if (prev && prev.symbol === selectedSymbol) {
+          const newPrice = parseFloat(selectedSymbolMid);
+          const prevPrice = prev.prevDayPx || prev.price;
+          const change24h = prevPrice > 0 ? ((newPrice - prevPrice) / prevPrice) * 100 : 0;
+          
+          return {
+            ...prev,
+            price: newPrice,
+            midPx: newPrice,
+            change24h: change24h
+          };
+        }
+        return prev;
+      });
+    }
+    
+    // Trigger oracle/funding data fetch every time we get allMids update
+    // This will effectively update every ~3 seconds when oracle updates
+    fetchOracleAndFundingData();
+  }
+}, [selectedSymbol]);
+
+
+
+
+
+useEffect(() => {
+  const ws = wsService.current;
+  
+  ws.subscribe('allMids', handleAllMidsUpdate);
+  
+  if (wsConnected) {
+    ws.subscribeToAllMids();
+  }
+  
+  return () => {
+    ws.unsubscribe('allMids', handleAllMidsUpdate);
+  };
+}, [wsConnected, handleAllMidsUpdate]);
+
+const fetchOracleAndFundingData = useCallback(async () => {
+  try {
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'metaAndAssetCtxs' })
+    });
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+    
+    if (Array.isArray(data) && data.length >= 2) {
+      const universe = data[0].universe;
+      const assetCtxs = data[1];
+      
+      if (Array.isArray(universe) && Array.isArray(assetCtxs)) {
+        // Update only oracle and funding data, keeping other data intact
+        setAllMarketData(prev => prev.map((token, index) => {
+          const assetCtx = assetCtxs[index];
+          if (assetCtx) {
+            return {
+              ...token,
+              oraclePrice: parseFloat(assetCtx.oraclePx),
+              funding: parseFloat(assetCtx.funding),
+              premium: parseFloat(assetCtx.premium),
+              openInterest: parseFloat(assetCtx.openInterest)
+            };
+          }
+          return token;
+        }));
+        
+        // Update current market data for selected symbol
+        const selectedTokenIndex = universe.findIndex(token => token.name === selectedSymbol);
+        if (selectedTokenIndex !== -1 && assetCtxs[selectedTokenIndex]) {
+          const assetCtx = assetCtxs[selectedTokenIndex];
+          setMarketData(prev => {
+            if (prev && prev.symbol === selectedSymbol) {
+              return {
+                ...prev,
+                oraclePrice: parseFloat(assetCtx.oraclePx),
+                funding: parseFloat(assetCtx.funding),
+                premium: parseFloat(assetCtx.premium),
+                openInterest: parseFloat(assetCtx.openInterest)
+              };
+            }
+            return prev;
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching oracle and funding data:', error);
+  }
+}, [selectedSymbol]);
+
+
+  useEffect(() => {
+  const ws = wsService.current;
+  
+  ws.subscribe('allMids', handleAllMidsUpdate);
+  
+  if (wsConnected) {
+    ws.subscribeToAllMids();
+    // Also fetch once immediately when connected
+    fetchOracleAndFundingData();
+  }
+  
+  return () => {
+    ws.unsubscribe('allMids', handleAllMidsUpdate);
+  };
+}, [wsConnected, handleAllMidsUpdate, fetchOracleAndFundingData]);
 
   const formatTimeAgo = useCallback((timestamp) => {
     const now = Date.now();
