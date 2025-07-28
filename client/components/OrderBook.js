@@ -10,12 +10,14 @@ const OrderBook = ({
 }) => {
   const [activeTab, setActiveTab] = useState('Order Book');
 
+  const trimZeros = v => `${+v}`.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+
   // Calculate spread from order book data
   const spread = useMemo(() => {
     if (orderBookData.asks.length > 0 && orderBookData.bids.length > 0) {
       const bestAsk = orderBookData.asks[0].price;
       const bestBid = orderBookData.bids[0].price;
-      const spreadAbs = bestAsk - bestBid;
+      const spreadAbs = trimZeros((bestAsk - bestBid).toFixed(6));
       const spreadPerc = (spreadAbs / bestBid) * 100;
       
       return {
@@ -26,12 +28,44 @@ const OrderBook = ({
     return { absolute: 0, percentage: 0 };
   }, [orderBookData]);
 
-  const formatPrice = (price) => {
-    return numeral(price).format('0,0.0');
-  };
+
+  const formatPrice = (num) => {
+      // Convert to number if passed as string
+    const number = Number(num);
+
+    // Handle invalid numbers
+    if (isNaN(number)) return '';
+
+    // Integer: format with commas
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
+
+    // Decimal: keep full precision as string
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
 
   const formatAmount = (amount) => {
-    return numeral(amount).format('0,0');
+    // return numeral(amount).format('0,0');
+          // Convert to number if passed as string
+    const number = Number(amount);
+
+    // Handle invalid numbers
+    if (isNaN(number)) return '';
+
+    // Integer: format with commas
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
+
+    // Decimal: keep full precision as string
+    const parts = amount.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
   };
 
   const formatTotal = (total) => {
@@ -118,7 +152,7 @@ const OrderBook = ({
                 <span className="">Spread:</span>
                 <div className="flex space-x-2">
                   <span className=" font-mono ">
-                    {formatPrice(spread.absolute)}
+                    {spread.absolute}
                   </span>
                   <span className="text-[#889199]">
                     {spread.percentage.toFixed(3)}%
