@@ -587,7 +587,7 @@ const handleAllMidsUpdate = useCallback((data) => {
       });
     }
     
-    // Trigger oracle/funding data fetch every time we get allMids update
+    // Trigger oracle/funding data fetch every time we get allMids updates
     // This will effectively update every ~3 seconds when oracle updates
     fetchOracleAndFundingData();
   }
