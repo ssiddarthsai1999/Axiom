@@ -26,7 +26,7 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [tpPrice, setTpPrice] = useState('');
   const [assetInfo, setAssetInfo] = useState(null);
     const percentageOptions = [0, 25, 50, 75, 100];
-  const maxLeverage = 50; // Maximum leverage allowed
+  // const maxLeverage = 50; // Maximum leverage allowed
   const [percentage, setPercentage] = useState(0);
     const [usdcBalance, setUsdcBalance] = useState(0);
       const [ethPrice, setEthPrice] = useState(0);
@@ -38,7 +38,7 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [wallet, setWallet] = useState(null);
   const { data: walletClient } = useWalletClient();
     const [showLeverageModal, setShowLeverageModal] = useState(false);
-      const [tempLeverage, setTempLeverage] = useState(10);
+      const [tempLeverage, setTempLeverage] = useState(null);
   const { address, isConnected } = useAccount();
     const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
@@ -87,7 +87,8 @@ const [applyToAll, setApplyToAll] = useState(false);
   }, [wallet, isOnboarded]);
 
   const handleLeverageClick = () => {
-    setTempLeverage(leverage);
+    console.log('🔧 Leverage clicked:', leverage);
+    setTempLeverage(assetInfo?.maxLeverage);
     setShowLeverageModal(true);
     // Clear any previous error/success messages when opening modal
     setLeverageError(null);
@@ -281,7 +282,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         
      const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, true);
         setAssetInfo(assetData);
-        
+        setTempLeverage(assetData?.maxLeverage);
         console.log('✅ Asset info set:', assetData);
       } catch (error) {
         console.error('Error fetching asset info:', error);
@@ -1758,7 +1759,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           <h3 className="text-[16px] leading-[24px] font-[400] font-mono text-[#E5E5E5] text-center">Leverage & Margin</h3>
           <p className="text-[11px] leading-[12px] font-[500] font-mono text-[#919093] text-center mt-1">
             Adjust the leverage and margin mode for your position.<br />
-            The max leverage is {maxLeverage}x.
+            The max leverage is {assetInfo?.maxLeverage}x.
           </p>
         </div>
         <button 
@@ -1786,7 +1787,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         </div>
                   <button 
             onClick={() => {
-              setTempLeverage(Math.min(maxLeverage, tempLeverage + 1));
+              setTempLeverage(Math.min(assetInfo?.maxLeverage, tempLeverage + 1));
               setLeverageError(null);
               setLeverageSuccess(null);
             }}
@@ -1805,12 +1806,12 @@ const [applyToAll, setApplyToAll] = useState(false);
             <input
               type="range"
               min="1"
-              max={maxLeverage}
+              max={assetInfo?.maxLeverage}
               value={tempLeverage}
               onChange={handleSliderChange}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
               style={{
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 ${((tempLeverage - 1) / (maxLeverage - 1)) * 100}%, #374151 100%)`
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((tempLeverage - 1) / (assetInfo?.maxLeverage - 1)) * 100}%, #374151 ${((tempLeverage - 1) / (assetInfo?.maxLeverage - 1)) * 100}%, #374151 100%)`
               }}
             />
           </div>
@@ -1820,7 +1821,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         
         <div className="flex justify-between px-6">
           <span className='text-[11px] font-[400] leading-[16px] text-white  '>1x</span>
-          <span className='text-[11px] font-[400] leading-[16px] text-white '>{maxLeverage}x</span>
+          <span className='text-[11px] font-[400] leading-[16px] text-white '>{assetInfo?.maxLeverage}x</span>
         </div>
       </div>
 

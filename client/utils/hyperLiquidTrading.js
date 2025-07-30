@@ -91,6 +91,7 @@ class HyperliquidUtils {
             name: perpAsset.name,
             szDecimals: perpAsset.szDecimals !== undefined ? perpAsset.szDecimals : 3,
             isSpot: false,
+            maxLeverage: perpAsset.maxLeverage,
           };
           
           this.assetCache.set(cacheKey, assetInfo);
