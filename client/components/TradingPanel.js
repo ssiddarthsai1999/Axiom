@@ -278,12 +278,10 @@ const [applyToAll, setApplyToAll] = useState(false);
   useEffect(() => {
     const fetchAssetInfo = async () => {
       try {
-        console.log('🔍 Fetching asset info for:', selectedSymbol);
-        
+       
      const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, true);
         setAssetInfo(assetData);
         setTempLeverage(assetData?.maxLeverage);
-        console.log('✅ Asset info set:', assetData);
       } catch (error) {
         console.error('Error fetching asset info:', error);
         // Set fallback values

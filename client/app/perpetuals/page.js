@@ -8,509 +8,16 @@ import UserPositions from '@/components/UserPositions'
 import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
 import FavoritesTicker from '@/components/FavoritesTicker'
-
-// WebSocket service singleton to prevent multiple connections
-// WebSocket service singleton to prevent multiple connections
-class WebSocketService {
-  static instance = null;
-  
-  constructor() {
-    this.ws = null;
-    this.isConnected = false;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectTimeout = null;
-    this.subscribers = new Map();
-    this.messageQueue = [];
-    this.lastMessageTime = 0;
-    this.messageThrottleMs = 16; // ~60fps max update rate
-    this.activeSubscriptions = new Set(); // Track active subscriptions
-  }
-
-  static getInstance() {
-    if (!WebSocketService.instance) {
-      WebSocketService.instance = new WebSocketService();
-    }
-    return WebSocketService.instance;
-  }
-
-  subscribe(key, callback) {
-    if (!this.subscribers.has(key)) {
-      this.subscribers.set(key, new Set());
-    }
-    this.subscribers.get(key).add(callback);
-  }
-
-  unsubscribe(key, callback) {
-    if (this.subscribers.has(key)) {
-      this.subscribers.get(key).delete(callback);
-      if (this.subscribers.get(key).size === 0) {
-        this.subscribers.delete(key);
-      }
-    }
-  }
-
-  broadcast(key, data) {
-    // Throttle messages to prevent excessive updates
-    const now = Date.now();
-    if (now - this.lastMessageTime < this.messageThrottleMs) {
-      return;
-    }
-    this.lastMessageTime = now;
-
-    if (this.subscribers.has(key)) {
-      this.subscribers.get(key).forEach(callback => {
-        try {
-          callback(data);
-        } catch (error) {
-          console.error('Error in WebSocket callback:', error);
-        }
-      });
-    }
-  }
-
-  connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      return;
-    }
-
-    console.log('Connecting to WebSocket...');
-    this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
-
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-      this.broadcast('connection', { connected: true });
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.channel === 'subscriptionResponse') {
-          console.log('Subscription confirmed:', data.data);
-          return;
-        }
-
-        // Handle allMids updates (contains real-time mid prices for all symbols)
-        if (data.channel === 'allMids' && data.data && data.data.mids) {
-          this.broadcast('allMids', data);
-        }
-        // Handle webData2 updates (comprehensive user and market data)
-        else if (data.channel === 'webData2' && data.data) {
-          this.broadcast('webData2', data);
-        }
-        // Handle l2Book updates
-        else if (data.channel === 'l2Book' && data.data && data.data.coin) {
-          const coin = data.data.coin;
-          this.broadcast(`l2Book:${coin}`, data);
-        }
-        // Handle trades updates
-        else if (data.channel === 'trades' && data.data && Array.isArray(data.data) && data.data.length > 0) {
-          const coin = data.data[0].coin;
-          this.broadcast(`trades:${coin}`, data);
-        }
-        // Handle user funding updates
-        else if (data.channel === 'userFundings' && data.data) {
-          this.broadcast('userFundings', data);
-        }
-        // Handle user fills updates
-        else if (data.channel === 'userFills' && data.data) {
-          this.broadcast('userFills', data);
-        }
-        // Handle user events
-        else if (data.channel === 'user' && data.data) {
-          this.broadcast('userEvents', data);
-        }
-        // Handle BBO (Best Bid Offer) updates
-        else if (data.channel === 'bbo' && data.data && data.data.coin) {
-          const coin = data.data.coin;
-          this.broadcast(`bbo:${coin}`, data);
-        }
-        // Handle candle updates
-        else if (data.channel === 'candle' && data.data) {
-          const coin = data.data.s;
-          const interval = data.data.i;
-          this.broadcast(`candle:${coin}:${interval}`, data);
-        }
-        // Handle notification updates
-        else if (data.channel === 'notification' && data.data) {
-          this.broadcast('notification', data);
-        }
-        else {
-          // Fallback for other message types
-          this.broadcast(data.channel, data);
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
-    };
-
-    this.ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-      this.isConnected = false;
-      this.activeSubscriptions.clear(); // Clear active subscriptions on disconnect
-      this.broadcast('connection', { connected: false });
-      
-      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-        this.reconnectTimeout = setTimeout(() => {
-          this.reconnectAttempts++;
-          this.connect();
-        }, delay);
-      }
-    };
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      this.broadcast('error', error);
-    };
-  }
-
-  disconnect() {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    if (this.ws) {
-      this.ws.close(1000, 'Manual disconnect');
-      this.ws = null;
-    }
-    this.isConnected = false;
-    this.activeSubscriptions.clear();
-  }
-
-  send(message) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    }
-  }
-
-  // Subscribe to real-time mid prices for all symbols
-  subscribeToAllMids() {
-    if (!this.isConnected) return;
-    
-    const allMidsKey = 'allMids';
-    
-    if (!this.activeSubscriptions.has(allMidsKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'allMids' }
-      });
-      this.activeSubscriptions.add(allMidsKey);
-      console.log('Subscribed to allMids for real-time price updates');
-    }
-  }
-
-subscribeToAllSymbolData() {
-  if (!this.isConnected) return;
-  
-  // Subscribe to a few major symbols' BBO data which updates every 3 seconds
-  const majorSymbols = ['BTC', 'ETH', 'SOL', 'AVAX', 'LINK']; // Add more as needed
-  
-  majorSymbols.forEach(symbol => {
-    const bboKey = `bbo:${symbol}`;
-    if (!this.activeSubscriptions.has(bboKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'bbo', coin: symbol }
-      });
-      this.activeSubscriptions.add(bboKey);
-      console.log(`Subscribed to BBO for ${symbol}`);
-    }
-  });
-}
-
-  // Subscribe to comprehensive user and market data
-  subscribeToWebData2(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const webData2Key = `webData2:${userAddress}`;
-    
-    if (!this.activeSubscriptions.has(webData2Key)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'webData2', user: userAddress }
-      });
-      this.activeSubscriptions.add(webData2Key);
-      console.log(`Subscribed to webData2 for ${userAddress}`);
-    }
-  }
-
-  // Subscribe to user funding updates
-  subscribeToUserFundings(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const userFundingsKey = `userFundings:${userAddress}`;
-    
-    if (!this.activeSubscriptions.has(userFundingsKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'userFundings', user: userAddress }
-      });
-      this.activeSubscriptions.add(userFundingsKey);
-      console.log(`Subscribed to userFundings for ${userAddress}`);
-    }
-  }
-
-  // Subscribe to user fills
-  subscribeToUserFills(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const userFillsKey = `userFills:${userAddress}`;
-    
-    if (!this.activeSubscriptions.has(userFillsKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'userFills', user: userAddress }
-      });
-      this.activeSubscriptions.add(userFillsKey);
-      console.log(`Subscribed to userFills for ${userAddress}`);
-    }
-  }
-
-  // Subscribe to user events
-  subscribeToUserEvents(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const userEventsKey = `userEvents:${userAddress}`;
-    
-    if (!this.activeSubscriptions.has(userEventsKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'user', user: userAddress }
-      });
-      this.activeSubscriptions.add(userEventsKey);
-      console.log(`Subscribed to userEvents for ${userAddress}`);
-    }
-  }
-
-  // Subscribe to BBO (Best Bid Offer) for a symbol
-  subscribeToBBO(symbol) {
-    if (!this.isConnected) return;
-    
-    const bboKey = `bbo:${symbol}`;
-    
-    if (!this.activeSubscriptions.has(bboKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'bbo', coin: symbol }
-      });
-      this.activeSubscriptions.add(bboKey);
-      console.log(`Subscribed to BBO for ${symbol}`);
-    }
-  }
-
-  // Subscribe to candles for a symbol
-  subscribeToCandles(symbol, interval = '1m') {
-    if (!this.isConnected) return;
-    
-    const candleKey = `candle:${symbol}:${interval}`;
-    
-    if (!this.activeSubscriptions.has(candleKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'candle', coin: symbol, interval: interval }
-      });
-      this.activeSubscriptions.add(candleKey);
-      console.log(`Subscribed to candles for ${symbol} with ${interval} interval`);
-    }
-  }
-
-  // Subscribe to notifications for a user
-  subscribeToNotifications(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const notificationKey = `notification:${userAddress}`;
-    
-    if (!this.activeSubscriptions.has(notificationKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'notification', user: userAddress }
-      });
-      this.activeSubscriptions.add(notificationKey);
-      console.log(`Subscribed to notifications for ${userAddress}`);
-    }
-  }
-
-  // Original symbol subscription methods (for l2Book and trades)
-  subscribeToSymbol(symbol) {
-    if (!this.isConnected) return;
-    
-    const l2BookKey = `l2Book:${symbol}`;
-    const tradesKey = `trades:${symbol}`;
-    
-    // Only subscribe if not already subscribed
-    if (!this.activeSubscriptions.has(l2BookKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'l2Book', coin: symbol }
-      });
-      this.activeSubscriptions.add(l2BookKey);
-      console.log(`Subscribed to l2Book for ${symbol}`);
-    }
-
-    if (!this.activeSubscriptions.has(tradesKey)) {
-      this.send({
-        method: 'subscribe',
-        subscription: { type: 'trades', coin: symbol }
-      });
-      this.activeSubscriptions.add(tradesKey);
-      console.log(`Subscribed to trades for ${symbol}`);
-    }
-  }
-
-  unsubscribeFromSymbol(symbol) {
-    if (!this.isConnected) return;
-    
-    const l2BookKey = `l2Book:${symbol}`;
-    const tradesKey = `trades:${symbol}`;
-    
-    // Only unsubscribe if currently subscribed
-    if (this.activeSubscriptions.has(l2BookKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'l2Book', coin: symbol }
-      });
-      this.activeSubscriptions.delete(l2BookKey);
-      console.log(`Unsubscribed from l2Book for ${symbol}`);
-    }
-
-    if (this.activeSubscriptions.has(tradesKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'trades', coin: symbol }
-      });
-      this.activeSubscriptions.delete(tradesKey);
-      console.log(`Unsubscribed from trades for ${symbol}`);
-    }
-  }
-
-  // Unsubscribe from allMids
-  unsubscribeFromAllMids() {
-    if (!this.isConnected) return;
-    
-    const allMidsKey = 'allMids';
-    
-    if (this.activeSubscriptions.has(allMidsKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'allMids' }
-      });
-      this.activeSubscriptions.delete(allMidsKey);
-      console.log('Unsubscribed from allMids');
-    }
-  }
-
-  // Unsubscribe from webData2
-  unsubscribeFromWebData2(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const webData2Key = `webData2:${userAddress}`;
-    
-    if (this.activeSubscriptions.has(webData2Key)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'webData2', user: userAddress }
-      });
-      this.activeSubscriptions.delete(webData2Key);
-      console.log(`Unsubscribed from webData2 for ${userAddress}`);
-    }
-  }
-
-  // Unsubscribe from user-specific feeds
-  unsubscribeFromUserFundings(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const userFundingsKey = `userFundings:${userAddress}`;
-    
-    if (this.activeSubscriptions.has(userFundingsKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'userFundings', user: userAddress }
-      });
-      this.activeSubscriptions.delete(userFundingsKey);
-      console.log(`Unsubscribed from userFundings for ${userAddress}`);
-    }
-  }
-
-  unsubscribeFromUserFills(userAddress) {
-    if (!this.isConnected || !userAddress) return;
-    
-    const userFillsKey = `userFills:${userAddress}`;
-    
-    if (this.activeSubscriptions.has(userFillsKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'userFills', user: userAddress }
-      });
-      this.activeSubscriptions.delete(userFillsKey);
-      console.log(`Unsubscribed from userFills for ${userAddress}`);
-    }
-  }
-
-  unsubscribeFromBBO(symbol) {
-    if (!this.isConnected) return;
-    
-    const bboKey = `bbo:${symbol}`;
-    
-    if (this.activeSubscriptions.has(bboKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'bbo', coin: symbol }
-      });
-      this.activeSubscriptions.delete(bboKey);
-      console.log(`Unsubscribed from BBO for ${symbol}`);
-    }
-  }
-
-  unsubscribeFromCandles(symbol, interval = '1m') {
-    if (!this.isConnected) return;
-    
-    const candleKey = `candle:${symbol}:${interval}`;
-    
-    if (this.activeSubscriptions.has(candleKey)) {
-      this.send({
-        method: 'unsubscribe',
-        subscription: { type: 'candle', coin: symbol, interval: interval }
-      });
-      this.activeSubscriptions.delete(candleKey);
-      console.log(`Unsubscribed from candles for ${symbol} with ${interval} interval`);
-    }
-  }
-
-  // Utility methods
-  getActiveSubscriptions() {
-    return Array.from(this.activeSubscriptions);
-  }
-
-  getSubscriberCount(key) {
-    return this.subscribers.has(key) ? this.subscribers.get(key).size : 0;
-  }
-
-  isSubscribedTo(subscriptionKey) {
-    return this.activeSubscriptions.has(subscriptionKey);
-  }
-
-  // Send POST requests via WebSocket
-  sendPostRequest(requestData, requestId = Date.now()) {
-    if (!this.isConnected) {
-      console.error('WebSocket not connected');
-      return;
-    }
-
-    this.send({
-      method: 'post',
-      id: requestId,
-      request: requestData
-    });
-  }
-}
+import WebSocketService from '@/hooks/WebsocketService'
 
 function TradingPage() {
   // Centralized state
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
+  
+  // Debug: Log selectedSymbol changes
+  useEffect(() => {
+    console.log(`🔍 selectedSymbol changed to: "${selectedSymbol}"`);
+  }, [selectedSymbol]);
   const [marketData, setMarketData] = useState(null);
   const [orderBookData, setOrderBookData] = useState({ asks: [], bids: [] });
   const [tradesData, setTradesData] = useState([]);
@@ -529,7 +36,7 @@ function TradingPage() {
   const maxTradesCount = 40;
   const lastOrderBookUpdate = useRef(0);
   const lastTradesUpdate = useRef(0);
-  const updateThrottleMs = 100; // Throttle updates to 10fps max
+  const updateThrottleMs = 50; // Throttle updates to 20fps max for better responsiveness
 
   // Helper functions - memoized to prevent recreation
   const getTokenName = useCallback((coin) => {
@@ -545,144 +52,20 @@ function TradingPage() {
     return names[coin] || coin;
   }, []);
 
-const handleAllMidsUpdate = useCallback((data) => {
-  if (data.data && data.data.mids) {
-    const midsData = data.data.mids;
-    
-    // Update allMarketData with real-time mid prices
-    setAllMarketData(prev => prev.map(token => {
-      const midPrice = midsData[token.symbol];
-      if (midPrice) {
-        const newPrice = parseFloat(midPrice);
-        const prevPrice = token.prevDayPx || token.price;
-        const change24h = prevPrice > 0 ? ((newPrice - prevPrice) / prevPrice) * 100 : 0;
-        
-        return {
-          ...token,
-          price: newPrice,
-          midPx: newPrice,
-          change24h: change24h
-        };
-      }
-      return token;
-    }));
-    
-    // Update current market data if it's for the selected symbol
-    const selectedSymbolMid = midsData[selectedSymbol];
-    if (selectedSymbolMid) {
-      setMarketData(prev => {
-        if (prev && prev.symbol === selectedSymbol) {
-          const newPrice = parseFloat(selectedSymbolMid);
-          const prevPrice = prev.prevDayPx || prev.price;
-          const change24h = prevPrice > 0 ? ((newPrice - prevPrice) / prevPrice) * 100 : 0;
-          
-          return {
-            ...prev,
-            price: newPrice,
-            midPx: newPrice,
-            change24h: change24h
-          };
-        }
-        return prev;
-      });
-    }
-    
-    // Trigger oracle/funding data fetch every time we get allMids updatess
-    // This will effectively update every ~3 seconds when oracle updates
-    fetchOracleAndFundingData();
-  }
-}, [selectedSymbol]);
 
 
 
 
 
-useEffect(() => {
-  const ws = wsService.current;
-  
-  ws.subscribe('allMids', handleAllMidsUpdate);
-  
-  if (wsConnected) {
-    ws.subscribeToAllMids();
-  }
-  
-  return () => {
-    ws.unsubscribe('allMids', handleAllMidsUpdate);
-  };
-}, [wsConnected, handleAllMidsUpdate]);
-
-const fetchOracleAndFundingData = useCallback(async () => {
-  try {
-    const response = await fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'metaAndAssetCtxs' })
-    });
-
-    if (!response.ok) return;
-
-    const data = await response.json();
-    
-    if (Array.isArray(data) && data.length >= 2) {
-      const universe = data[0].universe;
-      const assetCtxs = data[1];
-      
-      if (Array.isArray(universe) && Array.isArray(assetCtxs)) {
-        // Update only oracle and funding data, keeping other data intact
-        setAllMarketData(prev => prev.map((token, index) => {
-          const assetCtx = assetCtxs[index];
-          if (assetCtx) {
-            return {
-              ...token,
-              oraclePrice: parseFloat(assetCtx.oraclePx),
-              funding: parseFloat(assetCtx.funding),
-              premium: parseFloat(assetCtx.premium),
-              openInterest: parseFloat(assetCtx.openInterest)
-            };
-          }
-          return token;
-        }));
-        
-        // Update current market data for selected symbol
-        const selectedTokenIndex = universe.findIndex(token => token.name === selectedSymbol);
-        if (selectedTokenIndex !== -1 && assetCtxs[selectedTokenIndex]) {
-          const assetCtx = assetCtxs[selectedTokenIndex];
-          setMarketData(prev => {
-            if (prev && prev.symbol === selectedSymbol) {
-              return {
-                ...prev,
-                oraclePrice: parseFloat(assetCtx.oraclePx),
-                funding: parseFloat(assetCtx.funding),
-                premium: parseFloat(assetCtx.premium),
-                openInterest: parseFloat(assetCtx.openInterest)
-              };
-            }
-            return prev;
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error fetching oracle and funding data:', error);
-  }
-}, [selectedSymbol]);
 
 
-  useEffect(() => {
-  const ws = wsService.current;
-  
-  ws.subscribe('allMids', handleAllMidsUpdate);
-  
-  if (wsConnected) {
-    ws.subscribeToAllMids();
-    // Also fetch once immediately when connected
-    fetchOracleAndFundingData();
-  }
-  
-  return () => {
-    ws.unsubscribe('allMids', handleAllMidsUpdate);
-  };
-}, [wsConnected, handleAllMidsUpdate, fetchOracleAndFundingData]);
+
+
+
+
+
+
+
 
   const formatTimeAgo = useCallback((timestamp) => {
     const now = Date.now();
@@ -792,7 +175,7 @@ const fetchOracleAndFundingData = useCallback(async () => {
             
             return {
               ...prev,
-              price: midPrice,
+              // price: midPrice,
               change24h: change24h
             };
           }
@@ -822,6 +205,72 @@ const fetchOracleAndFundingData = useCallback(async () => {
     setWsConnected(data.connected);
   }, []);
 
+  const handleAllMidsUpdate = useCallback((data) => {
+    // TODO Check if this is needed
+    if (data.data && data.data.mids) {
+      // Update all market data with new prices
+      setAllMarketData(prev => prev.map(token => {
+        const newPrice = data.data.mids[token.symbol];
+        if (newPrice) {
+          const price = parseFloat(newPrice);
+          const prevPrice = token.prevDayPx || token.price;
+          const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+          
+          return {
+            ...token,
+            price: price,
+            change24h: change24h
+          };
+        }
+        return token;
+      }));
+
+      // Update current market data if it matches selected symbol
+      setMarketData(prev => {
+        if (prev && prev.symbol) {
+          const selectedTokenPrice = data.data.mids[prev.symbol];
+          if (selectedTokenPrice) {
+            const price = parseFloat(selectedTokenPrice);
+            const prevPrice = prev.prevDayPx || prev.price;
+            const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+
+            return {
+              ...prev,
+              price: price,
+              change24h: change24h
+            };
+          }
+        }
+        return prev;
+      });
+    }
+  }, []);
+
+
+
+  const handleAssetCtxUpdate = useCallback((data) => {
+    if (data.data && data.data.ctx) {
+      const ctx = data.data.ctx;
+      setMarketData(prev => {
+        // Only update if this is for the currently selected symbol
+        if (prev && prev.symbol === data.data.coin) {
+          return {
+            ...prev,
+            price: parseFloat(ctx.markPx),
+            oraclePrice: parseFloat(ctx.oraclePx),
+            funding: parseFloat(ctx.funding),
+            premium: parseFloat(ctx.premium),
+            openInterest: parseFloat(ctx.openInterest),
+            volume24h: parseFloat(ctx.dayNtlVlm),
+            prevDayPx: parseFloat(ctx.prevDayPx),
+            midPx: parseFloat(ctx.midPx)
+          };
+        }
+        return prev;
+      });
+    }
+  }, []);
+
   const handleOrderBookUpdate = useCallback((data) => {
     if (data.data && data.data.coin) {
       updateOrderBook(data.data);
@@ -834,6 +283,8 @@ const fetchOracleAndFundingData = useCallback(async () => {
       addTradesToHistory(data.data, coin);
     }
   }, [addTradesToHistory]);
+
+
 
   // Initial market data fetch - memoized
   const fetchInitialMarketData = useCallback(async () => {
@@ -954,16 +405,21 @@ const fetchOracleAndFundingData = useCallback(async () => {
     setOrderBookData({ asks: [], bids: [] });
   }, [selectedSymbol, allMarketData, getTokenName]);
 
-  // Initialize WebSocket connection - runs only once
+  // Initialize WebSocket connection and global subscriptions - runs only once
   useEffect(() => {
     const ws = wsService.current;
     
-    // Subscribe to WebSocket events with symbol-specific keys
+    // Subscribe to WebSocket events
     ws.subscribe('connection', handleConnection);
+    ws.subscribe('allMids', handleAllMidsUpdate);
+    
+    // Connect to WebSocket
+    ws.connect();
     
     // Cleanup function
     return () => {
       ws.unsubscribe('connection', handleConnection);
+      ws.unsubscribe('allMids', handleAllMidsUpdate);
       ws.disconnect();
     };
   }, []); // Empty dependency array - runs only once
@@ -975,38 +431,35 @@ const fetchOracleAndFundingData = useCallback(async () => {
     // Subscribe to symbol-specific channels
     const l2BookKey = `l2Book:${selectedSymbol}`;
     const tradesKey = `trades:${selectedSymbol}`;
+    const assetCtxKey = `assetCtx:${selectedSymbol}`;
     
     ws.subscribe(l2BookKey, handleOrderBookUpdate);
     ws.subscribe(tradesKey, handleTradesUpdate);
+    ws.subscribe(assetCtxKey, handleAssetCtxUpdate);
+    
+    
     
     // Subscribe to the symbol when connected
     if (wsConnected) {
       ws.subscribeToSymbol(selectedSymbol);
+      ws.subscribeToAssetCtx(selectedSymbol);
+    } else {
+      console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
     }
     
     return () => {
+      console.log(`=== Cleaning up WebSocket subscriptions for ${selectedSymbol} ===`);
       ws.unsubscribe(l2BookKey, handleOrderBookUpdate);
       ws.unsubscribe(tradesKey, handleTradesUpdate);
+      ws.unsubscribe(assetCtxKey, handleAssetCtxUpdate);
     };
-  }, [selectedSymbol, wsConnected, handleOrderBookUpdate, handleTradesUpdate]);
-
-  // Connect WebSocket when it becomes available
-  useEffect(() => {
-    if (!wsConnected) {
-      wsService.current.connect();
-    }
-  }, [wsConnected]);
+  }, [selectedSymbol, wsConnected, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
   // Fetch initial data - runs only once
   useEffect(() => {
     fetchInitialMarketData();
   }, []); // Empty dependency array
 
-  // Periodic market data refresh - much less frequent
-  useEffect(() => {
-    const interval = setInterval(fetchInitialMarketData, 300000); // Every 5 minutes
-    return () => clearInterval(interval);
-  }, [fetchInitialMarketData]);
 
   // Update trade timestamps periodically
   useEffect(() => {
@@ -1025,6 +478,23 @@ const fetchOracleAndFundingData = useCallback(async () => {
 
     return () => clearInterval(interval);
   }, [selectedSymbol, formatTimeAgo]);
+
+  // WebSocket health check
+  useEffect(() => {
+    const healthCheckInterval = setInterval(() => {
+      if (wsService.current) {
+        const isHealthy = wsService.current.isHealthy();
+        const isConnected = wsService.current.isConnected;
+        
+        // Only reconnect if we think we should be connected but the connection is unhealthy
+        if (wsConnected && !isHealthy) {
+          wsService.current.connect();
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(healthCheckInterval);
+  }, [wsConnected]);
 
   // Mobile Tab Component - memoized
   const MobileTabs = useMemo(() => {

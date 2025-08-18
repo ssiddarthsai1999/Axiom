@@ -12,8 +12,8 @@ class WebSocketService {
     this.reconnectTimeout = null;
     this.subscribers = new Map();
     this.messageQueue = [];
-    this.lastMessageTime = 0;
-    this.messageThrottleMs = 16; // ~60fps max update rate
+    this.lastMessageTimes = new Map();
+    this.messageThrottleMs = 8; // ~120fps max update rate for better responsiveness
     this.activeSubscriptions = new Set(); // Track active subscriptions
     
     // Market data cache for real-time updates
@@ -39,6 +39,8 @@ class WebSocketService {
       this.subscribers.set(key, new Set());
     }
     this.subscribers.get(key).add(callback);
+    console.log(`✅ Subscribed to ${key}, total subscribers: ${this.subscribers.get(key).size}`);
+    console.log(`✅ All active subscriptions:`, Array.from(this.subscribers.keys()));
   }
 
   unsubscribe(key, callback) {
@@ -46,39 +48,53 @@ class WebSocketService {
       this.subscribers.get(key).delete(callback);
       if (this.subscribers.get(key).size === 0) {
         this.subscribers.delete(key);
+        console.log(`🗑️ Removed subscription for ${key}`);
+      } else {
+        console.log(`🗑️ Unsubscribed from ${key}, remaining subscribers: ${this.subscribers.get(key).size}`);
       }
     }
+    console.log(`🗑️ All active subscriptions after unsubscribe:`, Array.from(this.subscribers.keys()));
   }
 
   broadcast(key, data) {
-    // Throttle messages to prevent excessive updates
+    // Throttle messages per-key to prevent excessive updates
     const now = Date.now();
-    if (now - this.lastMessageTime < this.messageThrottleMs) {
+    if (!this.lastMessageTimes) {
+      this.lastMessageTimes = new Map();
+    }
+    
+    const lastTime = this.lastMessageTimes.get(key) || 0;
+    if (now - lastTime < this.messageThrottleMs) {
       return;
     }
-    this.lastMessageTime = now;
+    this.lastMessageTimes.set(key, now);
 
     if (this.subscribers.has(key)) {
-      this.subscribers.get(key).forEach(callback => {
+      const subscribers = this.subscribers.get(key);
+      subscribers.forEach(callback => {
         try {
           callback(data);
         } catch (error) {
           console.error('Error in WebSocket callback:', error);
         }
       });
+    } else {
     }
   }
 
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
       return;
     }
 
-    console.log('Connecting to Hyperliquid WebSocket...');
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
     this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected successfully');
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.broadcast('connection', { connected: true });
@@ -90,7 +106,6 @@ class WebSocketService {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
         // Handle WebSocket POST responses (from our info requests)
         if (data.channel === 'post' && data.data) {
           this.handlePostResponse(data);
@@ -98,7 +113,6 @@ class WebSocketService {
         }
         
         if (data.channel === 'subscriptionResponse') {
-          console.log('Subscription confirmed:', data.data);
           return;
         }
 
@@ -111,6 +125,13 @@ class WebSocketService {
         // Handle activeAssetCtx updates for oracle prices and funding
         if (data.channel === 'activeAssetCtx' && data.data) {
           this.handleActiveAssetCtxUpdate(data.data);
+          
+          // Broadcast to components that subscribe to specific symbols
+          if (data.data.coin) {
+            const broadcastKey = `assetCtx:${data.data.coin}`;
+            this.broadcast(broadcastKey, data);
+          } else {
+          }
           return;
         }
 
@@ -131,10 +152,12 @@ class WebSocketService {
     };
 
     this.ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
       this.isConnected = false;
       this.activeSubscriptions.clear(); // Clear active subscriptions on disconnect
       this.broadcast('connection', { connected: false });
+      
+      // Reset connection state
+      this.ws = null;
       
       if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
@@ -222,7 +245,11 @@ class WebSocketService {
         this.processMetaAndAssetCtxs(universe, assetCtxs);
         this.isInitialized = true;
         console.log('✓ Market data initialized via WebSocket');
+      } else {
+        console.warn('Invalid metaAndAssetCtxs response structure:', response);
       }
+    } else {
+      console.log('Received non-metaAndAssetCtxs POST response:', response);
     }
   }
 
@@ -309,6 +336,43 @@ class WebSocketService {
         }
       }
     });
+  }
+
+  // Subscribe to activeAssetCtx for a specific symbol
+  subscribeToAssetCtx(symbol) {
+    if (!this.isConnected) {
+      console.log(`Cannot subscribe to activeAssetCtx for ${symbol}: WebSocket not connected`);
+      return false;
+    }
+    
+    const activeAssetCtxKey = `activeAssetCtx:${symbol}`;
+    
+    if (!this.activeSubscriptions.has(activeAssetCtxKey)) {
+      // Use the correct format based on the working Node.js code
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'activeAssetCtx', 
+          coin: symbol,
+          user: '0x0000000000000000000000000000000000000000'
+        }
+      };
+      
+      console.log(`🎯 Subscribing to activeAssetCtx for ${symbol}:`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.activeSubscriptions.add(activeAssetCtxKey);
+        console.log(`✓ Subscribed to activeAssetCtx for ${symbol}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to activeAssetCtx for ${symbol}`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to activeAssetCtx for ${symbol}`);
+      return true;
+    }
   }
 
   // Handle allMids updates to update cached market data
@@ -483,9 +547,43 @@ class WebSocketService {
     };
   }
 
+  // Get subscriber count for a specific key
+  getSubscriberCount(key) {
+    return this.subscribers.has(key) ? this.subscribers.get(key).size : 0;
+  }
+
   // Health check method
   isHealthy() {
+    // Basic connection health - WebSocket is connected and ready
+    const isConnected = this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN;
+    
+    // If not connected, definitely unhealthy
+    if (!isConnected) {
+      return false;
+    }
+    
+    // If connected but not initialized, still consider healthy for basic operations
+    // The initialization is mainly for market data, but the connection itself is working
+    return true;
+  }
+
+  // Check if the service is fully initialized with market data
+  isFullyInitialized() {
     return this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN && this.isInitialized;
+  }
+
+  // Ping method to check connection health
+  ping() {
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ method: 'ping' }));
+        return true;
+      } catch (error) {
+        console.error('Ping failed:', error);
+        return false;
+      }
+    }
+    return false;
   }
 
   // Wait for initialization
