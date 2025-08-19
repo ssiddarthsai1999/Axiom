@@ -32,32 +32,24 @@ const TokenData = ({
   // Calculate funding countdown
   const calculateFundingCountdown = () => {
     const now = new Date();
-    const fundingHours = [0, 8, 16];
-    const currentTime = now.getTime();
-    let nextFundingTime = null;
-    
-    for (const hour of fundingHours) {
-      const fundingTime = new Date(now);
-      fundingTime.setUTCHours(hour, 0, 0, 0);
-      
-      if (fundingTime.getTime() > currentTime) {
-        nextFundingTime = fundingTime;
-        break;
-      }
+    const nextHour = new Date(now);
+
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+
+    let timeDifference = nextHour.getTime() - now.getTime();
+
+    if (timeDifference < 0) {
+        nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+        timeDifference = nextHour.getTime() - now.getTime();
     }
-    
-    if (!nextFundingTime) {
-      nextFundingTime = new Date(now);
-      nextFundingTime.setUTCDate(now.getUTCDate() + 1);
-      nextFundingTime.setUTCHours(0, 0, 0, 0);
-    }
-    
-    const timeDiff = nextFundingTime.getTime() - currentTime;
-    const hours = Math.floor(timeDiff / (1000 * 60 * 60));
-    const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const totalSeconds = Math.floor(timeDifference / 1000);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const formattedMinutes = String(minutes).padStart(2, '0');
+    const formattedSeconds = String(seconds).padStart(2, '0');
+
+    return `00:${formattedMinutes}:${formattedSeconds}`;
   };
 
   // Update countdown every second
