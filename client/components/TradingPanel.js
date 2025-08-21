@@ -1423,11 +1423,11 @@ const [applyToAll, setApplyToAll] = useState(false);
                     (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                       ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    <span>{
+                    {/* <span>{
                       (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
                       (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                         ? '⚠️ TP price should be in profit direction' : '✅ TP price looks good'
-                    }</span>
+                    }</span> */}
                   </div>
                 )}
                 {slPrice && (
@@ -1436,11 +1436,11 @@ const [applyToAll, setApplyToAll] = useState(false);
                     (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                       ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    <span>{
+                    {/* <span>{
                       (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
                       (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                         ? '⚠️ SL price should be in loss direction' : '✅ SL price looks good'
-                    }</span>
+                    }</span> */}
                   </div>
                 )}
               </div>
@@ -1449,7 +1449,7 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Take Profit Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <div>
+                {/* <div>
                   <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
                     TP Price {side === 'Long' ? '📈' : '📉'} 
                     <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
@@ -1459,7 +1459,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
                     </div>
                   )}
-                </div>
+                </div> */}
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">TP %</label>
               </div>
               <div className="flex space-x-2">
@@ -1496,7 +1496,7 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Stop Loss Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <div>
+                {/* <div>
                   <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
                     SL Price {side === 'Long' ? '📉' : '📈'} 
                     <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
@@ -1506,7 +1506,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
                     </div>
                   )}
-                </div>
+                </div> */}
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">SL %</label>
               </div>
               <div className="flex space-x-2">
