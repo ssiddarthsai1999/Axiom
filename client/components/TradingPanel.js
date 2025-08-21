@@ -1339,29 +1339,53 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div>
         )}
 
-{/* Percentage Slider */}
+{/* Percentage Input and Slider */}
 <div className="mb-4 px-4">
-  <input
-    type="range"
-    min="0"
-    max="100"
-    step="25"
-    value={percentage}
-    onChange={(e) => handlePercentageClick(Number(e.target.value))}
-    className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-white "
-    style={{
-      background: `linear-gradient(to right, white 0%, white ${percentage}%, #1F1E23 ${percentage}%, #1F1E23 100%)`,
-    }}
-  />
-  <div className="flex justify-between text-[11px] leading-[16px] font-[400] text-[#C9C9C9] mt-1">
-    {[0, 25, 50, 75, 100].map((val) => (
-      <span
-        key={val}
-        className={val === percentage ? "text-white font-medium" : ""}
-      >
-        {val}%
+  {/* Percentage Slider and Input Field */}
+  <div className="flex items-center space-x-4 mb-3">
+    <div className="flex-1">
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={percentage}
+        onChange={(e) => handlePercentageClick(Number(e.target.value))}
+        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-white "
+        style={{
+          background: `linear-gradient(to right, white 0%, white ${percentage}%, #1F1E23 ${percentage}%, #1F1E23 100%)`,
+        }}
+      />
+      <div className="flex justify-between text-[11px] leading-[16px] font-[400] text-[#C9C9C9] mt-1">
+        {[0, 25, 50, 75, 100].map((val) => (
+          <span
+            key={val}
+            className={val === percentage ? "text-white font-medium" : ""}
+          >
+            {val}%
+          </span>
+        ))}
+      </div>
+    </div>
+    
+    {/* Percentage Input Field */}
+    <div className="flex items-center space-x-2">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        value={percentage}
+        onChange={(e) => {
+          const value = Math.min(100, Math.max(0, Number(e.target.value)));
+          handlePercentageClick(value);
+        }}
+        className="w-16 h-8 rounded text-white text-[14px] leading-[100%] font-[400] font-mono outline-none bg-[#1F1E23] border border-[#C9C9C9] px-2 text-center"
+        placeholder="0"
+      />
+      <span className="text-white text-[12px] leading-[18px] font-[400] font-mono">
+        %
       </span>
-    ))}
+    </div>
   </div>
 </div>
 
