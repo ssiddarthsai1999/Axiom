@@ -1666,19 +1666,19 @@ const [applyToAll, setApplyToAll] = useState(false);
 
         {/* Account Information */}
         <div className="space-y-6 text-sm my-8 mb-4 px-4">
-          <div className="flex justify-between">
+          {/* <div className="flex justify-between">
             <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Account Value</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.accountValue.toFixed(2)} USDC
             </span>
-          </div>
+          </div> */}
           
-          <div className="flex justify-between">
+          {/* <div className="flex justify-between">
             <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available Margin</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.availableMargin.toFixed(2)} USDC
             </span>
-          </div>
+          </div> */}
 
           {/* Disconnect Button - Show when connected */}
           {isConnected && (
@@ -1704,7 +1704,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         </div>
 
         {/* Margin Requirement Display */}
-        {marginRequirement > 0 && (
+        {/* {marginRequirement > 0 && (
           <div className='px-4 mb-2'>
             <div className="space-y-2 text-sm bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg p-3">
               <div className="flex justify-between items-center">
@@ -1718,13 +1718,6 @@ const [applyToAll, setApplyToAll] = useState(false);
                 <span className="text-[#666] font-mono">Leverage: {leverage}x ({marginMode})</span>
                 <span className="text-[#666] font-mono">Position: ${usdEquivalent}</span>
               </div>
-              
-              {/* {parseFloat(buyAmount) > 0 && parseFloat(usdEquivalent) > 0 && (
-                <div className="text-[10px] text-[#888] font-mono border-t border-[#2a2a2c] pt-2">
-                  💡 Compare with official app: If Hyperliquid shows ~${(parseFloat(usdEquivalent) * 0.98).toFixed(2)} for this trade, your leverage there is likely 1x
-                </div>
-              )} */}
-              
               {!hasEnoughMargin && marginErrorMessage && (
                 <div className="p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs mt-2">
                   <p className="text-red-400">{marginErrorMessage}</p>
@@ -1732,7 +1725,7 @@ const [applyToAll, setApplyToAll] = useState(false);
               )}
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Builder Fee Approval Button (now above trade button) */}
         {isConnected && isOnboarded && !builderFeeApproved && (
