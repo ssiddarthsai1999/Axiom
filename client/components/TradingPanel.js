@@ -199,6 +199,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Margin validation state
   const [marginRequirement, setMarginRequirement] = useState(0);
+  const [maintenanceMarginRequirement, setMaintenanceMarginRequirement] = useState(0);
   const [hasEnoughMargin, setHasEnoughMargin] = useState(true);
   const [marginErrorMessage, setMarginErrorMessage] = useState('');
   const calculateUSDValue = (tokenAmount) => {
@@ -220,26 +221,37 @@ const [applyToAll, setApplyToAll] = useState(false);
     const positionValue = parseFloat(orderSize) * parseFloat(price);
     
     // Hyperliquid formula: position_size * mark_price / leverage
+    // This is the INITIAL margin required, not maintenance margin
     const initialMarginRequired = positionValue / parseFloat(leverage);
     
-    // Add minimal safety buffer for fees and slippage (0.5%)
-    const safetyBuffer = initialMarginRequired * 0.005;
+    // For liquidation price calculations, we need the MAINTENANCE margin
+    // Maintenance margin is typically 1/2 of initial margin (or 1/(2*leverage) of position value)
+    const maintenanceMarginRequired = positionValue / (parseFloat(leverage) * 2);
     
-    const totalMarginRequired = initialMarginRequired + safetyBuffer;
+    console.log('🧮 Margin calculation breakdown:', {
+      orderSize: parseFloat(orderSize),
+      price: parseFloat(price),
+      leverage: parseFloat(leverage),
+      positionValue: positionValue,
+      initialMarginRequired: initialMarginRequired,
+      maintenanceMarginRequired: maintenanceMarginRequired,
+      symbol: selectedSymbol
+    });
     
-    // console.log('🧮 Margin calculation breakdown:', {
-    //   orderSize: parseFloat(orderSize),
-    //   price: parseFloat(price),
-    //   leverage: parseFloat(leverage),
-    //   positionValue: positionValue,
-    //   initialMarginRequired: initialMarginRequired,
-    //   safetyBuffer: safetyBuffer,
-    //   totalMarginRequired: totalMarginRequired,
-    //   symbol: selectedSymbol,
-    //   hyperliquidComparison: `If official app shows $38.16 for this trade, implied leverage would be ${(positionValue / 38.16).toFixed(2)}x`
-    // });
+    return initialMarginRequired;
+  };
+
+  // Calculate maintenance margin requirement (for liquidation price calculations)
+  const calculateMaintenanceMarginRequirement = (orderSize, price, leverage) => {
+    if (!orderSize || !price || !leverage || orderSize <= 0 || price <= 0 || leverage <= 0) {
+      return 0;
+    }
     
-    return totalMarginRequired;
+    const positionValue = parseFloat(orderSize) * parseFloat(price);
+    
+    // Maintenance margin is 1/(2*leverage) of position value
+    // This is the margin required to avoid liquidation
+    return positionValue / (parseFloat(leverage) * 2);
   };
 
   // Validate if there's enough margin for the trade
@@ -535,11 +547,15 @@ const [applyToAll, setApplyToAll] = useState(false);
         accountData.availableMargin
       );
       
+      const maintenanceMargin = calculateMaintenanceMarginRequirement(orderSize, currentPrice, leverage);
+      
       setMarginRequirement(validation.marginRequired);
+      setMaintenanceMarginRequirement(maintenanceMargin);
       setHasEnoughMargin(validation.hasEnoughMargin);
       setMarginErrorMessage(validation.errorMessage);
     } else {
       setMarginRequirement(0);
+      setMaintenanceMarginRequirement(0);
       setHasEnoughMargin(true);
       setMarginErrorMessage('');
     }
@@ -1770,6 +1786,98 @@ const [applyToAll, setApplyToAll] = useState(false);
         </button>
         </div>
 
+        {/* Trade Summary Rows - Similar to HyperLiquid App */}
+        {isConnected && isOnboarded && parseFloat(buyAmount) > 0 && (
+          <div className="mt-8 mb-4 px-4 space-y-3">
+            {/* Splitter Line */}
+            <div className="border-t border-[#1F1E23] mb-4"></div>
+            {/* Liquidation Price Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Liquidation Price
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                {marketData?.price && leverage > 0 && parseFloat(buyAmount) > 0 ? 
+                  (() => {
+                    // Hyperliquid liquidation price formula
+                    // liq_price = price - side * margin_available / position_size / (1 - l * side)
+                    const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                    const positionSize = parseFloat(buyAmount);
+                    const sideMultiplier = side === 'Long' ? 1 : -1;
+                    
+                    // Maintenance leverage is typically 2x the initial leverage
+                    const maintenanceLeverage = leverage * 2;
+                    const l = 1 / maintenanceLeverage;
+                    
+                    // Calculate margin available based on margin mode
+                    let marginAvailable;
+                    const maintenanceMarginRequired = calculateMaintenanceMarginRequirement(positionSize, currentPrice, leverage);
+                    
+                    if (marginMode === 'cross') {
+                      // For cross margin: account_value - maintenance_margin_required
+                      marginAvailable = accountData.accountValue - maintenanceMarginRequired;
+                    } else {
+                      // For isolated margin: isolated_margin - maintenance_margin_required
+                      marginAvailable = marginRequirement - maintenanceMarginRequired;
+                    }
+                    
+                    // Ensure margin available is not negative
+                    marginAvailable = Math.max(0, marginAvailable);
+                    
+                    // Apply the formula
+                    const liquidationPrice = currentPrice - (sideMultiplier * marginAvailable / positionSize / (1 - l * sideMultiplier));
+                    
+                    return liquidationPrice > 0 ? liquidationPrice.toFixed(0) : '—';
+                  })()
+                : '—'
+                }
+              </span>
+            </div>
+
+            {/* Order Value Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Order Value
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                ${usdEquivalent}
+              </span>
+            </div>
+
+            {/* Margin Required Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Margin Required
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                ${marginRequirement.toFixed(2)}
+              </span>
+            </div>
+
+            {/* Slippage Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Slippage
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                Est: 0.0004% / Max: 8.00%
+              </span>
+            </div>
+
+            {/* Fees Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Fees
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono flex items-center gap-1">
+                <svg className="w-3 h-3 text-[#919093]" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 14a2 2 0 104 0 2 2 0 00-4 0zm2-8a1 1 0 011 1v3a1 1 0 11-2 0V7a1 1 0 011-1z"/>
+                </svg>
+                0.0450% / 0.0150%
+              </span>
+            </div>
+          </div>
+        )}
 
          {/* Leverage Modal */}
    {showLeverageModal && (
