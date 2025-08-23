@@ -7,6 +7,9 @@ import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, en
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
+import * as hl from "@nktkas/hyperliquid";
+import numeral from 'numeral';
+
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
   marketData = null,
@@ -53,6 +56,8 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [isAgentWalletReady, setIsAgentWalletReady] = useState(false);
   const [checkingAgentWallet, setCheckingAgentWallet] = useState(false);
   const [approvingAgent, setApprovingAgent] = useState(false);
+  const [takerFeeRate, setTakerFeeRate] = useState(0.045);
+  const [makerFeeRate, setMakerFeeRate] = useState(0.015);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
 
@@ -85,6 +90,16 @@ const [applyToAll, setApplyToAll] = useState(false);
       setIsAgentWalletReady(false);
     }
   }, [wallet, isOnboarded]);
+
+  const fetchFeesRate = async () => {
+    const transport = new hl.HttpTransport();
+    const infoClient = new hl.InfoClient({ transport });
+    const fees = await infoClient.getFees({
+      user: address,
+    });
+    setTakerFeeRate(fees.userCrossRate * 100);
+    setMakerFeeRate(fees.userAddRate * 100);
+  }
 
   const handleLeverageClick = () => {
     console.log('🔧 Leverage clicked:', leverage);
@@ -1022,6 +1037,19 @@ const [applyToAll, setApplyToAll] = useState(false);
     return parseFloat(rounded.toFixed(maxPriceDecimals));
   };
 
+  const formatPrice = (num) => {
+    const number = Number(num);
+    if (isNaN(number)) return '';
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
+
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
+
   // Utility function to validate and format decimal places for PRICE
   const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
     if (!value || value === '') return value;
@@ -1797,37 +1825,70 @@ const [applyToAll, setApplyToAll] = useState(false);
                 Liquidation Price
               </span>
               <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
-                {marketData?.price && leverage > 0 && parseFloat(buyAmount) > 0 ? 
+                {marketData?.price && parseFloat(buyAmount) > 0 ? 
                   (() => {
-                    // Hyperliquid liquidation price formula
-                    // liq_price = price - side * margin_available / position_size / (1 - l * side)
+                    // 1. Define all basic inputs
                     const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
                     const positionSize = parseFloat(buyAmount);
                     const sideMultiplier = side === 'Long' ? 1 : -1;
-                    
-                    // Maintenance leverage is typically 2x the initial leverage
-                    const maintenanceLeverage = leverage * 2;
-                    const l = 1 / maintenanceLeverage;
-                    
-                    // Calculate margin available based on margin mode
-                    let marginAvailable;
-                    const maintenanceMarginRequired = calculateMaintenanceMarginRequirement(positionSize, currentPrice, leverage);
-                    
-                    if (marginMode === 'cross') {
-                      // For cross margin: account_value - maintenance_margin_required
-                      marginAvailable = accountData.accountValue - maintenanceMarginRequired;
-                    } else {
-                      // For isolated margin: isolated_margin - maintenance_margin_required
-                      marginAvailable = marginRequirement - maintenanceMarginRequired;
-                    }
-                    
-                    // Ensure margin available is not negative
+                    const userLeverage = leverage; // e.g., 5
+                    const maxAssetLeverage = assetInfo?.maxLeverage; // e.g., 50
+                    // console.log(assetInfo, 'assetInfo')
+                    // console.log(marketData, 'marketData')
+                    // 2. Calculate Order Value
+                    const orderValue = (positionSize * currentPrice).toFixed(2);
+                    // console.log(orderValue, 'orderValue')
+                    const estimatedFee = orderValue * takerFeeRate;
+                    // console.log(estimatedFee, 'estimatedFee', orderValue, takerFeeRate)
+                    // 3. Calculate the EXACT Initial Margin for this trade
+                    // This is the key fix: We derive it here instead of using a separate variable.
+                    const initialMargin = orderValue / userLeverage;
+
+                    // 4. Calculate Maintenance Margin values
+                    const l = 1 / (2 * maxAssetLeverage);
+                    const maintenanceMarginRequired = orderValue * l;
+
+                    // 5. Calculate the final "loss buffer"
+                    // let marginAvailable = initialMargin - maintenanceMarginRequired;
+                    let marginAvailable = initialMargin;
                     marginAvailable = Math.max(0, marginAvailable);
-                    
-                    // Apply the formula
+
+                    // 6. Apply the final Hyperliquid formula
                     const liquidationPrice = currentPrice - (sideMultiplier * marginAvailable / positionSize / (1 - l * sideMultiplier));
+
+                    // 7. Return the result
+                    return liquidationPrice > 0 ? formatPrice(liquidationPrice.toFixed(0)) : '—';
+
+
+                  //   const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                  //   const positionSize = parseFloat(buyAmount);
+                  //   const sideMultiplier = side === 'Long' ? 1 : -1;
+                  //   const userLeverage = leverage;
+                  //   const maxAssetLeverage = assetInfo?.maxLeverage;
+                  //   // const takerFeeRate = assetInfo?.takerFeeRate; // Assuming this is passed in assetInfo
+                  
+                  //   // 2. Calculate Order Value with full precision (NO .toFixed())
+                  //   const orderValue = positionSize * currentPrice;
+                  
+                  //   // 3. Calculate the EXACT Initial Margin for this trade
+                  //   const initialMargin = orderValue / userLeverage;
                     
-                    return liquidationPrice > 0 ? liquidationPrice.toFixed(0) : '—';
+                  //   // 4. Calculate the estimated Taker Fee
+                  //   const estimatedFee = (orderValue * takerFeeRate / 100).toFixed(2);
+                  // // console.log(estimatedFee, 'estimatedFee', orderValue, takerFeeRate)
+                  //   // 5. Calculate the CORRECT "loss buffer" (marginAvailable)
+                  //   //    This is the key fix: It's just initial margin minus the fee.
+                  //   let marginAvailable = initialMargin - estimatedFee;
+                  //   marginAvailable = Math.max(0, marginAvailable);
+                  
+                  //   // 6. Calculate 'l' (the maintenance margin ratio)
+                  //   const l = 1 / (2 * maxAssetLeverage);
+                  
+                  //   // 7. Apply the final Hyperliquid formula
+                  //   const liquidationPrice = currentPrice - (sideMultiplier * marginAvailable / positionSize / (1 - l * sideMultiplier));
+                  
+                  //   // 8. Return the result, rounding ONLY for display
+                  //   return liquidationPrice > 0 ? liquidationPrice.toFixed(0) : '—';
                   })()
                 : '—'
                 }
@@ -1840,7 +1901,15 @@ const [applyToAll, setApplyToAll] = useState(false);
                 Order Value
               </span>
               <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
-                ${usdEquivalent}
+              {marketData?.price && parseFloat(buyAmount) > 0 ? 
+                  (() => {
+                    const positionSize = parseFloat(buyAmount);
+                    const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                    const orderValue = positionSize * currentPrice;
+                    return orderValue > 0 ? orderValue.toFixed(2) : '—';
+                  })()
+                : '—'
+                }
               </span>
             </div>
 
@@ -1873,7 +1942,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                 <svg className="w-3 h-3 text-[#919093]" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 14a2 2 0 104 0 2 2 0 00-4 0zm2-8a1 1 0 011 1v3a1 1 0 11-2 0V7a1 1 0 011-1z"/>
                 </svg>
-                0.0450% / 0.0150%
+                {takerFeeRate}% / {makerFeeRate}%
               </span>
             </div>
           </div>
