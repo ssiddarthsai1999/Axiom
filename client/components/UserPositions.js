@@ -619,7 +619,7 @@ const UserPositions = ({ className = '' }) => {
             </button>
           ))}
         </div>
-        <div className="flex items-center space-x-2 px-4">
+        {/* <div className="flex items-center space-x-2 px-4">
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-2 py-1 text-xs rounded transition-colors cursor-pointer ${
@@ -642,7 +642,7 @@ const UserPositions = ({ className = '' }) => {
           <button className="px-3 py-1 text-[14px] bg-[#1a1a1f] hover:bg-[#2a2a2f] text-white rounded transition-colors cursor-pointer border border-[#1F1E23]">
             Filter
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Error Display */}
