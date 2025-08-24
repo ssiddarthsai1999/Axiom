@@ -57,6 +57,11 @@ const [applyToAll, setApplyToAll] = useState(false);
       address: address
     });
   }, [leverage, marginMode, selectedSymbol, address]);
+
+  // Initialize tempLeverage with current leverage when component mounts
+  useEffect(() => {
+    setTempLeverage(leverage);
+  }, [leverage]);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
   const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
@@ -114,7 +119,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   const handleLeverageClick = () => {
     console.log('🔧 Leverage clicked:', leverage);
-    setTempLeverage(assetInfo?.maxLeverage);
+    setTempLeverage(leverage); // Set to current leverage instead of max leverage
     setShowLeverageModal(true);
     // Clear any previous error/success messages when opening modal
     setLeverageError(null);
@@ -328,7 +333,7 @@ const [applyToAll, setApplyToAll] = useState(false);
        
      const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, true);
         setAssetInfo(assetData);
-        setTempLeverage(assetData?.maxLeverage);
+        // Don't set tempLeverage here - it should only be set when modal opens
       } catch (error) {
         console.error('Error fetching asset info:', error);
         // Set fallback values
