@@ -9,6 +9,7 @@ import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
 import * as hl from "@nktkas/hyperliquid";
 import numeral from 'numeral';
+import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
 
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
@@ -46,6 +47,16 @@ const [applyToAll, setApplyToAll] = useState(false);
     const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  
+  // Debug: Log leverage changes
+  useEffect(() => {
+    console.log('🔧 Leverage state changed:', {
+      symbol: selectedSymbol,
+      leverage: leverage,
+      marginMode: marginMode,
+      address: address
+    });
+  }, [leverage, marginMode, selectedSymbol, address]);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
   const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
@@ -118,8 +129,10 @@ const [applyToAll, setApplyToAll] = useState(false);
   };
 
   const [isUpdatingLeverage, setIsUpdatingLeverage] = useState(false);
+  const [isFetchingLeverage, setIsFetchingLeverage] = useState(false);
   const [leverageError, setLeverageError] = useState(null);
   const [leverageSuccess, setLeverageSuccess] = useState(null);
+  const [lastLeverageSync, setLastLeverageSync] = useState(null);
 
   // Auto-calculate TP/SL prices when percentages change
   useEffect(() => {
@@ -189,6 +202,13 @@ const [applyToAll, setApplyToAll] = useState(false);
       // Update local state only after successful API call
       setLeverage(tempLeverage);
       setLeverageSuccess(`Leverage updated to ${tempLeverage}x for ${selectedSymbol}`);
+      setLastLeverageSync(new Date());
+      
+      console.log('✅ Leverage state updated locally:', {
+        symbol: selectedSymbol,
+        newLeverage: tempLeverage,
+        newMarginMode: marginMode
+      });
       
       // Close modal after a short delay to show success message
       setTimeout(() => {
@@ -323,6 +343,38 @@ const [applyToAll, setApplyToAll] = useState(false);
     fetchAssetInfo();
   }, [selectedSymbol]);
 
+  // Fetch current leverage from Hyperliquid when symbol changes or user connects
+  useEffect(() => {
+    const fetchCurrentLeverage = async () => {
+      if (address && selectedSymbol && assetInfo) {
+        try {
+          console.log('🔄 Fetching current leverage for:', selectedSymbol);
+          await checkActualLeverage();
+        } catch (error) {
+          console.error('❌ Error fetching current leverage on symbol change:', error);
+        }
+      }
+    };
+
+    fetchCurrentLeverage();
+  }, [selectedSymbol, address, assetInfo]);
+
+  // Initial leverage fetch when component mounts (if user is already connected)
+  useEffect(() => {
+    const initialLeverageFetch = async () => {
+      if (address && selectedSymbol && assetInfo && isConnected) {
+        try {
+          console.log('🚀 Initial leverage fetch on component mount');
+          await checkActualLeverage();
+        } catch (error) {
+          console.error('❌ Error in initial leverage fetch:', error);
+        }
+      }
+    };
+
+    initialLeverageFetch();
+  }, []);
+
 
     useEffect(() => {
     const fetchWalletBalances = async () => {
@@ -366,43 +418,66 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Check actual leverage setting from Hyperliquid API
   const checkActualLeverage = async () => {
-    if (!address || !selectedSymbol || !assetInfo) return;
+    if (!address || !selectedSymbol || !assetInfo) {
+      console.log('⏳ Skipping leverage check - missing required data:', {
+        hasAddress: !!address,
+        hasSymbol: !!selectedSymbol,
+        hasAssetInfo: !!assetInfo
+      });
+      return;
+    }
     
     try {
-      console.log('🔍 Checking actual leverage from Hyperliquid API...');
-      const userState = await hyperliquidUtils.getUserAccountState(address, true);
+      setIsFetchingLeverage(true);
+      console.log('🔍 Checking actual leverage from Hyperliquid API...', {
+        address: address,
+        symbol: selectedSymbol
+      });
       
-      if (userState && userState.assetPositions) {
-        // Look for existing position with this asset
-        const existingPosition = userState.assetPositions.find(pos => 
-          pos.position && pos.position.coin === selectedSymbol
-        );
+      // Use the new API to get current leverage
+      const leverageData = await getCurrentLeverage(address, selectedSymbol);
+      
+      if (leverageData) {
+        const actualLeverage = leverageData.value;
+        const actualMarginMode = leverageData.type;
         
-        if (existingPosition && existingPosition.position.leverage) {
-          const actualLeverage = existingPosition.position.leverage.value;
-          console.log('📊 Found existing position with leverage:', {
-            symbol: selectedSymbol,
-            actualLeverage: actualLeverage,
-            appLeverage: leverage,
-            match: actualLeverage === leverage
-          });
-          
-          // Update app leverage if it doesn't match
-          if (actualLeverage !== leverage) {
-            console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
-            setLeverage(actualLeverage);
-          }
-        } else {
-          console.log('📊 No existing position found for', selectedSymbol, '- using app leverage setting:', leverage);
+        console.log('📊 Found actual leverage from Hyperliquid API:', {
+          symbol: selectedSymbol,
+          actualLeverage: actualLeverage,
+          actualMarginMode: actualMarginMode,
+          appLeverage: leverage,
+          appMarginMode: marginMode,
+          match: actualLeverage === leverage && actualMarginMode === marginMode
+        });
+        
+        // Update app leverage and margin mode if they don't match
+        if (actualLeverage !== leverage) {
+          console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
+          setLeverage(actualLeverage);
         }
+        
+        if (actualMarginMode !== marginMode) {
+          console.log('⚠️ Margin mode mismatch! Updating app margin mode to match Hyperliquid');
+          setMarginMode(actualMarginMode);
+        }
+        
+        // Update last sync timestamp
+        setLastLeverageSync(new Date());
+      } else {
+        console.log('📊 No leverage data found for', selectedSymbol, '- using app leverage setting:', leverage);
       }
     } catch (error) {
       console.error('❌ Error checking actual leverage:', error);
+      // Don't throw error, just log it to avoid breaking the app
+    } finally {
+      setIsFetchingLeverage(false);
     }
   };
 
   // Sync leverage with Hyperliquid (manual trigger)
   const syncLeverageWithHyperliquid = async () => {
+    if (isFetchingLeverage) return; // Prevent multiple simultaneous requests
+    
     setLeverageError(null);
     setLeverageSuccess(null);
     
@@ -410,6 +485,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       console.log('🔄 Manually syncing leverage with Hyperliquid...');
       await checkActualLeverage();
       setLeverageSuccess('Leverage synced with Hyperliquid');
+      setLastLeverageSync(new Date());
       setTimeout(() => setLeverageSuccess(null), 3000);
     } catch (error) {
       console.error('❌ Error syncing leverage:', error);
@@ -532,6 +608,9 @@ const [applyToAll, setApplyToAll] = useState(false);
       }));
       setWallet(null);
       setIsOnboarded(false);
+      // Reset leverage to default when disconnecting
+      setLeverage(10);
+      setMarginMode('isolated');
     }
   }, [isConnected, address, walletClient]);
 
@@ -1255,14 +1334,28 @@ const [applyToAll, setApplyToAll] = useState(false);
             Limit
           </button>
                
-<div className="ml-auto flex items-center space-x-1">
+                <div className="ml-auto flex items-center space-x-1">
   <button onClick={handleLeverageClick} className="text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
-    <span>Leverage: {leverage}x ({marginMode})</span>
+    <span>
+      {isFetchingLeverage ? (
+        <span className="flex items-center gap-1">
+          <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></div>
+          Loading...
+        </span>
+      ) : (
+        `Leverage: ${leverage}x (${marginMode})`
+      )}
+    </span>
     <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
   </button>
   <button 
     onClick={syncLeverageWithHyperliquid}
-    className="text-[10px] font-mono leading-[16px] font-[500] text-[#65FB9E] bg-[#4FFFAB33] px-1 py-0 rounded-md hover:text-white transition-colors cursor-pointer"
+    disabled={isFetchingLeverage}
+    className={`text-[10px] font-mono leading-[16px] font-[500] px-1 py-0 rounded-md transition-colors ${
+      isFetchingLeverage 
+        ? 'text-gray-400 cursor-not-allowed' 
+        : 'text-[#65FB9E] bg-[#4FFFAB33] hover:text-white cursor-pointer'
+    }`}
     title="Sync leverage with Hyperliquid"
   >
     ↻
