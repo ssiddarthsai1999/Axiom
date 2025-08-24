@@ -486,7 +486,7 @@ function TradingPage() {
         const isHealthy = wsService.current.isHealthy();
         const isConnected = wsService.current.isConnected;
         
-        // Only reconnect if we think we should be connected but the connection is unhealthy
+        // Only reconnect if we think we should be connected but the connection is unhealthys
         if (wsConnected && !isHealthy) {
           wsService.current.connect();
         }
