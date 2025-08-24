@@ -111,7 +111,7 @@ const OrderBook = ({
           <div className="flex-1 overflow-y-auto">
             {/* Asks (Sell Orders) */}
             <div className="space-y-0">
-              {orderBookData.asks.slice(0, 15).reverse().map((ask, index) => (
+              {orderBookData.asks.slice(0, 11).reverse().map((ask, index) => (
                 <div 
                   key={`ask-${index}`}
                   className="grid grid-cols-3 gap-4 px-4 py-1 my-1 text-xs hover:bg-gray-900 transition-colors relative"
@@ -163,7 +163,7 @@ const OrderBook = ({
 
             {/* Bids (Buy Orders) */}
             <div className="space-y-0">
-              {orderBookData.bids.slice(0, 15).map((bid, index) => (
+              {orderBookData.bids.slice(0, 11).map((bid, index) => (
                 <div 
                   key={`bid-${index}`}
                   className="grid grid-cols-3 gap-4 px-4 py-1 text-xs my-1 hover:bg-gray-900 transition-colors relative"
