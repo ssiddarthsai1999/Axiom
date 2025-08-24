@@ -1348,7 +1348,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     </span>
     <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
   </button>
-  <button 
+  {/* <button 
     onClick={syncLeverageWithHyperliquid}
     disabled={isFetchingLeverage}
     className={`text-[10px] font-mono leading-[16px] font-[500] px-1 py-0 rounded-md transition-colors ${
@@ -1359,7 +1359,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     title="Sync leverage with Hyperliquid"
   >
     ↻
-  </button>
+  </button> */}
 </div>
         </div></div>
 
