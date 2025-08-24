@@ -6,10 +6,9 @@ import { useRouter } from 'next/navigation'
 function Page() {
   const router = useRouter()
 
-  useEffect(() => {
-    // Redirect to /perpetuals immediately when component mounts
-    router.push('/perpetuals')
-  }, [router])
+  // useEffect(() => {
+  //   router.push('/perpetuals')
+  // }, [router])
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-[#0d0c0e]">
