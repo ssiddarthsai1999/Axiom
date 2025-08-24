@@ -1295,7 +1295,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     </label>
     
     {/* Half/Max Buttons */}
-    <div className="flex items-center space-x-2">
+    {/* <div className="flex items-center space-x-2">
       <button
         onClick={() => {
           // Use available margin with leverage for half calculation
@@ -1328,7 +1328,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       >
         Max
       </button>
-    </div>
+    </div> */}
   </div>
                   
   <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
