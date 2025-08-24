@@ -1474,9 +1474,9 @@ const [applyToAll, setApplyToAll] = useState(false);
     </label>
   </div>
 </div>
-          <div className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">
+          {/* <div className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">
             Est. Liq. Price: —
-          </div>
+          </div> */}
         </div>
 
                 {/* TP/SL Input Fields - Show when enabled */}
@@ -1842,8 +1842,8 @@ const [applyToAll, setApplyToAll] = useState(false);
                     const maintenanceMarginRequired = orderValue * l;
 
                     // 5. Calculate the final "loss buffer"
-                    // let marginAvailable = initialMargin - maintenanceMarginRequired;
-                    let marginAvailable = initialMargin;
+                    let marginAvailable = initialMargin + maintenanceMarginRequired;
+                    // let marginAvailable = initialMargin;
                     marginAvailable = Math.max(0, marginAvailable);
 
                     // 6. Apply the final Hyperliquid formula
