@@ -169,7 +169,7 @@ function TradingViewWidget({ symbol = 'BTCUSD' }) {
         className={`tradingview-widget-container__widget w-full bg-[#0d0c0e] ${
           isMobile 
             ? 'h-[400px] min-h-[350px]' // Mobile height
-            : 'h-full' // Desktop height (original)
+            : 'h-[515px]' // Desktop height (original)
         }`}
       />
     </div>

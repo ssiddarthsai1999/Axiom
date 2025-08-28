@@ -10,6 +10,8 @@ import { X } from 'lucide-react';
 import * as hl from "@nktkas/hyperliquid";
 import numeral from 'numeral';
 import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
+import { LuSettings2 } from "react-icons/lu";
+
 
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
@@ -1292,10 +1294,10 @@ const [applyToAll, setApplyToAll] = useState(false);
 
         {/* Long/Short Toggle */}
         <div className='px-4 pt-2 ' >
-        <div className="flex mb-4 border border-[#1F1E23] rounded-xl p-1">
+        <div className="flex mb-2 border border-[#1F1E23] rounded-xl p-1">
           <button
             onClick={() => setSide('Long')}
-            className={`flex-1 py-2 px-4 text-[12px] leading-[16px] font-mono font-[500] rounded-[12px] transition-colors duration-200 ease-in cursor-pointer ${
+            className={`flex-1 py-2 px-4 text-[12px] leading-[16px] font-mono font-[500] rounded-lg cursor-pointer ${
               side === 'Long'
                 ? 'bg-[#65FB9E] text-black '
                 : 'bg-transparent text-white hover:bg-[#4848480e] '
@@ -1305,18 +1307,19 @@ const [applyToAll, setApplyToAll] = useState(false);
           </button>
           <button
             onClick={() => setSide('Short')}
-            className={`flex-1 py-2 px-4 text-[12px]  font-mono leading-[16px] font-[500] rounded-[12px] transition-colors  duration-200 ease-in cursor-pointer ${
+            className={`flex-1 py-2 px-4 text-[12px]  font-mono leading-[16px] font-[500] rounded-lg cursor-pointer ${
               side === 'Short'
-                ? 'bg-[#fb65c4] text-black'
+                ? 'bg-[#f44c67] text-black'
                 : 'bg-transparent text-white hover:bg-[#4848480e]'
             }`}
           >
             Short
           </button>
-        </div></div>
+        </div>
+        </div>
 
         {/* Market/Limit Toggle */}
-        <div className=' px-4 border  border-[#1F1E23]'>
+        <div className=' px-4 border-y  border-[#1F1E23]'>
         <div className="flex items-center   space-x-4">
           <button
             onClick={() => setOrderType('Market')}
@@ -1340,7 +1343,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           </button>
                
                 <div className="ml-auto flex items-center space-x-1">
-  <button onClick={handleLeverageClick} className="text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
+  <button onClick={handleLeverageClick} className="text-[10px] font-mono leading-[16px]  flex items-center font-semibold  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0.5 rounded-md hover:text-white  border-transparent transition-colors cursor-pointer tracking-wide">
     <span>
       {isFetchingLeverage ? (
         <span className="flex items-center gap-1">
@@ -1351,7 +1354,9 @@ const [applyToAll, setApplyToAll] = useState(false);
         `Leverage: ${leverage}x (${marginMode})`
       )}
     </span>
-    <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
+    {/* <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" /> */}
+    <LuSettings2 size={14}/>
+
   </button>
   {/* <button 
     onClick={syncLeverageWithHyperliquid}
