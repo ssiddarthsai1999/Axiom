@@ -23,6 +23,8 @@ const UserPositions = ({ className = '' }) => {
   const [limitCloseModalOpen, setLimitCloseModalOpen] = useState(false);
   const [marketCloseModalOpen, setMarketCloseModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(null);
+  const [sortField, setSortField] = useState('time');
+  const [sortDirection, setSortDirection] = useState('desc');
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const refreshInterval = useRef(null);
@@ -199,7 +201,7 @@ const UserPositions = ({ className = '' }) => {
         }
       }
       
-      // Fetch recent trades (still using direct API as SDK might not have this endpoint)
+      // Fetch recent trades using the userFills endpoint
       if (activeTab === 'Trade History') {
         console.log('🔍 Fetching trades...');
         const userFills = await fetch('https://api.hyperliquid.xyz/info', {
@@ -214,14 +216,25 @@ const UserPositions = ({ className = '' }) => {
         if (userFills.ok) {
           const fillsData = await userFills.json();
           if (fillsData && Array.isArray(fillsData)) {
-            const formattedTrades = fillsData.slice(0, 50).map(trade => ({
-              symbol: trade.coin,
-              side: trade.side === 'B' ? 'Buy' : 'Sell',
-              size: parseFloat(trade.sz),
-              price: parseFloat(trade.px),
-              time: new Date(trade.time),
+            const formattedTrades = fillsData.slice(0, 100).map(trade => ({
+              coin: trade.coin,
+              px: parseFloat(trade.px),
+              sz: parseFloat(trade.sz),
+              side: trade.side,
+              time: trade.time,
+              startPosition: parseFloat(trade.startPosition || 0),
+              dir: trade.dir || 'Unknown',
+              closedPnl: parseFloat(trade.closedPnl || 0),
+              hash: trade.hash,
+              oid: trade.oid,
+              crossed: trade.crossed,
               fee: parseFloat(trade.fee || 0),
-              closed: trade.closedPnl ? parseFloat(trade.closedPnl) : null,
+              tid: trade.tid,
+              feeToken: trade.feeToken || 'USDC',
+              twapId: trade.twapId,
+              // Additional calculated fields
+              tradeValue: parseFloat(trade.sz) * parseFloat(trade.px),
+              formattedTime: new Date(trade.time),
               direction: trade.dir || 'Unknown'
             }));
             setTrades(formattedTrades);
@@ -250,6 +263,59 @@ const UserPositions = ({ className = '' }) => {
       minute: '2-digit',
       hour12: false
     }).format(date);
+  };
+
+  const formatTradeTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'numeric',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(date);
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const getSortIcon = (field) => {
+    if (sortField !== field) return '↕';
+    return sortDirection === 'asc' ? '↑' : '↓';
+  };
+
+  const getSortedTrades = () => {
+    if (!trades.length) return [];
+    
+    const sorted = [...trades].sort((a, b) => {
+      let aVal, bVal;
+      
+      if (sortField === 'time') {
+        aVal = a.time;
+        bVal = b.time;
+      } else if (sortField === 'closedPnl') {
+        aVal = a.closedPnl;
+        bVal = b.closedPnl;
+      } else {
+        return 0;
+      }
+      
+      if (sortDirection === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      } else {
+        return aVal < bVal ? 1 : -1;
+      }
+    });
+    
+    return sorted;
   };
 
   const cancelOrder = async (orderId, symbol) => {
@@ -619,7 +685,7 @@ const UserPositions = ({ className = '' }) => {
             </button>
           ))}
         </div>
-        <div className="flex items-center space-x-2 px-4">
+        {/* <div className="flex items-center space-x-2 px-4">
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-2 py-1 text-xs rounded transition-colors cursor-pointer ${
@@ -642,7 +708,7 @@ const UserPositions = ({ className = '' }) => {
           <button className="px-3 py-1 text-[14px] bg-[#1a1a1f] hover:bg-[#2a2a2f] text-white rounded transition-colors cursor-pointer border border-[#1F1E23]">
             Filter
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Error Display */}
@@ -702,13 +768,13 @@ const UserPositions = ({ className = '' }) => {
                 <thead>
                   <tr className="border-b border-[#1F1E23]">
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Time</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Symbol</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Side</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trade Value</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Fee</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Closed PnL</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Direction</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trade Value</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Fee</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Closed PNL</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -905,41 +971,56 @@ const UserPositions = ({ className = '' }) => {
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="border-b border-[#1F1E23]">
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Time</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Symbol</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Side</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trade Value</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Fee</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Closed PnL</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px] cursor-pointer hover:text-white" onClick={() => handleSort('time')}>
+                      Time {getSortIcon('time')}
+                    </th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Direction</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trade Value</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Fee</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px] cursor-pointer hover:text-white" onClick={() => handleSort('closedPnl')}>
+                      Closed PNL {getSortIcon('closedPnl')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {trades.length === 0 ? (
                     <EmptyStateMessage message="No trades yet" />
                   ) : (
-                    trades.map((trade, index) => (
-                      <tr key={`${trade.symbol}-${trade.time}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                        <td className="p-3 text-gray-300 font-mono text-sm">{formatTime(trade.time)}</td>
-                        <td className="p-3 font-medium">{trade.symbol}</td>
+                    getSortedTrades().map((trade, index) => (
+                      <tr key={`${trade.coin}-${trade.time}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-3 text-gray-300 font-mono text-sm">
+                          {formatTradeTime(trade.time)}
+                          <a 
+                            href={`https://app.hyperliquid.xyz/explorer/tx/${trade.hash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-2 text-gray-500 hover:text-white transition-colors cursor-pointer"
+                            title="View transaction on HyperLiquid Explorer"
+                          >
+                            ↗
+                          </a>
+                        </td>
+                        <td className="p-3 font-medium text-cyan-400">{trade.coin}</td>
                         <td className="p-3">
-                          <span className={`px-2 py-1 text-xs rounded ${
-                            trade.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
+                          <span className={`${
+                            trade.dir.includes('Close') ? 'text-red-400' : 'text-green-400'
                           }`}>
-                            {trade.side}
+                            {trade.dir}
                           </span>
                         </td>
-                        <td className="p-3 text-right font-mono">{formatNumber(trade.size, 4)}</td>
-                        <td className="p-3 text-right font-mono">${formatNumber(trade.price)}</td>
-                        <td className="p-3 text-right font-mono">${formatNumber(trade.size * trade.price)}</td>
-                        <td className="p-3 text-right font-mono text-gray-400">${formatNumber(trade.fee, 4)}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(trade.px, 5)}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(trade.sz, 4)} {trade.coin}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(trade.tradeValue, 2)} USDC</td>
+                        <td className="p-3 text-right font-mono text-gray-400">{formatNumber(trade.fee, 2)} USDC</td>
                         <td className={`p-3 text-right font-mono ${
-                          trade.closed === null ? 'text-gray-400' : 
-                          trade.closed >= 0 ? 'text-green-400' : 'text-red-400'
+                          trade.closedPnl === 0 ? 'text-gray-300' : 
+                          trade.closedPnl > 0 ? 'text-green-400' : 'text-red-400'
                         }`}>
-                          {trade.closed === null ? '—' : 
-                           `${trade.closed >= 0 ? '+' : ''}$${formatNumber(trade.closed)}`}
+                          {trade.closedPnl === 0 ? '-0.00 USDC' : 
+                           `${trade.closedPnl > 0 ? '' : ''}${formatNumber(trade.closedPnl, 2)} USDC`}
                         </td>
                       </tr>
                     ))

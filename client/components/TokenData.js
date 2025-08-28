@@ -32,32 +32,24 @@ const TokenData = ({
   // Calculate funding countdown
   const calculateFundingCountdown = () => {
     const now = new Date();
-    const fundingHours = [0, 8, 16];
-    const currentTime = now.getTime();
-    let nextFundingTime = null;
-    
-    for (const hour of fundingHours) {
-      const fundingTime = new Date(now);
-      fundingTime.setUTCHours(hour, 0, 0, 0);
-      
-      if (fundingTime.getTime() > currentTime) {
-        nextFundingTime = fundingTime;
-        break;
-      }
+    const nextHour = new Date(now);
+
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+
+    let timeDifference = nextHour.getTime() - now.getTime();
+
+    if (timeDifference < 0) {
+        nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+        timeDifference = nextHour.getTime() - now.getTime();
     }
-    
-    if (!nextFundingTime) {
-      nextFundingTime = new Date(now);
-      nextFundingTime.setUTCDate(now.getUTCDate() + 1);
-      nextFundingTime.setUTCHours(0, 0, 0, 0);
-    }
-    
-    const timeDiff = nextFundingTime.getTime() - currentTime;
-    const hours = Math.floor(timeDiff / (1000 * 60 * 60));
-    const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const totalSeconds = Math.floor(timeDifference / 1000);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const formattedMinutes = String(minutes).padStart(2, '0');
+    const formattedSeconds = String(seconds).padStart(2, '0');
+
+    return `00:${formattedMinutes}:${formattedSeconds}`;
   };
 
   // Update countdown every second
@@ -145,8 +137,19 @@ const formatFunding = (funding) => {
     return { amount: changeAmountFormatted, percentage: changePercentage };
   };
 
+  const formatPrice = (num) => {
+    const number = Number(num);
+    if (isNaN(number)) return '';
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
 
-// console.log(marketData.price, "+++++++++++++++++++++++")
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
+
   if (!marketData) {
     return (
       <div className={`bg-[#0d0c0e] text-white p-4 ${className}`}>
@@ -481,7 +484,7 @@ const formatFunding = (funding) => {
         {/* Right: Market Data */}
         <div className="flex flex-col items-start space-x-1 gap-0">
           <span className="text-[#E5E5E5] font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">
-            {marketData.price.toString()}
+            {formatPrice(marketData.price)}
           </span>
           <span className={`font-mono font-[400] text-[12px] leading-[17px] tracking-[0px] ${
             marketData.change24h >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
@@ -493,7 +496,7 @@ const formatFunding = (funding) => {
         <div className="flex flex-col items-start gap-2">
           <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px]">Oracle Price</span>
           <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">
-            {marketData.oraclePrice}
+            {formatPrice(marketData.oraclePrice)}
           </span>
         </div>
         

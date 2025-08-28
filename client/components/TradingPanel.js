@@ -7,6 +7,10 @@ import { placeOrderWithAgentWallet, getUserAccountStateSDK, getMarketDataSDK, en
 import { useAppKit } from '@reown/appkit/react';
 import preference from "../public/preference.svg"
 import { X } from 'lucide-react';
+import * as hl from "@nktkas/hyperliquid";
+import numeral from 'numeral';
+import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
+
 const TradingPanel = ({ 
   selectedSymbol = 'BTC', 
   marketData = null,
@@ -43,6 +47,21 @@ const [applyToAll, setApplyToAll] = useState(false);
     const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  
+  // Debug: Log leverage changes
+  useEffect(() => {
+    console.log('🔧 Leverage state changed:', {
+      symbol: selectedSymbol,
+      leverage: leverage,
+      marginMode: marginMode,
+      address: address
+    });
+  }, [leverage, marginMode, selectedSymbol, address]);
+
+  // Initialize tempLeverage with current leverage when component mounts
+  useEffect(() => {
+    setTempLeverage(leverage);
+  }, [leverage]);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
   const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
@@ -53,6 +72,8 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [isAgentWalletReady, setIsAgentWalletReady] = useState(false);
   const [checkingAgentWallet, setCheckingAgentWallet] = useState(false);
   const [approvingAgent, setApprovingAgent] = useState(false);
+  const [takerFeeRate, setTakerFeeRate] = useState(0.045);
+  const [makerFeeRate, setMakerFeeRate] = useState(0.015);
   const { disconnect } = useDisconnect();
   const modal = useAppKit();
 
@@ -86,9 +107,19 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   }, [wallet, isOnboarded]);
 
+  const fetchFeesRate = async () => {
+    const transport = new hl.HttpTransport();
+    const infoClient = new hl.InfoClient({ transport });
+    const fees = await infoClient.getFees({
+      user: address,
+    });
+    setTakerFeeRate(fees.userCrossRate * 100);
+    setMakerFeeRate(fees.userAddRate * 100);
+  }
+
   const handleLeverageClick = () => {
     console.log('🔧 Leverage clicked:', leverage);
-    setTempLeverage(assetInfo?.maxLeverage);
+    setTempLeverage(leverage); // Set to current leverage instead of max leverage
     setShowLeverageModal(true);
     // Clear any previous error/success messages when opening modal
     setLeverageError(null);
@@ -103,8 +134,10 @@ const [applyToAll, setApplyToAll] = useState(false);
   };
 
   const [isUpdatingLeverage, setIsUpdatingLeverage] = useState(false);
+  const [isFetchingLeverage, setIsFetchingLeverage] = useState(false);
   const [leverageError, setLeverageError] = useState(null);
   const [leverageSuccess, setLeverageSuccess] = useState(null);
+  const [lastLeverageSync, setLastLeverageSync] = useState(null);
 
   // Auto-calculate TP/SL prices when percentages change
   useEffect(() => {
@@ -174,6 +207,13 @@ const [applyToAll, setApplyToAll] = useState(false);
       // Update local state only after successful API call
       setLeverage(tempLeverage);
       setLeverageSuccess(`Leverage updated to ${tempLeverage}x for ${selectedSymbol}`);
+      setLastLeverageSync(new Date());
+      
+      console.log('✅ Leverage state updated locally:', {
+        symbol: selectedSymbol,
+        newLeverage: tempLeverage,
+        newMarginMode: marginMode
+      });
       
       // Close modal after a short delay to show success message
       setTimeout(() => {
@@ -199,6 +239,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Margin validation state
   const [marginRequirement, setMarginRequirement] = useState(0);
+  const [maintenanceMarginRequirement, setMaintenanceMarginRequirement] = useState(0);
   const [hasEnoughMargin, setHasEnoughMargin] = useState(true);
   const [marginErrorMessage, setMarginErrorMessage] = useState('');
   const calculateUSDValue = (tokenAmount) => {
@@ -220,26 +261,37 @@ const [applyToAll, setApplyToAll] = useState(false);
     const positionValue = parseFloat(orderSize) * parseFloat(price);
     
     // Hyperliquid formula: position_size * mark_price / leverage
+    // This is the INITIAL margin required, not maintenance margin
     const initialMarginRequired = positionValue / parseFloat(leverage);
     
-    // Add minimal safety buffer for fees and slippage (0.5%)
-    const safetyBuffer = initialMarginRequired * 0.005;
+    // For liquidation price calculations, we need the MAINTENANCE margin
+    // Maintenance margin is typically 1/2 of initial margin (or 1/(2*leverage) of position value)
+    const maintenanceMarginRequired = positionValue / (parseFloat(leverage) * 2);
     
-    const totalMarginRequired = initialMarginRequired + safetyBuffer;
+    console.log('🧮 Margin calculation breakdown:', {
+      orderSize: parseFloat(orderSize),
+      price: parseFloat(price),
+      leverage: parseFloat(leverage),
+      positionValue: positionValue,
+      initialMarginRequired: initialMarginRequired,
+      maintenanceMarginRequired: maintenanceMarginRequired,
+      symbol: selectedSymbol
+    });
     
-    // console.log('🧮 Margin calculation breakdown:', {
-    //   orderSize: parseFloat(orderSize),
-    //   price: parseFloat(price),
-    //   leverage: parseFloat(leverage),
-    //   positionValue: positionValue,
-    //   initialMarginRequired: initialMarginRequired,
-    //   safetyBuffer: safetyBuffer,
-    //   totalMarginRequired: totalMarginRequired,
-    //   symbol: selectedSymbol,
-    //   hyperliquidComparison: `If official app shows $38.16 for this trade, implied leverage would be ${(positionValue / 38.16).toFixed(2)}x`
-    // });
+    return initialMarginRequired;
+  };
+
+  // Calculate maintenance margin requirement (for liquidation price calculations)
+  const calculateMaintenanceMarginRequirement = (orderSize, price, leverage) => {
+    if (!orderSize || !price || !leverage || orderSize <= 0 || price <= 0 || leverage <= 0) {
+      return 0;
+    }
     
-    return totalMarginRequired;
+    const positionValue = parseFloat(orderSize) * parseFloat(price);
+    
+    // Maintenance margin is 1/(2*leverage) of position value
+    // This is the margin required to avoid liquidation
+    return positionValue / (parseFloat(leverage) * 2);
   };
 
   // Validate if there's enough margin for the trade
@@ -281,7 +333,7 @@ const [applyToAll, setApplyToAll] = useState(false);
        
      const assetData = await hyperliquidUtils.getAssetInfo(selectedSymbol, true);
         setAssetInfo(assetData);
-        setTempLeverage(assetData?.maxLeverage);
+        // Don't set tempLeverage here - it should only be set when modal opens
       } catch (error) {
         console.error('Error fetching asset info:', error);
         // Set fallback values
@@ -295,6 +347,38 @@ const [applyToAll, setApplyToAll] = useState(false);
 
     fetchAssetInfo();
   }, [selectedSymbol]);
+
+  // Fetch current leverage from Hyperliquid when symbol changes or user connects
+  useEffect(() => {
+    const fetchCurrentLeverage = async () => {
+      if (address && selectedSymbol && assetInfo) {
+        try {
+          console.log('🔄 Fetching current leverage for:', selectedSymbol);
+          await checkActualLeverage();
+        } catch (error) {
+          console.error('❌ Error fetching current leverage on symbol change:', error);
+        }
+      }
+    };
+
+    fetchCurrentLeverage();
+  }, [selectedSymbol, address, assetInfo]);
+
+  // Initial leverage fetch when component mounts (if user is already connected)
+  useEffect(() => {
+    const initialLeverageFetch = async () => {
+      if (address && selectedSymbol && assetInfo && isConnected) {
+        try {
+          console.log('🚀 Initial leverage fetch on component mount');
+          await checkActualLeverage();
+        } catch (error) {
+          console.error('❌ Error in initial leverage fetch:', error);
+        }
+      }
+    };
+
+    initialLeverageFetch();
+  }, []);
 
 
     useEffect(() => {
@@ -339,43 +423,66 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Check actual leverage setting from Hyperliquid API
   const checkActualLeverage = async () => {
-    if (!address || !selectedSymbol || !assetInfo) return;
+    if (!address || !selectedSymbol || !assetInfo) {
+      console.log('⏳ Skipping leverage check - missing required data:', {
+        hasAddress: !!address,
+        hasSymbol: !!selectedSymbol,
+        hasAssetInfo: !!assetInfo
+      });
+      return;
+    }
     
     try {
-      console.log('🔍 Checking actual leverage from Hyperliquid API...');
-      const userState = await hyperliquidUtils.getUserAccountState(address, true);
+      setIsFetchingLeverage(true);
+      console.log('🔍 Checking actual leverage from Hyperliquid API...', {
+        address: address,
+        symbol: selectedSymbol
+      });
       
-      if (userState && userState.assetPositions) {
-        // Look for existing position with this asset
-        const existingPosition = userState.assetPositions.find(pos => 
-          pos.position && pos.position.coin === selectedSymbol
-        );
+      // Use the new API to get current leverage
+      const leverageData = await getCurrentLeverage(address, selectedSymbol);
+      
+      if (leverageData) {
+        const actualLeverage = leverageData.value;
+        const actualMarginMode = leverageData.type;
         
-        if (existingPosition && existingPosition.position.leverage) {
-          const actualLeverage = existingPosition.position.leverage.value;
-          console.log('📊 Found existing position with leverage:', {
-            symbol: selectedSymbol,
-            actualLeverage: actualLeverage,
-            appLeverage: leverage,
-            match: actualLeverage === leverage
-          });
-          
-          // Update app leverage if it doesn't match
-          if (actualLeverage !== leverage) {
-            console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
-            setLeverage(actualLeverage);
-          }
-        } else {
-          console.log('📊 No existing position found for', selectedSymbol, '- using app leverage setting:', leverage);
+        console.log('📊 Found actual leverage from Hyperliquid API:', {
+          symbol: selectedSymbol,
+          actualLeverage: actualLeverage,
+          actualMarginMode: actualMarginMode,
+          appLeverage: leverage,
+          appMarginMode: marginMode,
+          match: actualLeverage === leverage && actualMarginMode === marginMode
+        });
+        
+        // Update app leverage and margin mode if they don't match
+        if (actualLeverage !== leverage) {
+          console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
+          setLeverage(actualLeverage);
         }
+        
+        if (actualMarginMode !== marginMode) {
+          console.log('⚠️ Margin mode mismatch! Updating app margin mode to match Hyperliquid');
+          setMarginMode(actualMarginMode);
+        }
+        
+        // Update last sync timestamp
+        setLastLeverageSync(new Date());
+      } else {
+        console.log('📊 No leverage data found for', selectedSymbol, '- using app leverage setting:', leverage);
       }
     } catch (error) {
       console.error('❌ Error checking actual leverage:', error);
+      // Don't throw error, just log it to avoid breaking the app
+    } finally {
+      setIsFetchingLeverage(false);
     }
   };
 
   // Sync leverage with Hyperliquid (manual trigger)
   const syncLeverageWithHyperliquid = async () => {
+    if (isFetchingLeverage) return; // Prevent multiple simultaneous requests
+    
     setLeverageError(null);
     setLeverageSuccess(null);
     
@@ -383,6 +490,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       console.log('🔄 Manually syncing leverage with Hyperliquid...');
       await checkActualLeverage();
       setLeverageSuccess('Leverage synced with Hyperliquid');
+      setLastLeverageSync(new Date());
       setTimeout(() => setLeverageSuccess(null), 3000);
     } catch (error) {
       console.error('❌ Error syncing leverage:', error);
@@ -505,6 +613,9 @@ const [applyToAll, setApplyToAll] = useState(false);
       }));
       setWallet(null);
       setIsOnboarded(false);
+      // Reset leverage to default when disconnecting
+      setLeverage(10);
+      setMarginMode('isolated');
     }
   }, [isConnected, address, walletClient]);
 
@@ -535,11 +646,15 @@ const [applyToAll, setApplyToAll] = useState(false);
         accountData.availableMargin
       );
       
+      const maintenanceMargin = calculateMaintenanceMarginRequirement(orderSize, currentPrice, leverage);
+      
       setMarginRequirement(validation.marginRequired);
+      setMaintenanceMarginRequirement(maintenanceMargin);
       setHasEnoughMargin(validation.hasEnoughMargin);
       setMarginErrorMessage(validation.errorMessage);
     } else {
       setMarginRequirement(0);
+      setMaintenanceMarginRequirement(0);
       setHasEnoughMargin(true);
       setMarginErrorMessage('');
     }
@@ -1006,6 +1121,19 @@ const [applyToAll, setApplyToAll] = useState(false);
     return parseFloat(rounded.toFixed(maxPriceDecimals));
   };
 
+  const formatPrice = (num) => {
+    const number = Number(num);
+    if (isNaN(number)) return '';
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
+
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
+
   // Utility function to validate and format decimal places for PRICE
   const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
     if (!value || value === '') return value;
@@ -1211,18 +1339,32 @@ const [applyToAll, setApplyToAll] = useState(false);
             Limit
           </button>
                
-<div className="ml-auto flex items-center space-x-1">
+                <div className="ml-auto flex items-center space-x-1">
   <button onClick={handleLeverageClick} className="text-[10px] font-mono leading-[16px] font-[500] flex items-center  text-[#65FB9E] bg-[#4FFFAB33]  px-2 py-0 rounded-md hover:text-white border-b-2 border-transparent transition-colors cursor-pointer">
-    <span>Leverage: {leverage}x ({marginMode})</span>
+    <span>
+      {isFetchingLeverage ? (
+        <span className="flex items-center gap-1">
+          <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></div>
+          Loading...
+        </span>
+      ) : (
+        `Leverage: ${leverage}x (${marginMode})`
+      )}
+    </span>
     <img src="/preference.svg" alt="preferences" className="ml-1 w-4 h-4" />
   </button>
-  <button 
+  {/* <button 
     onClick={syncLeverageWithHyperliquid}
-    className="text-[10px] font-mono leading-[16px] font-[500] text-[#65FB9E] bg-[#4FFFAB33] px-1 py-0 rounded-md hover:text-white transition-colors cursor-pointer"
+    disabled={isFetchingLeverage}
+    className={`text-[10px] font-mono leading-[16px] font-[500] px-1 py-0 rounded-md transition-colors ${
+      isFetchingLeverage 
+        ? 'text-gray-400 cursor-not-allowed' 
+        : 'text-[#65FB9E] bg-[#4FFFAB33] hover:text-white cursor-pointer'
+    }`}
     title="Sync leverage with Hyperliquid"
   >
     ↻
-  </button>
+  </button> */}
 </div>
         </div></div>
 
@@ -1251,7 +1393,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     </label>
     
     {/* Half/Max Buttons */}
-    <div className="flex items-center space-x-2">
+    {/* <div className="flex items-center space-x-2">
       <button
         onClick={() => {
           // Use available margin with leverage for half calculation
@@ -1284,7 +1426,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       >
         Max
       </button>
-    </div>
+    </div> */}
   </div>
                   
   <div className="relative border border-[#1F1E23] rounded-[12px] px-3 py-2 ">
@@ -1339,29 +1481,53 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div>
         )}
 
-{/* Percentage Slider */}
+{/* Percentage Input and Slider */}
 <div className="mb-4 px-4">
-  <input
-    type="range"
-    min="0"
-    max="100"
-    step="25"
-    value={percentage}
-    onChange={(e) => handlePercentageClick(Number(e.target.value))}
-    className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-white "
-    style={{
-      background: `linear-gradient(to right, white 0%, white ${percentage}%, #1F1E23 ${percentage}%, #1F1E23 100%)`,
-    }}
-  />
-  <div className="flex justify-between text-[11px] leading-[16px] font-[400] text-[#C9C9C9] mt-1">
-    {[0, 25, 50, 75, 100].map((val) => (
-      <span
-        key={val}
-        className={val === percentage ? "text-white font-medium" : ""}
-      >
-        {val}%
+  {/* Percentage Slider and Input Field */}
+  <div className="flex items-center space-x-4 mb-3">
+    <div className="flex-1">
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={percentage}
+        onChange={(e) => handlePercentageClick(Number(e.target.value))}
+        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-white "
+        style={{
+          background: `linear-gradient(to right, white 0%, white ${percentage}%, #1F1E23 ${percentage}%, #1F1E23 100%)`,
+        }}
+      />
+      <div className="flex justify-between text-[11px] leading-[16px] font-[400] text-[#C9C9C9] mt-1">
+        {[0, 25, 50, 75, 100].map((val) => (
+          <span
+            key={val}
+            className={val === percentage ? "text-white font-medium" : ""}
+          >
+            {val}%
+          </span>
+        ))}
+      </div>
+    </div>
+    
+    {/* Percentage Input Field */}
+    <div className="flex items-center space-x-2">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        value={percentage}
+        onChange={(e) => {
+          const value = Math.min(100, Math.max(0, Number(e.target.value)));
+          handlePercentageClick(value);
+        }}
+        className="w-16 h-8 rounded text-white text-[14px] leading-[100%] font-[400] font-mono outline-none bg-[#1F1E23] border border-[#C9C9C9] px-2 text-center"
+        placeholder="0"
+      />
+      <span className="text-white text-[12px] leading-[18px] font-[400] font-mono">
+        %
       </span>
-    ))}
+    </div>
   </div>
 </div>
 
@@ -1406,9 +1572,9 @@ const [applyToAll, setApplyToAll] = useState(false);
     </label>
   </div>
 </div>
-          <div className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">
+          {/* <div className="text-[#919093] text-[11px] leading-[16px] font-[500]  font-mono">
             Est. Liq. Price: —
-          </div>
+          </div> */}
         </div>
 
                 {/* TP/SL Input Fields - Show when enabled */}
@@ -1423,11 +1589,11 @@ const [applyToAll, setApplyToAll] = useState(false);
                     (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                       ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    <span>{
+                    {/* <span>{
                       (side === 'Long' && parseFloat(tpPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
                       (side === 'Short' && parseFloat(tpPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                         ? '⚠️ TP price should be in profit direction' : '✅ TP price looks good'
-                    }</span>
+                    }</span> */}
                   </div>
                 )}
                 {slPrice && (
@@ -1436,11 +1602,11 @@ const [applyToAll, setApplyToAll] = useState(false);
                     (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                       ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    <span>{
+                    {/* <span>{
                       (side === 'Long' && parseFloat(slPrice) >= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price)) ||
                       (side === 'Short' && parseFloat(slPrice) <= (orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price))
                         ? '⚠️ SL price should be in loss direction' : '✅ SL price looks good'
-                    }</span>
+                    }</span> */}
                   </div>
                 )}
               </div>
@@ -1449,7 +1615,7 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Take Profit Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <div>
+                {/* <div>
                   <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
                     TP Price {side === 'Long' ? '📈' : '📉'} 
                     <span className="text-green-400 ml-1">(Target: {side === 'Long' ? 'Above' : 'Below'} entry)</span>
@@ -1459,7 +1625,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
                     </div>
                   )}
-                </div>
+                </div> */}
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">TP %</label>
               </div>
               <div className="flex space-x-2">
@@ -1496,7 +1662,7 @@ const [applyToAll, setApplyToAll] = useState(false);
             {/* Stop Loss Section */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <div>
+                {/* <div>
                   <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
                     SL Price {side === 'Long' ? '📉' : '📈'} 
                     <span className="text-red-400 ml-1">(Target: {side === 'Long' ? 'Below' : 'Above'} entry)</span>
@@ -1506,7 +1672,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                       Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
                     </div>
                   )}
-                </div>
+                </div> */}
                 <label className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">SL %</label>
               </div>
               <div className="flex space-x-2">
@@ -1598,19 +1764,19 @@ const [applyToAll, setApplyToAll] = useState(false);
 
         {/* Account Information */}
         <div className="space-y-6 text-sm my-8 mb-4 px-4">
-          <div className="flex justify-between">
+          {/* <div className="flex justify-between">
             <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Account Value</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.accountValue.toFixed(2)} USDC
             </span>
-          </div>
+          </div> */}
           
-          <div className="flex justify-between">
+          {/* <div className="flex justify-between">
             <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available Margin</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.availableMargin.toFixed(2)} USDC
             </span>
-          </div>
+          </div> */}
 
           {/* Disconnect Button - Show when connected */}
           {isConnected && (
@@ -1636,7 +1802,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         </div>
 
         {/* Margin Requirement Display */}
-        {marginRequirement > 0 && (
+        {/* {marginRequirement > 0 && (
           <div className='px-4 mb-2'>
             <div className="space-y-2 text-sm bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg p-3">
               <div className="flex justify-between items-center">
@@ -1650,13 +1816,6 @@ const [applyToAll, setApplyToAll] = useState(false);
                 <span className="text-[#666] font-mono">Leverage: {leverage}x ({marginMode})</span>
                 <span className="text-[#666] font-mono">Position: ${usdEquivalent}</span>
               </div>
-              
-              {/* {parseFloat(buyAmount) > 0 && parseFloat(usdEquivalent) > 0 && (
-                <div className="text-[10px] text-[#888] font-mono border-t border-[#2a2a2c] pt-2">
-                  💡 Compare with official app: If Hyperliquid shows ~${(parseFloat(usdEquivalent) * 0.98).toFixed(2)} for this trade, your leverage there is likely 1x
-                </div>
-              )} */}
-              
               {!hasEnoughMargin && marginErrorMessage && (
                 <div className="p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs mt-2">
                   <p className="text-red-400">{marginErrorMessage}</p>
@@ -1664,7 +1823,7 @@ const [applyToAll, setApplyToAll] = useState(false);
               )}
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Builder Fee Approval Button (now above trade button) */}
         {isConnected && isOnboarded && !builderFeeApproved && (
@@ -1746,6 +1905,139 @@ const [applyToAll, setApplyToAll] = useState(false);
         </button>
         </div>
 
+        {/* Trade Summary Rows - Similar to HyperLiquid App */}
+        {isConnected && isOnboarded && parseFloat(buyAmount) > 0 && (
+          <div className="mt-8 mb-4 px-4 space-y-3">
+            {/* Splitter Line */}
+            <div className="border-t border-[#1F1E23] mb-4"></div>
+            {/* Liquidation Price Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Liquidation Price
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                {marketData?.price && parseFloat(buyAmount) > 0 ? 
+                  (() => {
+                    // 1. Define all basic inputs
+                    const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                    const positionSize = parseFloat(buyAmount);
+                    const sideMultiplier = side === 'Long' ? 1 : -1;
+                    const userLeverage = leverage; // e.g., 5
+                    const maxAssetLeverage = assetInfo?.maxLeverage; // e.g., 50
+                    // console.log(assetInfo, 'assetInfo')
+                    // console.log(marketData, 'marketData')
+                    // 2. Calculate Order Value
+                    const orderValue = (positionSize * currentPrice).toFixed(2);
+                    // console.log(orderValue, 'orderValue')
+                    const estimatedFee = orderValue * takerFeeRate;
+                    // console.log(estimatedFee, 'estimatedFee', orderValue, takerFeeRate)
+                    // 3. Calculate the EXACT Initial Margin for this trade
+                    // This is the key fix: We derive it here instead of using a separate variable.
+                    const initialMargin = orderValue / userLeverage;
+
+                    // 4. Calculate Maintenance Margin values
+                    const l = 1 / (2 * maxAssetLeverage);
+                    const maintenanceMarginRequired = orderValue * l;
+
+                    // 5. Calculate the final "loss buffer"
+                    let marginAvailable = initialMargin + maintenanceMarginRequired;
+                    // let marginAvailable = initialMargin;
+                    marginAvailable = Math.max(0, marginAvailable);
+
+                    // 6. Apply the final Hyperliquid formula
+                    const liquidationPrice = currentPrice - (sideMultiplier * marginAvailable / positionSize / (1 - l * sideMultiplier));
+
+                    // 7. Return the result
+                    return liquidationPrice > 0 ? formatPrice(liquidationPrice.toFixed(0)) : '—';
+
+
+                  //   const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                  //   const positionSize = parseFloat(buyAmount);
+                  //   const sideMultiplier = side === 'Long' ? 1 : -1;
+                  //   const userLeverage = leverage;
+                  //   const maxAssetLeverage = assetInfo?.maxLeverage;
+                  //   // const takerFeeRate = assetInfo?.takerFeeRate; // Assuming this is passed in assetInfo
+                  
+                  //   // 2. Calculate Order Value with full precision (NO .toFixed())
+                  //   const orderValue = positionSize * currentPrice;
+                  
+                  //   // 3. Calculate the EXACT Initial Margin for this trade
+                  //   const initialMargin = orderValue / userLeverage;
+                    
+                  //   // 4. Calculate the estimated Taker Fee
+                  //   const estimatedFee = (orderValue * takerFeeRate / 100).toFixed(2);
+                  // // console.log(estimatedFee, 'estimatedFee', orderValue, takerFeeRate)
+                  //   // 5. Calculate the CORRECT "loss buffer" (marginAvailable)
+                  //   //    This is the key fix: It's just initial margin minus the fee.
+                  //   let marginAvailable = initialMargin - estimatedFee;
+                  //   marginAvailable = Math.max(0, marginAvailable);
+                  
+                  //   // 6. Calculate 'l' (the maintenance margin ratio)
+                  //   const l = 1 / (2 * maxAssetLeverage);
+                  
+                  //   // 7. Apply the final Hyperliquid formula
+                  //   const liquidationPrice = currentPrice - (sideMultiplier * marginAvailable / positionSize / (1 - l * sideMultiplier));
+                  
+                  //   // 8. Return the result, rounding ONLY for display
+                  //   return liquidationPrice > 0 ? liquidationPrice.toFixed(0) : '—';
+                  })()
+                : '—'
+                }
+              </span>
+            </div>
+
+            {/* Order Value Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Order Value
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+              {marketData?.price && parseFloat(buyAmount) > 0 ? 
+                  (() => {
+                    const positionSize = parseFloat(buyAmount);
+                    const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
+                    const orderValue = positionSize * currentPrice;
+                    return orderValue > 0 ? orderValue.toFixed(2) : '—';
+                  })()
+                : '—'
+                }
+              </span>
+            </div>
+
+            {/* Margin Required Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Margin Required
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                ${marginRequirement.toFixed(2)}
+              </span>
+            </div>
+
+            {/* Slippage Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Slippage
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono">
+                Est: 0.0004% / Max: 8.00%
+              </span>
+            </div>
+
+            {/* Fees Row */}
+            <div className="flex justify-between items-center">
+              <span className="text-[#919093] text-[11px] leading-[16px] font-[500] font-mono">
+                Fees
+              </span>
+              <span className="text-white text-[11px] leading-[16px] font-[500] font-mono flex items-center gap-1">
+                <svg className="w-3 h-3 text-[#919093]" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 14a2 2 0 104 0 2 2 0 00-4 0zm2-8a1 1 0 011 1v3a1 1 0 11-2 0V7a1 1 0 011-1z"/>
+                </svg>
+                {takerFeeRate}% / {makerFeeRate}%
+              </span>
+            </div>
+          </div>
+        )}
 
          {/* Leverage Modal */}
    {showLeverageModal && (

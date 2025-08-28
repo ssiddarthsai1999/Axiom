@@ -281,3 +281,38 @@ export class HyperliquidWebSocket {
 
 // Export a singleton instance for convenience
 export const wsInstance = new HyperliquidWebSocket();
+
+// Function to get current leverage for a specific token and user
+export const getCurrentLeverage = async (userAddress, coin) => {
+  try {
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'activeAssetData',
+        user: userAddress,
+        coin: coin
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data && data.leverage) {
+      return {
+        type: data.leverage.type, // 'cross' or 'isolated'
+        value: data.leverage.value // numeric leverage value
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching current leverage:', error);
+    throw error;
+  }
+};
