@@ -163,7 +163,7 @@ const formatFunding = (funding) => {
   }
 
   return (
-    <div className={`bg-[#0d0c0e] text-white p-4 font-mono ${className}`}>
+    <div className={`bg-[#0d0c0e] text-white p-2 font-mono ${className}`}>
       {/* Mobile Layout */}
       <div className="block md:hidden">
         {/* Top Section: Token Info with Price */}
@@ -340,7 +340,7 @@ const formatFunding = (funding) => {
       </div>
 
       {/* Desktop Layout - Original */}
-      <div className="hidden md:flex flex-wrap items-center 2xl:justify-between gap-10">
+      <div className="hidden md:flex flex-row items-center justify-between 2xl:justify-between gap-8">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
           {/* Token Selector */}
@@ -357,7 +357,7 @@ const formatFunding = (funding) => {
   />
 </div>
               <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
-              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-3 py-1 rounded-md font-[500] text-[18px] leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-1  rounded-md font-[500] text-sm leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
               <Star 
                 className={`w-4 h-4 cursor-pointer transition-colors ${
                   favorites.has(marketData.symbol) 
@@ -369,7 +369,7 @@ const formatFunding = (funding) => {
                   toggleFavorite(marketData.symbol, e);
                 }}
               />
-              <ChevronDown className="w-4 h-4 text-white ml-3" />
+              <ChevronDown className="w-4 h-4 text-white ml-2" />
             </button>
             
             {/* Enhanced Dropdown */}
@@ -451,7 +451,7 @@ const formatFunding = (funding) => {
                       </div>
 
                       {/* 24hr Change */}
-                      <div className={`w-full text-center  font-mono text-[12px] font-[400] leading-[24px] ${
+                      <div className={`w-full text-center truncate px-1  font-mono text-[12px] font-[400] leading-[24px] ${
                         (token.change24h || 0) >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
                       }`}>
                         <div className="text-sm">{formatPriceChange(token.price, token.change24h).amount} / {formatPriceChange(token.price, token.change24h).percentage}</div>
@@ -489,16 +489,21 @@ const formatFunding = (funding) => {
           <span className={`font-mono font-[400] text-[12px] leading-[17px] tracking-[0px] ${
             marketData.change24h >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
           }`}>
-            <div>{formatPriceChange(marketData.price, marketData.change24h).amount} / {formatPriceChange(marketData.price, marketData.change24h).percentage}</div>
+            <div>
+              {/* {
+              formatPriceChange(marketData.price, marketData.change24h).amount
+              }  */}
+              {/* /  */}
+              {formatPriceChange(marketData.price, marketData.change24h).percentage}</div>
           </span>
         </div>
 
-        <div className="flex flex-col items-start gap-2">
+        {/* <div className="flex flex-col items-start gap-2">
           <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px]">Oracle Price</span>
           <span className="font-mono text-[#E5E5E5] font-[400] text-[12px] leading-[17px] tracking-[0px]">
             {formatPrice(marketData.oraclePrice)}
           </span>
-        </div>
+        </div> */}
         
         <div className="flex flex-col items-start gap-2">
           <span className="text-[#919093] font-[400] text-[11px] leading-[16px] tracking-[-0.12px] font-mono">24h Volume</span>

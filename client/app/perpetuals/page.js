@@ -606,15 +606,18 @@ function TradingPage() {
       )}
 
       {/* Desktop Layout */}
-      <div className="hidden lg:flex flex-1 min-h-0">
-        <div className='flex flex-col flex-1 min-w-0'>
-          <div className='flex min-h-0 '>
-            <div className='flex flex-col flex-1 min-w-0'>
-              <FavoritesTicker 
+      <div className="flex flex-col">
+      <FavoritesTicker 
                 selectedSymbol={selectedSymbol}
                 setSelectedSymbol={handleSymbolChange}
                 allMarketData={allMarketData}
               />
+      <div className="hidden lg:flex flex-1 min-h-0">
+        <div className='flex flex-col flex-1 min-w-0'>
+        
+          <div className='flex min-h-0 '>
+            <div className='flex flex-col flex-1 min-w-0'>
+             
               <TokenData 
                 marketData={marketData}
                 selectedSymbol={selectedSymbol}
@@ -622,7 +625,7 @@ function TradingPage() {
                 onSymbolChange={handleSymbolChange}
                 className="shrink-0"
               />
-              <div className='flex flex-1 w-full min-h-0'>
+              <div className='flex flex-1 w-full '>
                 <TradingViewChart 
                   symbol={`${selectedSymbol}USD`}
                   onSymbolChange={handleSymbolChange}
@@ -630,7 +633,7 @@ function TradingPage() {
                 />
               </div>
             </div>
-            <div className='w-80  border-l border-r border-[#1F1E23]'>
+            <div className=' w-72  border-l border-r border-[#1F1E23]'>
               <OrderBook 
                 selectedSymbol={selectedSymbol}
                 orderBookData={orderBookData}
@@ -643,13 +646,14 @@ function TradingPage() {
             <UserPositions />
           </div>
         </div>
-        <div className='w-[320px] flex-shrink-0 border-l border-[#1F1E23]'>
+        <div className='w-[340px] flex-shrink-0 border-l border-[#1F1E23]'>
           <TradingPanel 
             selectedSymbol={selectedSymbol}
             marketData={marketData}
             className="h-full"
           />
         </div>
+      </div>
       </div>
 
       {/* Mobile Layout */}
