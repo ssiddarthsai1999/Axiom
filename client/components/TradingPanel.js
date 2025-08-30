@@ -1783,7 +1783,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div> */}
 
           {/* Disconnect Button - Show when connected */}
-          {isConnected && (
+          {/* {isConnected && (
             <div className="mb-4  p-3 bg-green-900 bg-opacity-30 border border-green-600 rounded">
               <div className="flex justify-between items-center">
                 <div>
@@ -1802,7 +1802,7 @@ const [applyToAll, setApplyToAll] = useState(false);
                 </button>
               </div>
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Margin Requirement Display */}
