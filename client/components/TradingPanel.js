@@ -1852,10 +1852,10 @@ const [applyToAll, setApplyToAll] = useState(false);
               className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
             >
               {approvingBuilderFee 
-                ? '⏳ Approving Builder Fee...' 
+                ? 'Approving Builder Fee...' 
                 : checkingBuilderFee 
-                ? '🔍 Checking Status...'
-                : '💰 Approve Builder Fee'
+                ? 'Checking Status...'
+                : 'Approve Builder Fee'
               }
             </button>
           </div>
@@ -1876,18 +1876,18 @@ const [applyToAll, setApplyToAll] = useState(false);
           }
           className={`w-full py-3 mt-4 px-4 rounded-xl font-mono font-[500] text-[12px] duration-200 ease-in] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
             !isConnected
-              ? 'bg-[#202022]  hover:bg-[#2b2b2e] border border-[#FAFAFA33] text-white'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black border border-[#FAFAFA33]'
               : !isOnboarded
-              ? 'bg-[#2133FF] hover:bg-blue-700 text-white'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
               : !builderFeeApproved
-              ? 'bg-gray-600 text-white'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
               : !isAgentWalletReady
-              ? 'bg-[#f39c12] hover:bg-[#e67e22] text-white'
+              ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
               : !hasEnoughMargin
-              ? 'bg-[#ff4757] text-white'
+              ? 'bg-[#ff4757] text-black'
               : side === 'Long'
               ? 'bg-[#2ee2ac] hover:bg-[#2ee2acc8] text-black'
-              : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-white'
+              : 'bg-[#ed397b] hover:bg-[#ed397bc8] text-black'
           }`}
         >
           {!isConnected
@@ -1899,9 +1899,9 @@ const [applyToAll, setApplyToAll] = useState(false);
             : checkingAgentWallet
             ? 'Checking...'
             : !isOnboarded
-            ? '🚀 Onboard to Hyperliquid'
+            ? 'Onboard to Hyperliquid'
             : !isAgentWalletReady
-            ? '⚡ Enable Trade'
+            ? 'Enable Trade'
             : !hasEnoughMargin
             ? 'Not Enough Margin'
             : `${side} ${selectedSymbol}`
