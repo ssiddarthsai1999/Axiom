@@ -340,7 +340,7 @@ const formatFunding = (funding) => {
       </div>
 
       {/* Desktop Layout - Original */}
-      <div className="hidden md:flex flex-row items-center justify-between 2xl:justify-between gap-8">
+      <div className="hidden md:flex flex-row items-center justify-left gap-8">
         {/* Left: Navigation and Token Info */}
         <div className="flex items-center space-x-4">
           {/* Token Selector */}
