@@ -77,7 +77,7 @@ const OrderBook = ({
       className={`min-h-[200px] overflow-hidden max-h-[562px] font-mono text-white ${className}   border-l border-l-[#1F1E23]`}
     >
       {/* Header Tabs */}
-      <div className="flex items-center gap-5 border-b border-[#1F1E23] pb-3.5 px-2">
+      <div className="flex items-center gap-5 border-b border-[#1F1E23] px-2">
         <button
           className={` py-3 text-[12px] leading-[18px] border-b-2 border-transparent text-start font-[500] duration-200 ease-in cursor-pointer ${
             activeTab === "Order Book"
