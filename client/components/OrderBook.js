@@ -109,10 +109,10 @@ const OrderBook = ({
               Price
             </div>
             <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">
-              Amount (USD)
+              Amount ({selectedSymbol})
             </div>
             <div className="text-right text-[11px] leading-[18px] text-[#919093] font-[400]">
-              Total (USD)
+              Total ({selectedSymbol})
             </div>
           </div>
 
