@@ -357,7 +357,7 @@ const formatFunding = (funding) => {
   />
 </div>
               <span className="text-[#E5E5E5] font-[500] text-[18px] font-mono leading-[23px] tracking-[-0.36px]">{marketData.symbol}</span>
-              <span className="text-[#65FB9E] bg-[#4FFFAB33] px-1  rounded-md font-[500] text-sm leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span>
+              {/* <span className="text-[#65FB9E] bg-[#4FFFAB33] px-1  rounded-md font-[500] text-sm leading-[23px] tracking-[-0.36px]">{marketData.maxLeverage}x</span> */}
               <Star 
                 className={`w-4 h-4 cursor-pointer transition-colors ${
                   favorites.has(marketData.symbol) 
