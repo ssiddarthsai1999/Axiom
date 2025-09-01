@@ -1,7 +1,7 @@
 // components/UserPositions.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
-import { getOrCreateSessionAgentWallet } from '@/utils/hyperLiquidSDK';
+import { getOrCreateSessionAgentWallet, getAssetId } from '@/utils/hyperLiquidSDK';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading';
 import * as hl from '@nktkas/hyperliquid';
 import TPSLModal from './TPSLModal';
@@ -552,15 +552,49 @@ const UserPositions = ({ className = '' }) => {
   };
 
   const cancelOrder = async (orderId, symbol) => {
+
     try {
       console.log(`🗑️ Canceling order ${orderId} for ${symbol}`);
-      // Implementation would need proper wallet signing with nktkas SDK
-      // This would require adding a cancel order function to the hyperLiquidSDK.js
-      // await cancelOrderSDK(walletClient, orderId, symbol, true);
-      // For now, just refresh data
-      fetchUserData();
+      
+      // Get asset index for the symbol
+      const assetIndex = getAssetId(symbol);
+      if (assetIndex === undefined) {
+        throw new Error(`Unknown symbol: ${symbol}`);
+      }
+      
+      console.log(`📊 Asset index for ${symbol}: ${assetIndex}`);
+      
+      // Show loading state
+      setLoading(true);
+      
+      // Use agent wallet approach like other functions in this file
+      const agentWallet = getOrCreateSessionAgentWallet();
+      const transport = new hl.HttpTransport({ isTestnet: false }); // false for mainnet
+      const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
+      
+      // Cancel the order using the exchange client
+      const cancelParams = {
+        cancels: [{
+          a: assetIndex,  // asset index
+          o: orderId      // order ID
+        }]
+      };
+      
+      console.log('📤 Sending cancel request:', cancelParams);
+      const result = await exchClient.cancel(cancelParams);
+      
+      console.log('✅ Order cancelled successfully:', result);
+      
+      // Show success message
+      
+      // Refresh data to reflect the cancellation
+      await fetchInitialUserData();
+      
     } catch (error) {
       console.error('❌ Error canceling order:', error);
+      alert(`Failed to cancel order: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1184,9 +1218,14 @@ const UserPositions = ({ className = '' }) => {
                         <td className="p-3 text-right">
                           <button
                             onClick={() => cancelOrder(order.orderId, order.symbol)}
-                            className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors cursor-pointer"
+                            disabled={loading}
+                            className={`px-3 py-1 text-xs rounded transition-colors cursor-pointer ${
+                              loading 
+                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                                : 'bg-red-600 hover:bg-red-700 text-white'
+                            }`}
                           >
-                            Cancel
+                            {loading ? 'Canceling...' : 'Cancel'}
                           </button>
                         </td>
                       </tr>
