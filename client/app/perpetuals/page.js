@@ -25,6 +25,9 @@ function TradingPage() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('positions');
   const [wsConnected, setWsConnected] = useState(false);
+  
+  // Track current tick size parameters to avoid duplicate subscriptions
+  const [currentTickSizeParams, setCurrentTickSizeParams] = useState(null);
 
   // Available tokens list
   const [availableTokens, setAvailableTokens] = useState([]);
@@ -374,7 +377,7 @@ function TradingPage() {
     // Update market data from cache
     const tokenData = allMarketData.find(token => token.symbol === newSymbol);
     if (tokenData) {
-      setMarketData({
+      const newMarketData = {
         symbol: tokenData.symbol,
         name: getTokenName(tokenData.symbol),
         price: tokenData.price,
@@ -390,20 +393,49 @@ function TradingPage() {
         maxLeverage: tokenData.maxLeverage,
         szDecimals: tokenData.szDecimals,
         onlyIsolated: tokenData.onlyIsolated
-      });
+      };
+      console.log(`🔧 handleSymbolChange: setting marketData for ${newSymbol}:`, newMarketData);
+      setMarketData(newMarketData);
+    } else {
+      console.log(`🔧 handleSymbolChange: No tokenData found for ${newSymbol}`);
     }
 
     // Update WebSocket subscriptions
     if (wsService.current.isConnected) {
       if (previousSymbol && previousSymbol !== newSymbol) {
-        wsService.current.unsubscribeFromSymbol(previousSymbol);
+        wsService.current.unsubscribeFromSymbol(previousSymbol, currentTickSizeParams);
       }
+      // Reset tick size parameters for new symbol
+      setCurrentTickSizeParams(null);
       wsService.current.subscribeToSymbol(newSymbol);
     }
 
     // Clear order book for new symbol
     setOrderBookData({ asks: [], bids: [] });
   }, [selectedSymbol, allMarketData, getTokenName]);
+
+  // Handle tick size changes
+  const handleTickSizeChange = useCallback((tickSizeOption) => {
+    if (!wsService.current.isConnected || !selectedSymbol) return;
+    
+    const tickSizeParams = {
+      nSigFigs: tickSizeOption.nSigFigs,
+      mantissa: tickSizeOption.mantissa
+    };
+    
+    // Only update if parameters actually changed
+    if (JSON.stringify(currentTickSizeParams) !== JSON.stringify(tickSizeParams)) {
+      // Unsubscribe from current l2Book subscription
+      wsService.current.unsubscribeFromSymbol(selectedSymbol, currentTickSizeParams);
+      
+      // Subscribe with new tick size parameters
+      wsService.current.subscribeToSymbol(selectedSymbol, tickSizeParams);
+      
+      // Update current parameters
+      setCurrentTickSizeParams(tickSizeParams);
+      
+    }
+  }, [selectedSymbol, currentTickSizeParams]);
 
   // Initialize WebSocket connection and global subscriptions - runs only once
   useEffect(() => {
@@ -441,7 +473,10 @@ function TradingPage() {
     
     // Subscribe to the symbol when connected
     if (wsConnected) {
-      ws.subscribeToSymbol(selectedSymbol);
+      // Only subscribe if we don't have tick size parameters yet (initial subscription)
+      if (!currentTickSizeParams) {
+        ws.subscribeToSymbol(selectedSymbol);
+      }
       ws.subscribeToAssetCtx(selectedSymbol);
     } else {
       console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
@@ -453,7 +488,7 @@ function TradingPage() {
       ws.unsubscribe(tradesKey, handleTradesUpdate);
       ws.unsubscribe(assetCtxKey, handleAssetCtxUpdate);
     };
-  }, [selectedSymbol, wsConnected, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
+  }, [selectedSymbol, wsConnected, currentTickSizeParams, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
   // Fetch initial data - runs only once
   useEffect(() => {
@@ -540,6 +575,10 @@ function TradingPage() {
               selectedSymbol={selectedSymbol}
               orderBookData={orderBookData}
               tradesData={tradesData}
+              szDecimals={(() => {
+                return marketData?.szDecimals ?? 3;
+              })()}
+              onTickSizeChange={handleTickSizeChange}
               className="h-full"
             />
           </div>
@@ -638,6 +677,10 @@ function TradingPage() {
                 selectedSymbol={selectedSymbol}
                 orderBookData={orderBookData}
                 tradesData={tradesData}
+                szDecimals={(() => {
+                  return marketData?.szDecimals ?? 3;
+                })()}
+                onTickSizeChange={handleTickSizeChange}
                 className="h-full"
               />
             </div>

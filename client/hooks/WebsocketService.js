@@ -450,7 +450,7 @@ class WebSocketService {
     }
   }
 
-  subscribeToSymbol(symbol) {
+  subscribeToSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
     const l2BookKey = `l2Book:${symbol}`;
@@ -458,18 +458,40 @@ class WebSocketService {
     
     let subscribed = false;
     
-    // Only subscribe if not already subscribed
-    if (!this.activeSubscriptions.has(l2BookKey)) {
-      const success = this.send({
-        method: 'subscribe',
-        subscription: { type: 'l2Book', coin: symbol }
+    // Always unsubscribe from existing l2Book subscription first to avoid duplicates
+    if (this.activeSubscriptions.has(l2BookKey)) {
+      // Internal unsubscribe without calling the public method to avoid recursion
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      this.send({
+        method: 'unsubscribe',
+        subscription: subscriptionParams
       });
-      
-      if (success) {
-        this.activeSubscriptions.add(l2BookKey);
-        console.log(`✓ Subscribed to l2Book for ${symbol}`);
-        subscribed = true;
+      this.activeSubscriptions.delete(l2BookKey);
+      console.log(`✓ Internal unsubscribed from l2Book for ${symbol}`);
+    }
+    
+    // Create new subscription
+    const subscriptionParams = { type: 'l2Book', coin: symbol };
+    
+    // Add tick size parameters if provided
+    if (tickSizeParams) {
+      if (tickSizeParams.nSigFigs !== undefined) {
+        subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
       }
+      if (tickSizeParams.mantissa !== undefined) {
+        subscriptionParams.mantissa = tickSizeParams.mantissa;
+      }
+    }
+    
+    const success = this.send({
+      method: 'subscribe',
+      subscription: subscriptionParams
+    });
+    
+    if (success) {
+      this.activeSubscriptions.add(l2BookKey);
+      console.log(`✓ Subscribed to l2Book for ${symbol} with params:`, subscriptionParams);
+      subscribed = true;
     }
 
     if (!this.activeSubscriptions.has(tradesKey)) {
@@ -488,7 +510,7 @@ class WebSocketService {
     return subscribed;
   }
 
-  unsubscribeFromSymbol(symbol) {
+  unsubscribeFromSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
     const l2BookKey = `l2Book:${symbol}`;
@@ -498,14 +520,26 @@ class WebSocketService {
     
     // Only unsubscribe if currently subscribed
     if (this.activeSubscriptions.has(l2BookKey)) {
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      
+      // Add tick size parameters if provided (must match subscription)
+      if (tickSizeParams) {
+        if (tickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
+        }
+        if (tickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = tickSizeParams.mantissa;
+        }
+      }
+      
       const success = this.send({
         method: 'unsubscribe',
-        subscription: { type: 'l2Book', coin: symbol }
+        subscription: subscriptionParams
       });
       
       if (success) {
         this.activeSubscriptions.delete(l2BookKey);
-        console.log(`✓ Unsubscribed from l2Book for ${symbol}`);
+        console.log(`✓ Unsubscribed from l2Book for ${symbol} with params:`, subscriptionParams);
         unsubscribed = true;
       }
     }
