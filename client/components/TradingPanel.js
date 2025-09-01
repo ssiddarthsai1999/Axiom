@@ -350,6 +350,21 @@ const [applyToAll, setApplyToAll] = useState(false);
     fetchAssetInfo();
   }, [selectedSymbol]);
 
+  // Reset trading values when symbol changes
+  useEffect(() => {
+    // Reset all trading-related state variables
+    setBuyAmount('0.0');
+    setLimitPrice('');
+    setTpPrice('');
+    setTpPercentage('');
+    setSlPrice('');
+    setSlPercentage('');
+    setPercentage(0);
+    setUsdEquivalent('0.00');
+    setTpSlEnabled(false);
+
+  }, [selectedSymbol]);
+
   // Fetch current leverage from Hyperliquid when symbol changes or user connects
   useEffect(() => {
     const fetchCurrentLeverage = async () => {
