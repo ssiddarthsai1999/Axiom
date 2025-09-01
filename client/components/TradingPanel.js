@@ -2163,7 +2163,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       </div>
 
       {/* Checkbox */}
-      <div className="flex items-center mb-8 text-center flex justify-center mx-auto">
+      {/* <div className="flex items-center mb-8 text-center flex justify-center mx-auto">
         <input
           type="checkbox"
           id="applyToAll"
@@ -2177,7 +2177,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         <button className="ml-2 text-gray-400 hover:text-white">
           <span className="w-4 h-4 rounded-full bg-gray-600 text-white text-xs flex items-center justify-center">i</span>
         </button>
-      </div>
+      </div> */}
 
       {/* Error Message */}
       {leverageError && (
