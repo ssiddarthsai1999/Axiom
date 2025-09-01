@@ -1,13 +1,14 @@
 // components/UserPositions.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
-import { getUserAccountStateSDK, getOpenOrdersSDK, getOrCreateSessionAgentWallet } from '@/utils/hyperLiquidSDK';
+import { getOrCreateSessionAgentWallet } from '@/utils/hyperLiquidSDK';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading';
 import * as hl from '@nktkas/hyperliquid';
 import TPSLModal from './TPSLModal';
 import LimitCloseModal from './LimitCloseModal';
 import MarketCloseModal from './MarketCloseModal';
 import numeral from 'numeral';
+import WebSocketService from '@/hooks/WebsocketService';
 
 const UserPositions = ({ className = '' }) => {
   const [activeTab, setActiveTab] = useState('Positions');
@@ -19,6 +20,7 @@ const UserPositions = ({ className = '' }) => {
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [currentPrices, setCurrentPrices] = useState({});
+  const [wsInitializing, setWsInitializing] = useState(false);
   const [tpslModalOpen, setTpslModalOpen] = useState(false);
   const [limitCloseModalOpen, setLimitCloseModalOpen] = useState(false);
   const [marketCloseModalOpen, setMarketCloseModalOpen] = useState(false);
@@ -28,12 +30,274 @@ const UserPositions = ({ className = '' }) => {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const refreshInterval = useRef(null);
+  const wsService = useRef(null);
 
-  // Auto-refresh functionality
+  // Initialize WebSocket service
+  useEffect(() => {
+    wsService.current = WebSocketService.getInstance();
+    
+    // Subscribe to webData2 for user data
+    if (isConnected && address) {
+      // Wait for websocket to be ready before subscribing
+      const initializeWebSocket = async () => {
+        setWsInitializing(true);
+        try {
+          if (!wsService.current.isHealthy()) {
+            console.log('⏳ Waiting for WebSocket connection...');
+            await wsService.current.waitForInitialization(500);
+          }
+          
+          if (wsService.current.isHealthy()) {
+            console.log('✅ WebSocket ready, subscribing to user data...');
+            wsService.current.subscribeToUserData(address);
+            
+            // Subscribe to general webData2 updates
+            wsService.current.subscribe('webData2', handleWebData2Update);
+            
+            // Subscribe to market data updates for real-time prices
+            wsService.current.subscribe('marketDataUpdate', handleMarketDataUpdate);
+          } else {
+            console.log('⚠️ WebSocket not ready, will use API fallback');
+          }
+        } catch (error) {
+          console.error('❌ WebSocket initialization failed:', error);
+        } finally {
+          setWsInitializing(false);
+        }
+      };
+      
+      initializeWebSocket();
+    }
+    
+    return () => {
+      if (wsService.current && address) {
+        wsService.current.unsubscribeFromUserData(address);
+        wsService.current.unsubscribe('webData2', handleWebData2Update);
+        wsService.current.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
+      }
+    };
+  }, [isConnected, address]);
+
+  // Handle webData2 updates from websocket
+  const handleWebData2Update = (webData2Data) => {
+    if (!webData2Data || !webData2Data.clearinghouseState) return;
+    
+    console.log('🔍 Received webData2 update:', {
+      positions: webData2Data.clearinghouseState.assetPositions?.length || 0,
+      orders: webData2Data.openOrders?.length || 0,
+      accountValue: webData2Data.clearinghouseState.marginSummary?.accountValue,
+      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString(),
+      hasAssetCtxs: !!webData2Data.assetCtxs,
+      assetCtxsCount: webData2Data.assetCtxs?.length || 0,
+      hasMeta: !!webData2Data.meta,
+      universeCount: webData2Data.meta?.universe?.length || 0
+    });
+    
+        // Process positions from webData2
+    if (webData2Data.clearinghouseState.assetPositions) {
+      // Debug: Show universe and assetCtxs mapping
+      if (webData2Data.meta && webData2Data.meta.universe && webData2Data.assetCtxs) {
+        // console.log('🔍 Universe tokens:', webData2Data.meta.universe.map(t => t.name));
+        // console.log('🔍 Asset contexts count:', webData2Data.assetCtxs.length);
+        // console.log('🔍 First few asset contexts:', webData2Data.assetCtxs.slice(0, 3).map((ctx, i) => ({
+          // index: i,
+          // coin: ctx.coin,
+          // markPx: ctx.markPx
+        // })));
+      }
+      
+      const formattedPositions = webData2Data.clearinghouseState.assetPositions
+        .filter(pos => parseFloat(pos.position.szi) !== 0)
+        .map(pos => {
+            const size = parseFloat(pos.position.szi);
+            const entryPrice = parseFloat(pos.position.entryPx || 0);
+            // Use mark price from webData2 assetCtxs if available, fallback to current prices
+            const markPrice = getMarkPriceFromWebData2(webData2Data, pos.position.coin) || 
+                             currentPrices[pos.position.coin] || 
+                             parseFloat(pos.position.positionValue || 0) / Math.abs(size);
+            const pnl = parseFloat(pos.position.unrealizedPnl || 0);
+            const positionValue = Math.abs(size) * markPrice;
+          const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
+          const leverage = parseFloat(pos.position.leverage?.value || 1);
+          const marginUsed = parseFloat(pos.position.marginUsed || 0);
+          
+          return {
+            coin: pos.position.coin,
+            size: size,
+            positionValue: positionValue,
+            entryPrice: entryPrice,
+            markPrice: markPrice,
+            pnl: pnl,
+            pnlPercentage: pnlPercentage,
+            leverage: leverage,
+            leverageType: pos.position.leverage?.type,
+            liquidationPrice: parseFloat(pos.liquidationPx || 0),
+            marginUsed: marginUsed,
+            side: size > 0 ? 'Long' : 'Short',
+            funding: parseFloat(pos.position.cumFunding?.sinceChange || 0),
+            returnOnEquity: parseFloat(pos.position.returnOnEquity || 0)
+          };
+        });
+      
+      setPositions(formattedPositions);
+      console.log('✅ Positions updated from webData2:', formattedPositions);
+    }
+    
+    // Process balances from webData2
+    if (webData2Data.clearinghouseState.assetPositions) {
+      const formattedBalances = webData2Data.clearinghouseState.assetPositions
+        .filter(pos => parseFloat(pos.position.szi) === 0 && parseFloat(pos.position.marginUsed || 0) > 0)
+        .map(pos => {
+          const markPrice = getMarkPriceFromWebData2(webData2Data, pos.position.coin) || 
+                           currentPrices[pos.position.coin] || 1;
+          return {
+            coin: pos.position.coin,
+            balance: parseFloat(pos.position.marginUsed || 0),
+            value: parseFloat(pos.position.marginUsed || 0) * markPrice
+          };
+        });
+      
+      setBalances(formattedBalances);
+      console.log('✅ Balances updated from webData2:', formattedBalances);
+    }
+    
+    // Process open orders from webData2
+    if (webData2Data.openOrders) {
+      const formattedOrders = webData2Data.openOrders.map(order => {
+        const isReduceOnly = order.reduceOnly || false;
+        const hasTrigger = !!(order.triggerCondition);
+        
+        return {
+          symbol: order.coin,
+          side: order.side === 'A' ? 'Buy' : 'Sell',
+          type: order.orderType || 'Limit',
+          size: parseFloat(order.sz || 0),
+          price: parseFloat(order.limitPx || 0),
+          filled: parseFloat(order.sz || 0) - parseFloat(order.sz || 0), // webData2 doesn't provide filled amount
+          remaining: parseFloat(order.sz || 0),
+          orderId: order.oid,
+          timestamp: order.timestamp,
+          triggerCondition: order.triggerCondition || 'N/A',
+          reduceOnly: isReduceOnly,
+          isTrigger: hasTrigger,
+          triggerPrice: order.triggerPx ? parseFloat(order.triggerPx) : null,
+          tpslType: null, // Will be inferred from order analysis
+          isMarket: order.orderType === 'Market',
+          rawOrder: order
+        };
+      });
+      
+      setOpenOrders(formattedOrders);
+      console.log('✅ Orders updated from webData2:', formattedOrders);
+    }
+    
+    // Process spot balances if available
+    if (webData2Data.spotState && webData2Data.spotState.balances) {
+      const spotBalances = webData2Data.spotState.balances
+        .filter(balance => parseFloat(balance.total) > 0)
+        .map(balance => ({
+          coin: balance.coin,
+          balance: parseFloat(balance.total),
+          value: parseFloat(balance.total) * (currentPrices[balance.coin] || 1)
+        }));
+      
+      // Merge with existing balances
+      setBalances(prev => {
+        const nonSpotBalances = prev.filter(b => !spotBalances.find(sb => sb.coin === b.coin));
+        return [...nonSpotBalances, ...spotBalances];
+      });
+    }
+    
+    // Update positions with real-time mark prices from assetCtxs
+    updatePositionsWithRealTimePrices(webData2Data);
+  };
+
+  // Handle market data updates for real-time prices
+  const handleMarketDataUpdate = (marketData) => {
+    if (marketData && marketData.tokens) {
+      const priceMap = {};
+      marketData.tokens.forEach(token => {
+        if (token.price > 0) {
+          priceMap[token.symbol] = token.price;
+        }
+      });
+      
+      setCurrentPrices(prev => ({ ...prev, ...priceMap }));
+      
+      // Update positions with new mark prices
+      setPositions(prev => prev.map(pos => {
+        const newMarkPrice = priceMap[pos.coin];
+        if (newMarkPrice && newMarkPrice !== pos.markPrice) {
+          const newPositionValue = Math.abs(pos.size) * newMarkPrice;
+          const newPnlPercentage = pos.entryPrice > 0 ? 
+            ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
+          
+          return {
+            ...pos,
+            markPrice: newMarkPrice,
+            positionValue: newPositionValue,
+            pnlPercentage: newPnlPercentage
+          };
+        }
+        return pos;
+      }));
+    }
+  };
+
+  // Update positions with real-time mark prices from webData2 assetCtxs
+  const updatePositionsWithRealTimePrices = (webData2Data) => {
+    if (!webData2Data.assetCtxs || !webData2Data.meta || !webData2Data.meta.universe || !positions.length) return;
+    
+    const updatedPositions = positions.map(pos => {
+      // Find the token index in the universe array
+      const tokenIndex = webData2Data.meta.universe.findIndex(token => token.name === pos.coin);
+      if (tokenIndex !== -1 && webData2Data.assetCtxs[tokenIndex]) {
+        const assetCtx = webData2Data.assetCtxs[tokenIndex];
+        if (assetCtx.markPx) {
+          const newMarkPrice = parseFloat(assetCtx.markPx);
+          if (newMarkPrice !== pos.markPrice) {
+            const newPositionValue = Math.abs(pos.size) * newMarkPrice;
+            const newPnlPercentage = pos.entryPrice > 0 ? 
+              ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
+            
+            console.log(`🔄 Updated mark price for ${pos.coin} (index ${tokenIndex}): ${pos.markPrice} → ${newMarkPrice}`);
+            
+            return {
+              ...pos,
+              markPrice: newMarkPrice,
+              positionValue: newPositionValue,
+              pnlPercentage: newPnlPercentage
+            };
+          }
+        }
+      }
+      return pos;
+    });
+    
+    setPositions(updatedPositions);
+  };
+
+  // Helper function to get mark price from webData2 assetCtxs by token index
+  const getMarkPriceFromWebData2 = (webData2Data, coin) => {
+    if (webData2Data.assetCtxs && webData2Data.meta && webData2Data.meta.universe) {
+      // Find the token index in the universe array
+      const tokenIndex = webData2Data.meta.universe.findIndex(token => token.name === coin);
+      if (tokenIndex !== -1 && webData2Data.assetCtxs[tokenIndex]) {
+        const assetCtx = webData2Data.assetCtxs[tokenIndex];
+        if (assetCtx.markPx) {
+          // console.log(`🔍 Mark price from webData2 for ${coin} (index ${tokenIndex}):`, assetCtx.markPx);
+          return parseFloat(assetCtx.markPx);
+        }
+      }
+    }
+    return null;
+  };
+
+  // Auto-refresh functionality (now primarily for fallback and initial data)
   useEffect(() => {
     if (autoRefresh && isConnected && address && walletClient && !loading) {
       refreshInterval.current = setInterval(() => {
-        fetchUserData(); // This now includes TP/SL data
+        // Only fetch current prices as fallback, positions come from websocket
         fetchCurrentPrices();
       }, 30000); // Refresh every 30 seconds
     }
@@ -45,7 +309,7 @@ const UserPositions = ({ className = '' }) => {
     };
   }, [autoRefresh, isConnected, address, walletClient, loading]);
 
-  // Fetch current market prices for all assets
+  // Fetch current market prices for all assets (fallback method)
   const fetchCurrentPrices = async () => {
     try {
       const response = await fetch('https://api.hyperliquid.xyz/info', {
@@ -69,19 +333,24 @@ const UserPositions = ({ className = '' }) => {
           }
         });
         
-        setCurrentPrices(priceMap);
-        console.log('✅ Current prices updated:', priceMap);
+        setCurrentPrices(prev => ({ ...prev, ...priceMap }));
+        // console.log('✅ Current prices updated (fallback):', priceMap);
       }
     } catch (error) {
       console.error('❌ Error fetching current prices:', error);
     }
   };
 
-  // Fetch user data when wallet is connected
+  // Fetch user data when wallet is connected (now primarily for initial load)
   useEffect(() => {
     if (isConnected && address && walletClient) {
-      fetchUserData();
-      fetchCurrentPrices(); // Also fetch current prices
+      // Initial data load - positions will come from websocket
+      fetchCurrentPrices();
+      
+      // If websocket is not ready, fetch initial data via API
+      if (!wsService.current || !wsService.current.isHealthy()) {
+        fetchInitialUserData();
+      }
     } else {
       // Clear data when disconnected
       setPositions([]);
@@ -91,71 +360,98 @@ const UserPositions = ({ className = '' }) => {
       setError(null);
       setCurrentPrices({});
     }
-  }, [isConnected, address, activeTab, walletClient]);
+  }, [isConnected, address, walletClient]);
 
-  const fetchUserData = async () => {
+  // Fetch trade history when Trade History tab is selected
+  useEffect(() => {
+    if (isConnected && address && activeTab === 'Trade History') {
+      fetchTradeHistory();
+    }
+  }, [isConnected, address, activeTab]);
+
+  // Fetch trade history
+  const fetchTradeHistory = async () => {
+    if (!address) return;
+    
+    try {
+      // console.log('🔍 Fetching trade history...');
+      const userFills = await fetch('https://api.hyperliquid.xyz/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'userFills',
+          user: address
+        })
+      });
+      
+      if (userFills.ok) {
+        const fillsData = await userFills.json();
+        if (fillsData && Array.isArray(fillsData)) {
+          const formattedTrades = fillsData.slice(0, 100).map(trade => ({
+            coin: trade.coin,
+            px: parseFloat(trade.px),
+            sz: parseFloat(trade.sz),
+            side: trade.side,
+            time: trade.time,
+            startPosition: parseFloat(trade.startPosition || 0),
+            dir: trade.dir || 'Unknown',
+            closedPnl: parseFloat(trade.closedPnl || 0),
+            hash: trade.hash,
+            oid: trade.oid,
+            crossed: trade.crossed,
+            fee: parseFloat(trade.fee || 0),
+            tid: trade.tid,
+            feeToken: trade.feeToken || 'USDC',
+            twapId: trade.twapId,
+            // Additional calculated fields
+            tradeValue: parseFloat(trade.sz) * parseFloat(trade.px),
+            formattedTime: new Date(trade.time),
+            direction: trade.dir || 'Unknown'
+          }));
+          setTrades(formattedTrades);
+          console.log('✅ Trades loaded:', formattedTrades);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching trade history:', error);
+    }
+  };
+
+  // Fetch initial user data via API (fallback when websocket is not ready)
+  const fetchInitialUserData = async () => {
     if (!address || !walletClient) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      // Always fetch positions, balances, and orders to keep TP/SL data current
-      if (activeTab === 'Positions' || activeTab === 'Balances' || activeTab === 'Open Orders') {
-        console.log('🔍 Fetching positions using nktkas SDK...');
-        const userState = await getUserAccountStateSDK(walletClient, address, true); // true for mainnet
-        
-        if (userState && userState.assetPositions) {
-          // Filter positions (non-zero size)
-          const formattedPositions = userState.assetPositions
-            .filter(pos => parseFloat(pos.position.szi) !== 0)
-            .map(pos => {
-              const size = parseFloat(pos.position.szi);
-              const entryPrice = parseFloat(pos.position.entryPx || 0);
-              // Use current price from our price map, fallback to pos.markPx if available
-              const markPrice = currentPrices[pos.position.coin] || parseFloat(pos.markPx || 0);
-              const pnl = parseFloat(pos.position.unrealizedPnl || 0);
-              const positionValue = Math.abs(size) * markPrice;
-              const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
-              const leverage = parseFloat(pos.leverage?.value || 1);
-              // Calculate margin used for open positions
-              const marginUsed = leverage > 0 ? positionValue / leverage : 0;
-              
-              return {
-                coin: pos.position.coin,
-                size: size,
-                positionValue: positionValue,
-                entryPrice: entryPrice,
-                markPrice: markPrice,
-                pnl: pnl,
-                pnlPercentage: pnlPercentage,
-                leverage: leverage,
-                liquidationPrice: parseFloat(pos.liquidationPx || 0),
-                marginUsed: parseFloat(pos.position.marginUsed || 0),
-                side: size > 0 ? 'Long' : 'Short',
-                funding: 0 // Will be calculated from funding data
-              };
-            });
-          setPositions(formattedPositions);
+      // Fetch initial positions via API if websocket is not ready
+      console.log('🔍 Fetching initial positions via API...');
+      const response = await fetch('https://api.hyperliquid.xyz/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'clearinghouseState',
+          user: address
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.clearinghouseState) {
+          // Create a mock webData2 structure for consistency
+          const mockWebData2 = {
+            clearinghouseState: data.clearinghouseState,
+            openOrders: [],
+            serverTime: Date.now(),
+            user: address
+          };
           
-          // Filter balances (available balances)
-          const formattedBalances = userState.assetPositions
-            .filter(pos => parseFloat(pos.position.szi) === 0 && parseFloat(pos.marginUsed || 0) > 0)
-            .map(pos => ({
-              coin: pos.position.coin,
-              balance: parseFloat(pos.marginUsed || 0),
-              value: parseFloat(pos.marginUsed || 0) * (currentPrices[pos.position.coin] || parseFloat(pos.markPx || 1))
-            }));
-          setBalances(formattedBalances);
-          
-          console.log('✅ Positions loaded:', formattedPositions);
-          console.log('✅ Balances loaded:', formattedBalances);
+          handleWebData2Update(mockWebData2);
         }
       }
       
-      // Always fetch open orders to extract TP/SL information
-      // Use direct API instead of SDK as SDK doesn't return trigger order details properly
-      console.log('🔍 Fetching orders using direct HyperLiquid API...');
+      // Fetch open orders
       const ordersResponse = await fetch('https://api.hyperliquid.xyz/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,83 +463,20 @@ const UserPositions = ({ className = '' }) => {
       
       if (ordersResponse.ok) {
         const orders = await ordersResponse.json();
-        console.log('✅ Orders fetched via direct API:', orders.length, 'orders');
-        
         if (orders && Array.isArray(orders)) {
-          const formattedOrders = orders.map(order => {
-            // Handle different possible structures from HyperLiquid API
-            const isReduceOnly = order.reduceOnly || order.r || false;
-            const hasTrigger = !!(order.trigger || order.t);
-            const triggerData = order.trigger || order.t || {};
-            
-            return {
-              symbol: order.coin,
-              side: order.side === 'B' ? 'Buy' : 'Sell',
-              type: order.orderType || 'Limit',
-              size: parseFloat(order.sz || order.s),
-              price: parseFloat(order.limitPx || order.p),
-              filled: parseFloat(order.sz || order.s) - parseFloat(order.remainingSize || order.sz || order.s),
-              remaining: parseFloat(order.remainingSize || order.sz || order.s),
-              orderId: order.oid,
-              timestamp: order.timestamp,
-              triggerCondition: order.triggerCondition || 'N/A',
-              reduceOnly: isReduceOnly,
-              // Add TP/SL specific fields - handle multiple possible structures
-              isTrigger: hasTrigger,
-              triggerPrice: triggerData.triggerPx ? parseFloat(triggerData.triggerPx) : null,
-              tpslType: triggerData.tpsl || null,
-              isMarket: triggerData.isMarket || false,
-              rawOrder: order // Keep for debugging
-            };
-          });
-          setOpenOrders(formattedOrders);
-          console.log('✅ Orders processed:', formattedOrders.length, 'formatted orders');
+          const mockWebData2 = {
+            clearinghouseState: { assetPositions: [] },
+            openOrders: orders,
+            serverTime: Date.now(),
+            user: address
+          };
+          
+          handleWebData2Update(mockWebData2);
         }
       }
       
-      // Fetch recent trades using the userFills endpoint
-      if (activeTab === 'Trade History') {
-        console.log('🔍 Fetching trades...');
-        const userFills = await fetch('https://api.hyperliquid.xyz/info', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'userFills',
-            user: address
-          })
-        });
-        
-        if (userFills.ok) {
-          const fillsData = await userFills.json();
-          if (fillsData && Array.isArray(fillsData)) {
-            const formattedTrades = fillsData.slice(0, 100).map(trade => ({
-              coin: trade.coin,
-              px: parseFloat(trade.px),
-              sz: parseFloat(trade.sz),
-              side: trade.side,
-              time: trade.time,
-              startPosition: parseFloat(trade.startPosition || 0),
-              dir: trade.dir || 'Unknown',
-              closedPnl: parseFloat(trade.closedPnl || 0),
-              hash: trade.hash,
-              oid: trade.oid,
-              crossed: trade.crossed,
-              fee: parseFloat(trade.fee || 0),
-              tid: trade.tid,
-              feeToken: trade.feeToken || 'USDC',
-              twapId: trade.twapId,
-              // Additional calculated fields
-              tradeValue: parseFloat(trade.sz) * parseFloat(trade.px),
-              formattedTime: new Date(trade.time),
-              direction: trade.dir || 'Unknown'
-            }));
-            setTrades(formattedTrades);
-            console.log('✅ Trades loaded:', formattedTrades);
-          }
-        }
-      }
     } catch (error) {
-      console.error('❌ Error fetching user data:', error);
+      console.error('❌ Error fetching initial user data:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -352,7 +585,6 @@ const UserPositions = ({ className = '' }) => {
     setSelectedPosition(null);
     // Refresh data after modal closes to see any new TP/SL orders
     setTimeout(() => {
-      fetchUserData();
       fetchCurrentPrices();
     }, 1000); // Small delay to ensure orders are processed
   };
@@ -499,7 +731,6 @@ const UserPositions = ({ className = '' }) => {
       
       // Refresh data to reflect the new order/position change
       setTimeout(() => {
-        fetchUserData();
         fetchCurrentPrices();
       }, 2000); // Increased delay to ensure order is processed
       
@@ -652,7 +883,7 @@ const UserPositions = ({ className = '' }) => {
     <div className="p-4 mb-4 bg-red-900/20 border border-red-700 rounded text-red-400">
       <p>⚠️ {message}</p>
       <button 
-        onClick={fetchUserData}
+        onClick={fetchInitialUserData}
         className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
       >
         Retry
@@ -665,6 +896,20 @@ const UserPositions = ({ className = '' }) => {
     { name: 'Open Orders', count: openOrders.length },
     { name: 'Trade History', count: trades.length }
   ];
+
+  // Get connection status for display
+  const getConnectionStatus = () => {
+    if (!wsService.current) return { status: 'disconnected', text: 'Disconnected' };
+    
+    const status = wsService.current.getConnectionStatus();
+    if (status.isConnected && status.userSubscriptions.includes(`webData2:${address}`)) {
+      return { status: 'connected', text: 'Live Data' };
+    } else if (status.isConnected) {
+      return { status: 'connecting', text: 'Connecting...' };
+    } else {
+      return { status: 'disconnected', text: 'API Mode' };
+    }
+  };
 
   return (
     <div className={`bg-[#0d0c0e] text-white ${className}`}>
@@ -685,30 +930,7 @@ const UserPositions = ({ className = '' }) => {
             </button>
           ))}
         </div>
-        {/* <div className="flex items-center space-x-2 px-4">
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-2 py-1 text-xs rounded transition-colors cursor-pointer ${
-              autoRefresh ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'
-            } text-white`}
-          >
-            Auto
-          </button>
-          <button 
-            onClick={() => {
-              console.log('🔄 Manual refresh triggered');
-              fetchUserData();
-              fetchCurrentPrices();
-            }}
-            className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors cursor-pointer"
-            title="Refresh positions and TP/SL data"
-          >
-            ↻
-          </button>
-          <button className="px-3 py-1 text-[14px] bg-[#1a1a1f] hover:bg-[#2a2a2f] text-white rounded transition-colors cursor-pointer border border-[#1F1E23]">
-            Filter
-          </button>
-        </div> */}
+
       </div>
 
       {/* Error Display */}
@@ -783,6 +1005,14 @@ const UserPositions = ({ className = '' }) => {
               </table>
             )}
           </div>
+        ) : wsInitializing ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-gray-400">Initializing real-time connection...</p>
+              <p className="text-sm text-gray-500 mt-2">This may take a few seconds</p>
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             {/* Positions Tab */}
@@ -821,12 +1051,12 @@ const UserPositions = ({ className = '' }) => {
                         </td>
                         <td className="p-3 text-right font-mono">
                           <span className={position.side === 'Long' ? 'text-green-400' : 'text-red-400'}>
-                            {position.side === 'Long' ? '' : '-'}{formatNumber(Math.abs(position.size), 4)} {position.coin}
+                            {position.side === 'Long' ? '' : '-'}{Math.abs(position.size)} {position.coin}
                           </span>
                         </td>
                         <td className="p-3 text-right font-mono">${formatNumber(position.positionValue)}</td>
-                        <td className="p-3 text-right font-mono">{formatNumber(position.entryPrice)}</td>
-                        <td className="p-3 text-right font-mono">{formatNumber(position.markPrice)}</td>
+                        <td className="p-3 text-right font-mono">{position.entryPrice}</td>
+                        <td className="p-3 text-right font-mono">{position.markPrice}</td>
                         <td className="p-3 text-right font-mono">
                           <div className={position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
                             <div>{position.pnl >= 0 ? '+' : ''}${formatNumber(position.pnl)} ({position.pnlPercentage >= 0 ? '+' : ''}{formatNumber(position.pnlPercentage, 2)}%)</div>
@@ -834,7 +1064,7 @@ const UserPositions = ({ className = '' }) => {
                         </td>
                         <td className="p-3 text-right font-mono">{position.liquidationPrice > 0 ? formatNumber(position.liquidationPrice) : 'N/A'}</td>
                         <td className="p-3 text-right font-mono">
-                          <span className="text-gray-400">${formatNumber(position.marginUsed)} ({position.side === 'Long' ? 'Cross' : position.side === 'Short' ? 'Cross' : 'Isolated'})</span>
+                          <span className="text-gray-400">${formatNumber(position.marginUsed)} ({position.leverageType})</span>
                         </td>
                         <td className="p-3 text-right font-mono">
                           <span className={position.funding >= 0 ? 'text-green-400' : 'text-red-400'}>

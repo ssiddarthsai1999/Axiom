@@ -23,6 +23,10 @@ class WebSocketService {
     this.universeData = null; // Meta data about tokens
     this.isInitialized = false;
     
+    // User data cache for real-time updates
+    this.userDataCache = new Map(); // Cache for webData2 user data
+    this.userSubscriptions = new Set(); // Track user subscriptions
+    
     // WebSocket POST request counter for unique IDs
     this.requestId = 1;
   }
@@ -113,6 +117,12 @@ class WebSocketService {
         }
         
         if (data.channel === 'subscriptionResponse') {
+          return;
+        }
+
+        // Handle webData2 updates for user account data
+        if (data.channel === 'webData2' && data.data) {
+          this.handleWebData2Update(data.data);
           return;
         }
 
@@ -450,6 +460,103 @@ class WebSocketService {
     }
   }
 
+  // Subscribe to webData2 for user account data (positions, balances, orders)
+  subscribeToUserData(userAddress) {
+    if (!this.isConnected) {
+      console.log(`Cannot subscribe to webData2 for ${userAddress}: WebSocket not connected`);
+      return false;
+    }
+    
+    const userDataKey = `webData2:${userAddress}`;
+    
+    if (!this.userSubscriptions.has(userDataKey)) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: userAddress
+        }
+      };
+      
+      console.log(`🎯 Subscribing to webData2 for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.userSubscriptions.add(userDataKey);
+        console.log(`✓ Subscribed to webData2 for user ${userAddress}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to webData2 for user ${userAddress}`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to webData2 for user ${userAddress}`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from webData2 for a specific user
+  unsubscribeFromUserData(userAddress) {
+    if (!this.isConnected) return false;
+    
+    const userDataKey = `webData2:${userAddress}`;
+    
+    if (this.userSubscriptions.has(userDataKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: userAddress
+        }
+      });
+      
+      if (success) {
+        this.userSubscriptions.delete(userDataKey);
+        console.log(`✓ Unsubscribed from webData2 for user ${userAddress}`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Handle webData2 updates for user account data
+  handleWebData2Update(webData2Data) {
+    if (!webData2Data || !webData2Data.user) return;
+    
+    const userAddress = webData2Data.user;
+    const userDataKey = `webData2:${userAddress}`;
+    
+    // Cache the user data
+    this.userDataCache.set(userAddress, {
+      ...webData2Data,
+      lastUpdated: Date.now()
+    });
+    
+    // Broadcast the user data update
+    this.broadcast(userDataKey, webData2Data);
+    
+    // Also broadcast to general webData2 subscribers
+    this.broadcast('webData2', webData2Data);
+    
+    console.log(`✓ Updated webData2 data for user ${userAddress}:`, {
+      positions: webData2Data.clearinghouseState?.assetPositions?.length || 0,
+      orders: webData2Data.openOrders?.length || 0,
+      accountValue: webData2Data.clearinghouseState?.marginSummary?.accountValue,
+      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString()
+    });
+  }
+
+  // Get cached user data for a specific address
+  getCachedUserData(userAddress) {
+    return this.userDataCache.get(userAddress);
+  }
+
+  // Get all cached user data
+  getAllCachedUserData() {
+    return Array.from(this.userDataCache.values());
+  }
+
   subscribeToSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
@@ -577,7 +684,9 @@ class WebSocketService {
       isInitialized: this.isInitialized,
       reconnectAttempts: this.reconnectAttempts,
       activeSubscriptions: Array.from(this.activeSubscriptions),
-      cachedTokens: this.marketDataCache.size
+      userSubscriptions: Array.from(this.userSubscriptions),
+      cachedTokens: this.marketDataCache.size,
+      cachedUsers: this.userDataCache.size
     };
   }
 
