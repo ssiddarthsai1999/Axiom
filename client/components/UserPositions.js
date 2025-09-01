@@ -120,6 +120,7 @@ const UserPositions = ({ className = '' }) => {
           const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
           const leverage = parseFloat(pos.position.leverage?.value || 1);
           const marginUsed = parseFloat(pos.position.marginUsed || 0);
+          const tokenIndex = webData2Data.meta.universe.findIndex(token => token.name === pos.position.coin);
           
           return {
             coin: pos.position.coin,
@@ -135,7 +136,8 @@ const UserPositions = ({ className = '' }) => {
             marginUsed: marginUsed,
             side: size > 0 ? 'Long' : 'Short',
             funding: parseFloat(pos.position.cumFunding?.sinceChange || 0),
-            returnOnEquity: parseFloat(pos.position.returnOnEquity || 0)
+            returnOnEquity: parseFloat(pos.position.returnOnEquity || 0),
+            tokenIndex: tokenIndex
           };
         });
       

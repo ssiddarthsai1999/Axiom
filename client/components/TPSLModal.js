@@ -261,7 +261,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     const transport = new hl.HttpTransport({ isTestnet: false }); // true for mainnet
     const exchClient = new hl.ExchangeClient({ wallet: agentWallet, transport });
     
-    const assetId = getAssetId(position.coin);
+    const assetId = position.tokenIndex;
     const isLongPosition = position.side === 'Long';
     const positionSize = Math.abs(position.size);
     
