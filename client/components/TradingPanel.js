@@ -793,48 +793,9 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  const handleApproveBuilderFee = async () => {
-    if (!wallet || !wallet.signer) {
-      setBuilderFeeError('Wallet not connected');
-      return;
-    }
 
-    setApprovingBuilderFee(true);
-    setBuilderFeeError(null);
-    setBuilderFeeSuccess(null);
 
-    try {
-      console.log('🔧 Approving builder fee...');
-      
-      // Approve with a reasonable max fee rate (1% as percentage string)
-      const maxFeeRate = "1%"; // 1% as percentage string format required by HyperLiquid API
-      
-      // Option 1: Use a specific builder address (requires that address to have 100 USDC in Hyperliquid)
-      const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';
-      
-      // Option 2: Use your own address as builder (you need 100 USDC in Hyperliquid)
-      // const builderAddress = await wallet.signer.getAddress();
-      
-      const result = await approveBuilderFee(wallet.signer, maxFeeRate, true, builderAddress);
-      
-      console.log('✅ Builder fee approved:', result);
-      setBuilderFeeSuccess('Builder fee approved successfully!');
-      setBuilderFeeApproved(true);
-      
-      // Clear success message after a few seconds
-      setTimeout(() => {
-        setBuilderFeeSuccess(null);
-      }, 3000);
-      
-    } catch (error) {
-      console.error('❌ Error approving builder fee:', error);
-      setBuilderFeeError(error.message || 'Failed to approve builder fee');
-    } finally {
-      setApprovingBuilderFee(false);
-    }
-  };
-
-  // UPDATED TRADE HANDLER WITH MERGED AGENT WALLET LOGIC
+  // UPDATED TRADE HANDLER WITH MERGED AGENT WALLET AND BUILDER FEE LOGIC
   const handleTrade = async () => {
     if (!isConnected) {
       await connectWallet();
@@ -849,6 +810,49 @@ const [applyToAll, setApplyToAll] = useState(false);
     if (!isOnboarded) {
       // If not onboarded, redirect to Hyperliquid onboarding
       window.open('https://app.hyperliquid.xyz/trade', '_blank');
+      return;
+    }
+
+    // If builder fee is not approved, approve it first
+    if (!builderFeeApproved) {
+      setApprovingBuilderFee(true);
+      setOrderError(null);
+      setOrderSuccess(null);
+      setBuilderFeeError(null);
+      setBuilderFeeSuccess(null);
+      
+      try {
+        console.log('🔧 Approving builder fee...');
+        
+        // Approve with a reasonable max fee rate (1% as percentage string)
+        const maxFeeRate = "1%"; // 1% as percentage string format required by HyperLiquid API
+        
+        // Option 1: Use a specific builder address (requires that address to have 100 USDC in Hyperliquid)
+        const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';
+        
+        // Option 2: Use your own address as builder (you need 100 USDC in Hyperliquid)
+        // const builderAddress = await wallet.signer.getAddress();
+        
+        const result = await approveBuilderFee(wallet.signer, maxFeeRate, true, builderAddress);
+        
+        console.log('✅ Builder fee approved:', result);
+        setBuilderFeeSuccess('Builder fee approved successfully!');
+        setBuilderFeeApproved(true);
+        setOrderSuccess('✅ Builder fee approved! You can now place orders.');
+        
+        // Clear success messages after a few seconds
+        setTimeout(() => {
+          setBuilderFeeSuccess(null);
+          setOrderSuccess(null);
+        }, 3000);
+        
+      } catch (error) {
+        console.error('❌ Error approving builder fee:', error);
+        setBuilderFeeError(error.message || 'Failed to approve builder fee');
+        setOrderError('Failed to approve builder fee: ' + (error.message || error));
+      } finally {
+        setApprovingBuilderFee(false);
+      }
       return;
     }
 
@@ -1829,35 +1833,22 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div>
         )} */}
 
-        {/* Builder Fee Approval Button (now above trade button) */}
-        {isConnected && isOnboarded && !builderFeeApproved && (
+
+
+        {/* Builder Fee Error/Success Display */}
+        {isConnected && isOnboarded && (builderFeeError || builderFeeSuccess) && (
           <div className='px-4 mt-2'>
-            {/* Builder Fee Error Display */}
             {builderFeeError && (
               <div className="mb-2 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-xs">
                 <p className="text-red-400">{builderFeeError}</p>
               </div>
             )}
 
-            {/* Builder Fee Success Display */}
             {builderFeeSuccess && (
               <div className="mb-2 p-2 bg-green-900 bg-opacity-30 border border-green-600 rounded text-xs">
                 <p className="text-green-400">{builderFeeSuccess}</p>
               </div>
             )}
-
-            <button
-              onClick={handleApproveBuilderFee}
-              disabled={approvingBuilderFee || checkingBuilderFee}
-              className="w-full py-2 px-4 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors cursor-pointer"
-            >
-              {approvingBuilderFee 
-                ? 'Approving Builder Fee...' 
-                : checkingBuilderFee 
-                ? 'Checking Status...'
-                : 'Approve Builder Fee'
-              }
-            </button>
           </div>
         )}
 
@@ -1868,7 +1859,6 @@ const [applyToAll, setApplyToAll] = useState(false);
           disabled={
             isPlacingOrder ||
             (isConnected && (
-              !builderFeeApproved ||
               (isAgentWalletReady && !hasEnoughMargin) ||
               approvingAgent ||
               checkingAgentWallet
@@ -1894,12 +1884,16 @@ const [applyToAll, setApplyToAll] = useState(false);
             ? 'Connect Wallet'
             : isPlacingOrder 
             ? 'Placing Order...' 
+            : approvingBuilderFee
+            ? 'Approving Builder Fee...'
             : approvingAgent
             ? 'Enabling Trade...'
             : checkingAgentWallet
             ? 'Checking...'
             : !isOnboarded
             ? 'Onboard to Hyperliquid'
+            : !builderFeeApproved
+            ? 'Approve Builder Fee'
             : !isAgentWalletReady
             ? 'Enable Trade'
             : !hasEnoughMargin
