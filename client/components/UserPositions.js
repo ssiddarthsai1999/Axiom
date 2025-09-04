@@ -171,10 +171,19 @@ const UserPositions = ({ className = '' }) => {
       const formattedOrders = webData2Data.openOrders.map(order => {
         const isReduceOnly = order.reduceOnly || false;
         const hasTrigger = !!(order.triggerCondition);
-        
+        let direction = 'N/A';
+        if (order.side === 'A' && order.reduceOnly) {
+          direction = 'Close Long';
+        } else if (order.side === 'B' && order.reduceOnly) {
+          direction = 'Close Short';
+        } else if (order.side === 'A' && !order.reduceOnly) {
+          direction = 'Long';
+        } else if (order.side === 'B' && !order.reduceOnly) {
+          direction = 'Short';
+        }
         return {
           symbol: order.coin,
-          side: order.side === 'A' ? 'Buy' : 'Sell',
+          direction: direction,
           type: order.orderType,
           size: parseFloat(order.sz),
           originalSize: parseFloat(order.origSz),
@@ -1321,9 +1330,9 @@ const UserPositions = ({ className = '' }) => {
                         <td className="p-3 font-medium text-left">{order.symbol}</td>
                         <td className="p-3">
                           <span className={`px-2 py-1 text-xs rounded ${
-                            order.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
+                            order.direction === 'Long' ? 'text-green-400' : 'text-red-400'
                           }`}>
-                            {order.side}
+                            {order.direction}
                           </span>
                         </td>
                         <td className="p-3 text-left text-gray-300">{order.size}</td>
