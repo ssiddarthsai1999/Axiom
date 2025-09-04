@@ -450,7 +450,7 @@ const formatFunding = (funding) => {
 
                       {/* Last Price */}
                       <div className="w-full text-center text-[#E5E5E5] font-mono text-[12px] font-[400] leading-[24px] ">
-                        {token.price ? numeral(token.price).format('0,0.000') : 'N/A'}
+                        {token.price ? formatPrice(token.price) : 'N/A'}
                       </div>
 
                       {/* 24hr Change */}
