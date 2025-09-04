@@ -1341,7 +1341,7 @@ const UserPositions = ({ className = '' }) => {
                         <td className="p-3 text-left font-mono">{order.price}</td>
                         <td className="p-3 text-left font-mono">{order.reduceOnly ? 'Yes' : 'No'}</td>
                         <td className="p-3 text-left font-mono">
-                          {order.triggerCondition}
+                          {order.triggerCondition || 'N/A'}
                         </td>
                         <td className="p-3 text-left">
                           <button
