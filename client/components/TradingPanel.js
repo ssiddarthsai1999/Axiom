@@ -182,7 +182,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
     try {
       // Get asset index for the selected symbol
-      const assetIndex = getAssetIndexBySymbol(selectedSymbol);
+      const assetIndex = assetInfo.index;
       
       // Determine if cross margin based on marginMode
       const isCross = marginMode === 'cross';
