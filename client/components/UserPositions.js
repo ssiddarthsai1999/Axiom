@@ -1312,7 +1312,7 @@ const UserPositions = ({ className = '' }) => {
                   ) : (
                     openOrders.map((order, index) => (
                       <tr key={`${order.orderId}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
-                        <td className="p-3 font-medium">{order.symbol}</td>
+                        <td className="p-3 font-medium text-left">{order.symbol}</td>
                         <td className="p-3">
                           <span className={`px-2 py-1 text-xs rounded ${
                             order.side === 'Buy' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
@@ -1320,19 +1320,19 @@ const UserPositions = ({ className = '' }) => {
                             {order.side}
                           </span>
                         </td>
-                        <td className="p-3 text-gray-300">{order.type}</td>
-                        <td className="p-3 text-right font-mono">{formatNumber(order.size, 4)}</td>
-                        <td className="p-3 text-right font-mono">${formatNumber(order.price)}</td>
-                        <td className="p-3 text-right font-mono">{formatNumber(order.filled, 4)}</td>
-                        <td className="p-3 text-right font-mono">{formatNumber(order.remaining, 4)}</td>
-                        <td className="p-3 text-center">
+                        <td className="p-3 text-left text-gray-300">{order.type}</td>
+                        <td className="p-3 text-left font-mono">{formatNumber(order.size, 4)}</td>
+                        <td className="p-3 text-left font-mono">${formatNumber(order.price)}</td>
+                        <td className="p-3 text-left font-mono">{formatNumber(order.filled, 4)}</td>
+                        <td className="p-3 text-left font-mono">{formatNumber(order.remaining, 4)}</td>
+                        <td className="p-3 text-left">
                           {order.reduceOnly ? (
                             <span className="px-2 py-1 text-xs bg-orange-900 text-orange-400 rounded">RO</span>
                           ) : (
                             <span className="text-gray-500">—</span>
                           )}
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 text-left">
                           <button
                             onClick={() => cancelOrder(order.orderId, order.symbol)}
                             disabled={loading}
