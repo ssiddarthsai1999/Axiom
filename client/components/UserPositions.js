@@ -175,11 +175,13 @@ const UserPositions = ({ className = '' }) => {
         return {
           symbol: order.coin,
           side: order.side === 'A' ? 'Buy' : 'Sell',
-          type: order.orderType || 'Limit',
-          size: parseFloat(order.sz || 0),
-          price: parseFloat(order.limitPx || 0),
-          filled: parseFloat(order.sz || 0) - parseFloat(order.sz || 0), // webData2 doesn't provide filled amount
-          remaining: parseFloat(order.sz || 0),
+          type: order.orderType,
+          size: parseFloat(order.sz),
+          originalSize: parseFloat(order.origSz),
+          price: order.limitPx,
+          orderValue: parseFloat(order.limitPx) * parseFloat(order.sz),
+          filled: parseFloat(order.sz) - parseFloat(order.sz), // webData2 doesn't provide filled amount
+          remaining: parseFloat(order.sz),
           orderId: order.oid,
           timestamp: order.timestamp,
           triggerCondition: order.triggerCondition || 'N/A',
@@ -1295,14 +1297,16 @@ const UserPositions = ({ className = '' }) => {
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="border-b border-[#1F1E23]">
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Symbol</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Side</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Time</th>
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Type</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Direction</th>
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Original Size</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Order Value</th>
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Filled</th>
-                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Remaining</th>
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Reduce Only</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trigger Conditions</th>
                     <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Action</th>
                   </tr>
                 </thead>
@@ -1312,6 +1316,8 @@ const UserPositions = ({ className = '' }) => {
                   ) : (
                     openOrders.map((order, index) => (
                       <tr key={`${order.orderId}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-3 font-medium text-left">{formatTradeTime(order.timestamp)}</td>
+                        <td className="p-3 font-medium text-left">{order.type}</td>
                         <td className="p-3 font-medium text-left">{order.symbol}</td>
                         <td className="p-3">
                           <span className={`px-2 py-1 text-xs rounded ${
@@ -1320,17 +1326,13 @@ const UserPositions = ({ className = '' }) => {
                             {order.side}
                           </span>
                         </td>
-                        <td className="p-3 text-left text-gray-300">{order.type}</td>
-                        <td className="p-3 text-left font-mono">{formatNumber(order.size, 4)}</td>
-                        <td className="p-3 text-left font-mono">${formatNumber(order.price)}</td>
-                        <td className="p-3 text-left font-mono">{formatNumber(order.filled, 4)}</td>
-                        <td className="p-3 text-left font-mono">{formatNumber(order.remaining, 4)}</td>
-                        <td className="p-3 text-left">
-                          {order.reduceOnly ? (
-                            <span className="px-2 py-1 text-xs bg-orange-900 text-orange-400 rounded">RO</span>
-                          ) : (
-                            <span className="text-gray-500">—</span>
-                          )}
+                        <td className="p-3 text-left text-gray-300">{order.size}</td>
+                        <td className="p-3 text-left font-mono">{order.originalSize}</td>
+                        <td className="p-3 text-left font-mono">${order.orderValue}</td>
+                        <td className="p-3 text-left font-mono">{order.price}</td>
+                        <td className="p-3 text-left font-mono">{order.reduceOnly ? 'Yes' : 'No'}</td>
+                        <td className="p-3 text-left font-mono">
+                          {order.triggerCondition}
                         </td>
                         <td className="p-3 text-left">
                           <button
