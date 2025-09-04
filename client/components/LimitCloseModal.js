@@ -1,23 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import numeral from 'numeral';
 
-const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }) => {
+const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, webData2Data, getMidPriceFromWebData2, onConfirm }) => {
   const [limitPrice, setLimitPrice] = useState('');
   const [sizePercentage, setSizePercentage] = useState(100);
   const [customSize, setCustomSize] = useState('');
   const [estimatedPnl, setEstimatedPnl] = useState(0);
   const [assetInfo, setAssetInfo] = useState(null);
+  const [sizeUnit, setSizeUnit] = useState('coin'); // 'coin' or 'usd'
 
   useEffect(() => {
-    if (isOpen && position && currentPrice) {
-      // Set default limit price to current market price
-      setLimitPrice(currentPrice.toString());
+    if (isOpen && position) {
+      // Start with empty limit price - user can click "Mid" to set it
+      setLimitPrice('');
       setSizePercentage(100);
       setCustomSize(Math.abs(position.size).toString());
       // Fetch asset info for decimal validation
       fetchAssetInfo();
     }
-  }, [isOpen, position, currentPrice]);
+  }, [isOpen, position]);
 
   // Fetch asset info for decimal validation
   const fetchAssetInfo = async () => {
@@ -58,12 +59,28 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
     }
   };
 
+  // Convert between coin size and USD value
+  const convertSizeToCoin = useCallback((usdValue) => {
+    if (!currentPrice || !usdValue) return 0;
+    return usdValue / currentPrice;
+  }, [currentPrice]);
+
+  const convertSizeToUSD = useCallback((coinValue) => {
+    if (!currentPrice || !coinValue) return 0;
+    return coinValue * currentPrice;
+  }, [currentPrice]);
+
   useEffect(() => {
     // Calculate estimated PNL
     if (position && limitPrice && customSize) {
       const closePrice = parseFloat(limitPrice);
-      const closeSize = parseFloat(customSize);
+      let closeSize = parseFloat(customSize);
       const entryPrice = position.entryPrice;
+      
+      // Convert USD to coin size if needed for PNL calculation
+      if (sizeUnit === 'usd') {
+        closeSize = convertSizeToCoin(closeSize);
+      }
       
       if (closePrice && closeSize && entryPrice) {
         let pnl;
@@ -75,7 +92,7 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
         setEstimatedPnl(pnl);
       }
     }
-  }, [position, limitPrice, customSize]);
+  }, [position, limitPrice, customSize, sizeUnit, currentPrice, convertSizeToCoin]);
 
   // Utility function to validate and format decimal places for SIZE
   const formatSizeToMaxDecimals = (value, szDecimals) => {
@@ -163,29 +180,68 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
   const handlePercentageChange = (percentage) => {
     setSizePercentage(percentage);
     if (position) {
-      const newSize = (Math.abs(position.size) * percentage / 100);
-      const formattedSize = assetInfo 
-        ? formatSizeToMaxDecimals(newSize.toString(), assetInfo.szDecimals)
-        : newSize.toString();
-      setCustomSize(formattedSize);
+      const newCoinSize = (Math.abs(position.size) * percentage / 100);
+      
+      if (sizeUnit === 'usd') {
+        // Calculate USD value based on percentage of position
+        const usdValue = convertSizeToUSD(newCoinSize);
+        setCustomSize(usdValue.toFixed(2)); // USD typically uses 2 decimal places
+      } else {
+        // Calculate coin size based on percentage
+        const formattedSize = assetInfo 
+          ? formatSizeToMaxDecimals(newCoinSize.toString(), assetInfo.szDecimals)
+          : newCoinSize.toString();
+        setCustomSize(formattedSize);
+      }
     }
   };
 
   const handleSizeChange = (value) => {
     if (!assetInfo) {
-      setCustomSize(value);
+      // Format the value based on the selected unit
+      let formattedValue = value;
+      if (sizeUnit === 'usd') {
+        // For USD, allow up to 2 decimal places
+        const num = parseFloat(value);
+        if (!isNaN(num)) {
+          formattedValue = num.toFixed(2);
+        }
+      }
+      setCustomSize(formattedValue);
+      
       if (position) {
-        const percentage = (parseFloat(value) / Math.abs(position.size)) * 100;
+        let coinSize = parseFloat(value);
+        if (sizeUnit === 'usd') {
+          coinSize = convertSizeToCoin(parseFloat(value));
+        }
+        const percentage = (coinSize / Math.abs(position.size)) * 100;
         setSizePercentage(Math.min(100, Math.max(0, percentage)));
       }
       return;
     }
     
-    const formattedValue = formatSizeToMaxDecimals(value, assetInfo.szDecimals);
+    // Format the value based on the selected unit and asset info
+    let formattedValue;
+    if (sizeUnit === 'usd') {
+      // For USD, allow up to 2 decimal places
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        formattedValue = num.toFixed(2);
+      } else {
+        formattedValue = value;
+      }
+    } else {
+      // For coin, use asset-specific decimal formatting
+      formattedValue = formatSizeToMaxDecimals(value, assetInfo.szDecimals);
+    }
     setCustomSize(formattedValue);
     
     if (position) {
-      const percentage = (parseFloat(formattedValue) / Math.abs(position.size)) * 100;
+      let coinSize = parseFloat(formattedValue);
+      if (sizeUnit === 'usd') {
+        coinSize = convertSizeToCoin(parseFloat(formattedValue));
+      }
+      const percentage = (coinSize / Math.abs(position.size)) * 100;
       setSizePercentage(Math.min(100, Math.max(0, percentage)));
     }
   };
@@ -200,6 +256,40 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
     setLimitPrice(formattedValue);
   };
 
+  const handleMidPriceClick = () => {
+    if (position && webData2Data && getMidPriceFromWebData2) {
+      const midPrice = getMidPriceFromWebData2(webData2Data, position.coin);
+      if (midPrice) {
+        const formattedPrice = assetInfo 
+          ? formatPriceToMaxDecimals(midPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
+          : midPrice.toString();
+        setLimitPrice(formattedPrice);
+      }
+    }
+  };
+
+  const handleSizeUnitChange = (unit) => {
+    setSizeUnit(unit);
+    if (customSize && position) {
+      let newValue;
+      if (unit === 'usd') {
+        // Convert current coin size to USD
+        const coinSize = parseFloat(customSize);
+        const usdValue = convertSizeToUSD(coinSize);
+        newValue = usdValue.toFixed(2); // USD uses 2 decimal places
+      } else {
+        // Convert current USD value to coin size
+        const usdValue = parseFloat(customSize);
+        const coinSize = convertSizeToCoin(usdValue);
+        // Format with proper decimal places for the coin
+        newValue = assetInfo 
+          ? formatSizeToMaxDecimals(coinSize.toString(), assetInfo.szDecimals)
+          : coinSize.toString();
+      }
+      setCustomSize(newValue);
+    }
+  };
+
   const formatNumber = (value, decimals = 2) => {
     if (typeof value !== 'number' || isNaN(value)) return '0.00';
     return numeral(value).format(`0,0.${'0'.repeat(decimals)}`);
@@ -212,8 +302,13 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
       return;
     }
 
-    const sizeValue = parseFloat(customSize);
+    let sizeValue = parseFloat(customSize);
     const priceValue = parseFloat(limitPrice);
+
+    // Convert USD to coin size if needed
+    if (sizeUnit === 'usd') {
+      sizeValue = convertSizeToCoin(sizeValue);
+    }
 
     if (isNaN(sizeValue) || sizeValue <= 0) {
       alert('Please enter a valid size');
@@ -277,23 +372,41 @@ const LimitCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm })
               placeholder="0.00"
               step="0.0001"
             />
-            <span className="absolute right-3 top-2 text-[#00D4AA] text-sm">Mid</span>
+            <button
+              type="button"
+              onClick={handleMidPriceClick}
+              className="absolute right-3 top-2 text-[#00D4AA] text-sm hover:text-[#00B894] cursor-pointer transition-colors"
+            >
+              Mid
+            </button>
           </div>
         </div>
 
         {/* Size Input */}
         <div className="mb-4">
           <label className="block text-gray-400 text-sm mb-2">Size</label>
-          <div className="relative">
-            <input
-              type="number"
-              value={customSize}
-              onChange={(e) => handleSizeChange(e.target.value)}
-              className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white focus:outline-none focus:border-[#00D4AA] pr-16"
-              placeholder="0.00"
-              step="0.0001"
-            />
-            <span className="absolute right-3 top-2 text-gray-400 text-sm">{position.coin}</span>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="number"
+                value={customSize}
+                onChange={(e) => handleSizeChange(e.target.value)}
+                className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white focus:outline-none focus:border-[#00D4AA] pr-16"
+                placeholder="0.00"
+                step="0.0001"
+              />
+              <span className="absolute right-3 top-2 text-gray-400 text-sm">
+                {sizeUnit === 'coin' ? position.coin : 'USD'}
+              </span>
+            </div>
+            <select
+              value={sizeUnit}
+              onChange={(e) => handleSizeUnitChange(e.target.value)}
+              className="bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white focus:outline-none focus:border-[#00D4AA] text-sm"
+            >
+              <option value="coin">{position.coin}</option>
+              <option value="usd">USD</option>
+            </select>
           </div>
         </div>
 

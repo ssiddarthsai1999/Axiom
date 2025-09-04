@@ -26,6 +26,8 @@ const UserPositions = ({ className = '' }) => {
   const [limitCloseModalOpen, setLimitCloseModalOpen] = useState(false);
   const [marketCloseModalOpen, setMarketCloseModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(null);
+  const [modalCurrentPrice, setModalCurrentPrice] = useState(0);
+  const [webData2Data, setWebData2Data] = useState(null);
   const [sortField, setSortField] = useState('time');
   const [sortDirection, setSortDirection] = useState('desc');
   const { address, isConnected } = useAccount();
@@ -84,6 +86,9 @@ const UserPositions = ({ className = '' }) => {
   // Handle webData2 updates from websocket
   const handleWebData2Update = (webData2Data) => {
     if (!webData2Data || !webData2Data.clearinghouseState) return;
+    
+    // Store webData2 data for use in modals
+    setWebData2Data(webData2Data);
     
     console.log('🔍 Received webData2 update:', {
       positions: webData2Data.clearinghouseState.assetPositions?.length || 0,
@@ -303,6 +308,21 @@ const UserPositions = ({ className = '' }) => {
         if (assetCtx.markPx) {
           // console.log(`🔍 Mark price from webData2 for ${coin} (index ${tokenIndex}):`, assetCtx.markPx);
           return parseFloat(assetCtx.markPx);
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper function to get mid price from webData2 assetCtxs by token index
+  const getMidPriceFromWebData2 = (webData2Data, coin) => {
+    if (webData2Data.assetCtxs && webData2Data.meta && webData2Data.meta.universe) {
+      // Find the token index in the universe array
+      const tokenIndex = webData2Data.meta.universe.findIndex(token => token.name === coin);
+      if (tokenIndex !== -1 && webData2Data.assetCtxs[tokenIndex]) {
+        const assetCtx = webData2Data.assetCtxs[tokenIndex];
+        if (assetCtx.midPx) {
+          return parseFloat(assetCtx.midPx);
         }
       }
     }
@@ -727,22 +747,30 @@ const UserPositions = ({ className = '' }) => {
 
   const openLimitCloseModal = (position) => {
     setSelectedPosition(position);
+    // Capture the current price at the time of opening the modal
+    const currentPrice = currentPrices[position.coin] || position.markPrice;
+    setModalCurrentPrice(currentPrice);
     setLimitCloseModalOpen(true);
   };
 
   const closeLimitCloseModal = () => {
     setLimitCloseModalOpen(false);
     setSelectedPosition(null);
+    setModalCurrentPrice(0);
   };
 
   const openMarketCloseModal = (position) => {
     setSelectedPosition(position);
+    // Capture the current price at the time of opening the modal
+    const currentPrice = currentPrices[position.coin] || position.markPrice;
+    setModalCurrentPrice(currentPrice);
     setMarketCloseModalOpen(true);
   };
 
   const closeMarketCloseModal = () => {
     setMarketCloseModalOpen(false);
     setSelectedPosition(null);
+    setModalCurrentPrice(0);
   };
 
   const handleClosePosition = async (orderData) => {
@@ -1530,7 +1558,9 @@ const UserPositions = ({ className = '' }) => {
         isOpen={limitCloseModalOpen}
         onClose={closeLimitCloseModal}
         position={selectedPosition}
-        currentPrice={selectedPosition ? currentPrices[selectedPosition.coin] || selectedPosition.markPrice : 0}
+        currentPrice={modalCurrentPrice}
+        webData2Data={webData2Data}
+        getMidPriceFromWebData2={getMidPriceFromWebData2}
         onConfirm={handleClosePosition}
       />
 
@@ -1539,6 +1569,7 @@ const UserPositions = ({ className = '' }) => {
         isOpen={marketCloseModalOpen}
         onClose={closeMarketCloseModal}
         position={selectedPosition}
+        currentPrice={modalCurrentPrice}
         onConfirm={handleClosePosition}
       />
     </div>
