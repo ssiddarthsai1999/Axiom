@@ -279,7 +279,7 @@ class WebSocketService {
       
       const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
       const currentPrice = parseFloat(assetCtx.markPx) || 0;
-      const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      const change24h = currentPrice - prevPrice;
       
       const tokenData = {
         symbol: token.name,
@@ -312,6 +312,62 @@ class WebSocketService {
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
+    });
+  }
+
+  // Process market data from webData2 (same structure as metaAndAssetCtxs)
+  processWebData2MarketData(meta, assetCtxs) {
+    if (!meta || !meta.universe || !assetCtxs) return;
+    
+    const universe = meta.universe;
+    const processedTokens = universe.map((token, index) => {
+      const assetCtx = assetCtxs[index];
+      if (!assetCtx || !token) return null;
+      
+      const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
+      const currentPrice = parseFloat(assetCtx.markPx) || 0;
+      const change24h = currentPrice - prevPrice;
+      
+      const tokenData = {
+        symbol: token.name,
+        maxLeverage: token.maxLeverage || 1,
+        szDecimals: token.szDecimals || 4,
+        onlyIsolated: token.onlyIsolated || false,
+        price: currentPrice,
+        oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
+        change24h: change24h,
+        volume24h: parseFloat(assetCtx.dayNtlVlm) || 0,
+        openInterest: parseFloat(assetCtx.openInterest) || 0,
+        funding: parseFloat(assetCtx.funding) || 0,
+        prevDayPx: prevPrice,
+        premium: parseFloat(assetCtx.premium) || 0,
+        midPx: parseFloat(assetCtx.midPx) || currentPrice,
+        lastUpdated: Date.now(),
+        fullAssetCtx: assetCtx
+      };
+
+      // Cache the token data
+      this.marketDataCache.set(token.name, tokenData);
+      this.assetContextCache.set(token.name, assetCtx);
+      
+      return tokenData;
+    }).filter(Boolean);
+    
+    const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
+    
+    // Update universe data for future use
+    this.universeData = universe;
+    this.isInitialized = true;
+    
+    // Broadcast the market data update
+    this.broadcast('marketDataUpdate', {
+      tokens: sortedTokens,
+      timestamp: Date.now()
+    });
+    
+    console.log('✓ Market data updated from webData2:', {
+      tokenCount: sortedTokens.length,
+      timestamp: new Date().toLocaleTimeString()
     });
   }
 
@@ -444,7 +500,7 @@ class WebSocketService {
     if (cachedData) {
       const currentPrice = this.allMidsCache.get(symbol) || cachedData.price;
       const prevPrice = parseFloat(assetCtxData.prevDayPx) || cachedData.prevDayPx;
-      const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      const change24h = currentPrice - prevPrice;
       
       const updatedData = {
         ...cachedData,
@@ -464,7 +520,7 @@ class WebSocketService {
       // Broadcast updated market data for this symbol
       this.broadcast(`marketData:${symbol}`, updatedData);
       
-      console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
+      // console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
     }
   }
 
@@ -600,6 +656,11 @@ class WebSocketService {
       ...webData2Data,
       lastUpdated: Date.now()
     });
+    
+    // Process market data from webData2 if available
+    if (webData2Data.meta && webData2Data.assetCtxs) {
+      this.processWebData2MarketData(webData2Data.meta, webData2Data.assetCtxs);
+    }
     
     // Broadcast the user data update
     this.broadcast(userDataKey, webData2Data);

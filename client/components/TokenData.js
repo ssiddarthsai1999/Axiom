@@ -127,14 +127,17 @@ const formatFunding = (funding) => {
 };
 
   // Format price change (amount + percentage)
-  const formatPriceChange = (currentPrice, change24h) => {
+  const formatPriceChange = (currentPrice, change24h, prevDayPx = null) => {
     if (!currentPrice || (!change24h && change24h !== 0)) return { amount: '0.00', percentage: '0.00%' };
     
-    const changeAmount = (currentPrice * change24h) / 100;
-    const changePercentage = `${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%`;
+    // change24h is now the absolute change (markPx - prevDayPx)
+    const changeAmount = change24h;
+    const prevDayPrice = prevDayPx || (currentPrice - change24h); // Use provided prevDayPx or calculate it
+    const changePercentage = prevDayPrice > 0 ? (change24h / prevDayPrice) * 100 : 0;
     const changeAmountFormatted = `${change24h >= 0 ? '+' : ''}${changeAmount.toFixed(2)}`;
+    const changePercentageFormatted = `${changePercentage >= 0 ? '+' : ''}${changePercentage.toFixed(2)}%`;
     
-    return { amount: changeAmountFormatted, percentage: changePercentage };
+    return { amount: changeAmountFormatted, percentage: changePercentageFormatted };
   };
 
   const formatPrice = (num) => {
@@ -266,7 +269,7 @@ const formatFunding = (funding) => {
                         <div className={`font-mono text-xs ${
                           (token.change24h || 0) >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
                         }`}>
-                          {formatPriceChange(token.price, token.change24h).percentage}
+                          {formatPriceChange(token.price, token.change24h, token.prevDayPx).percentage}
                         </div>
                       </div>
                     </button>
@@ -282,7 +285,7 @@ const formatFunding = (funding) => {
               <span className={`font-mono font-[400] text-[12px] leading-[17px] tracking-[0px] ${
                 marketData.change24h >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
               }`}>
-                {formatPriceChange(marketData.price, marketData.change24h).percentage}
+                {formatPriceChange(marketData.price, marketData.change24h, marketData.prevDayPx).percentage}
               </span>
               <span className="text-[#E5E5E5] font-[500] text-[24px] leading-[30px] tracking-[-0.48px]">
                 {numeral(marketData.price).format('0,0')}
@@ -454,7 +457,7 @@ const formatFunding = (funding) => {
                       <div className={`w-full text-center truncate px-1  font-mono text-[12px] font-[400] leading-[24px] ${
                         (token.change24h || 0) >= 0 ? 'text-[#65FB9E]' : 'text-red-400'
                       }`}>
-                        <div className="text-sm">{formatPriceChange(token.price, token.change24h).amount} / {formatPriceChange(token.price, token.change24h).percentage}</div>
+                        <div className="text-sm">{formatPriceChange(token.price, token.change24h, token.prevDayPx).amount} / {formatPriceChange(token.price, token.change24h, token.prevDayPx).percentage}</div>
                       </div>
 
                       {/* 8hr Funding */}
@@ -491,10 +494,10 @@ const formatFunding = (funding) => {
           }`}>
             <div>
               {/* {
-              formatPriceChange(marketData.price, marketData.change24h).amount
+              formatPriceChange(marketData.price, marketData.change24h, marketData.prevDayPx).amount
               }  */}
               {/* /  */}
-              {formatPriceChange(marketData.price, marketData.change24h).percentage}</div>
+              {formatPriceChange(marketData.price, marketData.change24h, marketData.prevDayPx).percentage}</div>
           </span>
         </div>
 

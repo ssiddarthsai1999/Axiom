@@ -40,7 +40,7 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
             // Calculate 24h change
             const prevPrice = parseFloat(assetCtx.prevDayPx);
             const currentPrice = parseFloat(assetCtx.markPx);
-            const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+            const change24h = currentPrice - prevPrice;
             
             return {
               symbol: token.name,

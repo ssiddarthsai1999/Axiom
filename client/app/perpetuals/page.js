@@ -9,6 +9,7 @@ import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
 import FavoritesTicker from '@/components/FavoritesTicker'
 import WebSocketService from '@/hooks/WebsocketService'
+import { useAccount } from 'wagmi'
 
 function TradingPage() {
   // Centralized state
@@ -25,6 +26,9 @@ function TradingPage() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('positions');
   const [wsConnected, setWsConnected] = useState(false);
+  
+  // Get wallet address for webData2 subscription
+  const { address } = useAccount();
   
   // Track current tick size parameters to avoid duplicate subscriptions
   const [currentTickSizeParams, setCurrentTickSizeParams] = useState(null);
@@ -174,7 +178,7 @@ function TradingPage() {
         setMarketData(prev => {
           if (prev && prev.symbol === bookData.coin) {
             const prevPrice = prev.prevDayPx || prev.price;
-            const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
+            const change24h = midPrice - prevPrice;
             
             return {
               ...prev,
@@ -189,7 +193,7 @@ function TradingPage() {
         setAllMarketData(prev => prev.map(token => {
           if (token.symbol === bookData.coin) {
             const prevPrice = token.prevDayPx || token.price;
-            const change24h = prevPrice > 0 ? ((midPrice - prevPrice) / prevPrice) * 100 : 0;
+            const change24h = midPrice - prevPrice;
             
             return {
               ...token,
@@ -217,7 +221,7 @@ function TradingPage() {
         if (newPrice) {
           const price = parseFloat(newPrice);
           const prevPrice = token.prevDayPx || token.price;
-          const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+          const change24h = price - prevPrice;
           
           return {
             ...token,
@@ -235,7 +239,7 @@ function TradingPage() {
           if (selectedTokenPrice) {
             const price = parseFloat(selectedTokenPrice);
             const prevPrice = prev.prevDayPx || prev.price;
-            const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+            const change24h = price - prevPrice;
 
             return {
               ...prev,
@@ -274,6 +278,45 @@ function TradingPage() {
     }
   }, []);
 
+  // Handle market data updates from webData2
+  const handleMarketDataUpdate = useCallback((data) => {
+    console.log('🔧 handleMarketDataUpdate: data:', data);
+    if (data.tokens && Array.isArray(data.tokens)) {
+      const sortedTokens = data.tokens.sort((a, b) => b.volume24h - a.volume24h);
+      setAvailableTokens(sortedTokens);
+      setAllMarketData(sortedTokens);
+
+      // Update current market data if it matches selected symbol
+      const selectedTokenData = sortedTokens.find(token => token.symbol === selectedSymbol);
+      if (selectedTokenData) {
+        setMarketData({
+          symbol: selectedTokenData.symbol,
+          name: getTokenName(selectedTokenData.symbol),
+          price: selectedTokenData.price,
+          oraclePrice: selectedTokenData.oraclePrice,
+          change24h: selectedTokenData.change24h,
+          volume24h: selectedTokenData.volume24h,
+          openInterest: selectedTokenData.openInterest,
+          funding: selectedTokenData.funding,
+          prevDayPx: selectedTokenData.prevDayPx,
+          dayNtlVlm: selectedTokenData.volume24h,
+          premium: selectedTokenData.premium,
+          midPx: selectedTokenData.midPx,
+          maxLeverage: selectedTokenData.maxLeverage,
+          szDecimals: selectedTokenData.szDecimals,
+          onlyIsolated: selectedTokenData.onlyIsolated
+        });
+      }
+      
+      setLoading(false);
+      console.log('✓ Market data updated from webData2 in page.js:', {
+        tokenCount: sortedTokens.length,
+        selectedSymbol: selectedSymbol,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
+  }, [selectedSymbol, getTokenName]);
+
   const handleOrderBookUpdate = useCallback((data) => {
     if (data.data && data.data.coin) {
       updateOrderBook(data.data);
@@ -289,81 +332,6 @@ function TradingPage() {
 
 
 
-  // Initial market data fetch - memoized
-  const fetchInitialMarketData = useCallback(async () => {
-    try {
-      const response = await fetch('https://api.hyperliquid.xyz/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'metaAndAssetCtxs' })
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch market data');
-
-      const data = await response.json();
-      
-      if (Array.isArray(data) && data.length >= 2) {
-        const universe = data[0].universe;
-        const assetCtxs = data[1];
-        
-        const processedTokens = universe.map((token, index) => {
-          const assetCtx = assetCtxs[index];
-          if (!assetCtx) return null;
-          
-          const prevPrice = parseFloat(assetCtx.prevDayPx);
-          const currentPrice = parseFloat(assetCtx.markPx);
-          const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
-          
-          return {
-            symbol: token.name,
-            maxLeverage: token.maxLeverage,
-            szDecimals: token.szDecimals,
-            onlyIsolated: token.onlyIsolated || false,
-            price: parseFloat(assetCtx.markPx),
-            oraclePrice: parseFloat(assetCtx.oraclePx),
-            change24h: change24h,
-            volume24h: parseFloat(assetCtx.dayNtlVlm),
-            openInterest: parseFloat(assetCtx.openInterest),
-            funding: parseFloat(assetCtx.funding),
-            prevDayPx: parseFloat(assetCtx.prevDayPx),
-            premium: parseFloat(assetCtx.premium),
-            midPx: parseFloat(assetCtx.midPx),
-            fullAssetCtx: assetCtx
-          };
-        }).filter(Boolean);
-        
-        const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
-        setAvailableTokens(sortedTokens);
-        setAllMarketData(sortedTokens);
-
-        const selectedTokenData = sortedTokens.find(token => token.symbol === selectedSymbol);
-        if (selectedTokenData) {
-          setMarketData({
-            symbol: selectedTokenData.symbol,
-            name: getTokenName(selectedTokenData.symbol),
-            price: selectedTokenData.price,
-            oraclePrice: selectedTokenData.oraclePrice,
-            change24h: selectedTokenData.change24h,
-            volume24h: selectedTokenData.volume24h,
-            openInterest: selectedTokenData.openInterest,
-            funding: selectedTokenData.funding,
-            prevDayPx: selectedTokenData.prevDayPx,
-            dayNtlVlm: selectedTokenData.volume24h,
-            premium: selectedTokenData.premium,
-            midPx: selectedTokenData.midPx,
-            maxLeverage: selectedTokenData.maxLeverage,
-            szDecimals: selectedTokenData.szDecimals,
-            onlyIsolated: selectedTokenData.onlyIsolated
-          });
-        }
-      }
-      setLoading(false);
-    } catch (err) {
-      console.error('Error fetching initial market data:', err);
-      setError(err.message);
-      setLoading(false);
-    }
-  }, [selectedSymbol, getTokenName]);
 
   // Handle symbol changes
   const handleSymbolChange = useCallback((newSymbol) => {
@@ -412,7 +380,7 @@ function TradingPage() {
 
     // Clear order book for new symbol
     setOrderBookData({ asks: [], bids: [] });
-  }, [selectedSymbol, allMarketData, getTokenName]);
+  }, [selectedSymbol, allMarketData, getTokenName, currentTickSizeParams]);
 
   // Handle tick size changes
   const handleTickSizeChange = useCallback((tickSizeOption) => {
@@ -444,6 +412,7 @@ function TradingPage() {
     // Subscribe to WebSocket events
     ws.subscribe('connection', handleConnection);
     ws.subscribe('allMids', handleAllMidsUpdate);
+    ws.subscribe('marketDataUpdate', handleMarketDataUpdate);
     
     // Connect to WebSocket
     ws.connect();
@@ -452,9 +421,10 @@ function TradingPage() {
     return () => {
       ws.unsubscribe('connection', handleConnection);
       ws.unsubscribe('allMids', handleAllMidsUpdate);
+      ws.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
       ws.disconnect();
     };
-  }, []); // Empty dependency array - runs only once
+  }, [handleConnection, handleAllMidsUpdate, handleMarketDataUpdate]); // Include all dependencies
 
   // Subscribe to symbol-specific WebSocket events
   useEffect(() => {
@@ -490,10 +460,13 @@ function TradingPage() {
     };
   }, [selectedSymbol, wsConnected, currentTickSizeParams, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
-  // Fetch initial data - runs only once
+  // Subscribe to webData2 for market data when address is available
   useEffect(() => {
-    fetchInitialMarketData();
-  }, []); // Empty dependency array
+    if (address && wsConnected) {
+      console.log('🎯 Subscribing to webData2 for market data with address:', address);
+      wsService.current.subscribeToUserData(address);
+    }
+  }, [address, wsConnected]);
 
 
   // Update trade timestamps periodically
@@ -593,7 +566,7 @@ function TradingPage() {
         </div>
       </div>
     );
-  }, [activeTab, selectedSymbol, orderBookData, tradesData, marketData]);
+  }, [activeTab, selectedSymbol, orderBookData, tradesData, marketData, handleTickSizeChange]);
 
   if (loading) {
     return (
@@ -622,7 +595,6 @@ function TradingPage() {
               onClick={() => {
                 setError(null);
                 setLoading(true);
-                fetchInitialMarketData();
                 wsService.current.connect();
               }}
               className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
