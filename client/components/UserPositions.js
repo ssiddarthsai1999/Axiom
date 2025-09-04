@@ -16,6 +16,7 @@ const UserPositions = ({ className = '' }) => {
   const [balances, setBalances] = useState([]);
   const [openOrders, setOpenOrders] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [orderHistory, setOrderHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -72,8 +73,10 @@ const UserPositions = ({ className = '' }) => {
     return () => {
       if (wsService.current && address) {
         wsService.current.unsubscribeFromUserData(address);
+        wsService.current.unsubscribeFromUserHistoricalOrders(address);
         wsService.current.unsubscribe('webData2', handleWebData2Update);
         wsService.current.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
+        wsService.current.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);
       }
     };
   }, [isConnected, address]);
@@ -359,6 +362,7 @@ const UserPositions = ({ className = '' }) => {
       setBalances([]);
       setOpenOrders([]);
       setTrades([]);
+      setOrderHistory([]);
       setError(null);
       setCurrentPrices({});
     }
@@ -370,6 +374,91 @@ const UserPositions = ({ className = '' }) => {
       fetchTradeHistory();
     }
   }, [isConnected, address, activeTab]);
+
+  // Subscribe to order history when Order History tab is selected
+  useEffect(() => {
+    if (isConnected && address && activeTab === 'Order History') {
+      subscribeToOrderHistory();
+    }
+  }, [isConnected, address, activeTab]);
+
+  // Subscribe to order history via WebSocket
+  const subscribeToOrderHistory = () => {
+    if (!wsService.current || !address) return;
+    
+    try {
+      console.log('🔍 Subscribing to order history...');
+      
+      // Subscribe to userHistoricalOrders
+      wsService.current.subscribeToUserHistoricalOrders(address);
+      
+      // Subscribe to order history updates
+      wsService.current.subscribe('userHistoricalOrders', handleOrderHistoryUpdate);
+      
+    } catch (error) {
+      console.error('❌ Error subscribing to order history:', error);
+    }
+  };
+
+  // Handle order history updates from WebSocket
+  const handleOrderHistoryUpdate = (historicalOrdersData) => {
+    if (!historicalOrdersData || !historicalOrdersData.orderHistory) return;
+    
+    console.log('🔍 Received order history update:', {
+      orderCount: historicalOrdersData.orderHistory.length,
+      isSnapshot: historicalOrdersData.isSnapshot,
+      user: historicalOrdersData.user
+    });
+    
+    // Format the order history data to match our table structure
+    const formattedOrderHistory = historicalOrdersData.orderHistory.map(orderEntry => {
+      const order = orderEntry.order;
+      const status = orderEntry.status;
+      
+      // Determine direction based on side
+      let direction = 'Unknown';
+      if (order.side === 'B') {
+        direction = order.reduceOnly ? 'Close Short' : 'Long';
+      } else if (order.side === 'A') {
+        direction = order.reduceOnly ? 'Close Long' : 'Short';
+      }
+      
+      // Determine order type
+      let orderType = order.orderType || 'Market';
+      if (order.isTrigger) {
+        if (order.orderType === 'Market') {
+          orderType = order.triggerCondition && order.triggerCondition.includes('above') ? 'Take Profit Market' : 'Stop Market';
+        }
+      }
+      
+      // Format filled size
+      const filledSize = order.sz === '0.0' ? '--' : order.sz;
+      
+      // Determine if there are TP/SL orders (children)
+      const hasTPSL = order.children && order.children.length > 0;
+      
+      return {
+        time: order.timestamp,
+        type: orderType,
+        coin: order.coin,
+        direction: direction,
+        size: order.origSz || order.sz,
+        filledSize: filledSize,
+        orderValue: 'Market',
+        price: 'Market',
+        reduceOnly: order.reduceOnly || false,
+        triggerConditions: order.triggerCondition || 'N/A',
+        tpsl: hasTPSL ? 'View' : '--',
+        status: status,
+        orderId: order.oid.toString(),
+        rawOrder: order,
+        rawStatus: orderEntry
+      };
+    });
+    
+    setOrderHistory(formattedOrderHistory);
+    console.log('✅ Order history updated from WebSocket:', formattedOrderHistory);
+  };
 
   // Fetch trade history
   const fetchTradeHistory = async () => {
@@ -930,7 +1019,8 @@ const UserPositions = ({ className = '' }) => {
   const tabs = [
     { name: 'Positions', count: positions.length },
     { name: 'Open Orders', count: openOrders.length },
-    { name: 'Trade History', count: trades.length }
+    { name: 'Trade History', count: trades.length },
+    { name: 'Order History', count: orderHistory.length }
   ];
 
   // Get connection status for display
@@ -1037,6 +1127,31 @@ const UserPositions = ({ className = '' }) => {
                 </thead>
                 <tbody>
                   <EmptyStateMessage message="Connect your wallet to view your trades" />
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'Order History' && (
+              <table className="w-full text-[14px]">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Time</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Type</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Direction</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Filled Size</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Order Value</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
+                    <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Reduce Only</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trigger Conditions</th>
+                    {/* <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">TP/SL</th> */}
+                    <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Status</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Order ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <EmptyStateMessage message="Connect your wallet to view your order history" />
                 </tbody>
               </table>
             )}
@@ -1293,6 +1408,94 @@ const UserPositions = ({ className = '' }) => {
                           {trade.closedPnl === 0 ? '-0.00 USDC' : 
                            `${trade.closedPnl > 0 ? '' : ''}${formatNumber(trade.closedPnl, 2)} USDC`}
                         </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* Order History Tab */}
+            {activeTab === 'Order History' && (
+              <table className="w-full text-[14px]">
+                <thead>
+                  <tr className="border-b border-[#1F1E23]">
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px] cursor-pointer hover:text-white" onClick={() => handleSort('time')}>
+                      Time {getSortIcon('time')}
+                    </th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Type</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Coin</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Direction</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Size</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Filled Size</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Order Value</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Price</th>
+                    <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Reduce Only</th>
+                    <th className="text-left p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Trigger Conditions</th>
+                    {/* <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">TP/SL</th> */}
+                    <th className="text-center p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Status</th>
+                    <th className="text-right p-3 font-[400] text-[#919093] text-[12px] leading-[16px]">Order ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderHistory.length === 0 ? (
+                    <EmptyStateMessage message="No order history yet" />
+                  ) : (
+                    orderHistory.map((order, index) => (
+                      <tr key={`${order.orderId}-${index}`} className="border-b border-[#1F1E23] hover:bg-[#1a1a1f] transition-colors">
+                        <td className="p-3 text-gray-300 font-mono text-sm">
+                          {formatTradeTime(order.time)}
+                        </td>
+                        <td className="p-3 text-gray-300">{order.type}</td>
+                        <td className="p-3 font-medium">
+                          <span className={`${
+                            order.direction.includes('Close') ?'text-red-400' : 'text-green-400'
+                          }`}>
+                            {order.coin}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`${
+                            order.direction.includes('Close') ? 'text-red-400' : 'text-green-400'
+                          }`}>
+                            {order.direction}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-mono">{order.size}</td>
+                        <td className="p-3 text-right font-mono">{order.filledSize}</td>
+                        <td className="p-3 text-gray-300">{order.orderValue}</td>
+                        <td className="p-3 text-gray-300">{order.price}</td>
+                        <td className="p-3 text-center">
+                          {order.reduceOnly ? (
+                            <span className="text-green-400">Yes</span>
+                          ) : (
+                            <span className="text-gray-500">No</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-gray-300 text-sm">
+                          {order.triggerConditions === 'N/A' ? (
+                            <span className="text-gray-500">N/A</span>
+                          ) : (
+                            <span className="text-blue-400">{order.triggerConditions}</span>
+                          )}
+                        </td>
+                        {/* <td className="p-3 text-center">
+                          {order.tpsl === '--' ? (
+                            <span className="text-gray-500">--</span>
+                          ) : (
+                            <span className="text-cyan-400 cursor-pointer hover:text-white transition-colors">View</span>
+                          )}
+                        </td> */}
+                        <td className="p-3 text-center">
+                          <span className={`${
+                            order.status === 'Filled' || order.status === 'Triggered' ? 'text-green-400' :
+                            order.status === 'Open' || order.status === 'Canceled' ? 'text-cyan-400' :
+                            order.status === 'Rejected' ? 'text-red-400' : 'text-gray-300'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-mono text-gray-400 text-sm">{order.orderId}</td>
                       </tr>
                     ))
                   )}

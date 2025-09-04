@@ -26,6 +26,8 @@ class WebSocketService {
     // User data cache for real-time updates
     this.userDataCache = new Map(); // Cache for webData2 user data
     this.userSubscriptions = new Set(); // Track user subscriptions
+    this.userHistoricalOrdersCache = new Map(); // Cache for user historical orders
+    this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
     
     // WebSocket POST request counter for unique IDs
     this.requestId = 1;
@@ -123,6 +125,12 @@ class WebSocketService {
         // Handle webData2 updates for user account data
         if (data.channel === 'webData2' && data.data) {
           this.handleWebData2Update(data.data);
+          return;
+        }
+
+        // Handle userHistoricalOrders updates
+        if (data.channel === 'userHistoricalOrders' && data.data) {
+          this.handleUserHistoricalOrdersUpdate(data.data);
           return;
         }
 
@@ -520,6 +528,66 @@ class WebSocketService {
     return false;
   }
 
+  // Subscribe to userHistoricalOrders for a specific user
+  subscribeToUserHistoricalOrders(userAddress) {
+    if (!this.isConnected) {
+      console.log(`Cannot subscribe to userHistoricalOrders for ${userAddress}: WebSocket not connected`);
+      return false;
+    }
+    
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    if (!this.userHistoricalOrdersSubscriptions.has(historicalOrdersKey)) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'userHistoricalOrders', 
+          user: userAddress
+        }
+      };
+      
+      console.log(`🎯 Subscribing to userHistoricalOrders for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.userHistoricalOrdersSubscriptions.add(historicalOrdersKey);
+        console.log(`✓ Subscribed to userHistoricalOrders for user ${userAddress}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to userHistoricalOrders for user ${userAddress}`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to userHistoricalOrders for user ${userAddress}`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from userHistoricalOrders for a specific user
+  unsubscribeFromUserHistoricalOrders(userAddress) {
+    if (!this.isConnected) return false;
+    
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    if (this.userHistoricalOrdersSubscriptions.has(historicalOrdersKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'userHistoricalOrders', 
+          user: userAddress
+        }
+      });
+      
+      if (success) {
+        this.userHistoricalOrdersSubscriptions.delete(historicalOrdersKey);
+        console.log(`✓ Unsubscribed from userHistoricalOrders for user ${userAddress}`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   // Handle webData2 updates for user account data
   handleWebData2Update(webData2Data) {
     if (!webData2Data || !webData2Data.user) return;
@@ -547,6 +615,32 @@ class WebSocketService {
     });
   }
 
+  // Handle userHistoricalOrders updates
+  handleUserHistoricalOrdersUpdate(historicalOrdersData) {
+    if (!historicalOrdersData || !historicalOrdersData.user) return;
+    
+    const userAddress = historicalOrdersData.user;
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    // Cache the historical orders data
+    this.userHistoricalOrdersCache.set(userAddress, {
+      ...historicalOrdersData,
+      lastUpdated: Date.now()
+    });
+    
+    // Broadcast the historical orders update
+    this.broadcast(historicalOrdersKey, historicalOrdersData);
+    
+    // Also broadcast to general userHistoricalOrders subscribers
+    this.broadcast('userHistoricalOrders', historicalOrdersData);
+    
+    console.log(`✓ Updated userHistoricalOrders data for user ${userAddress}:`, {
+      orderHistoryCount: historicalOrdersData.orderHistory?.length || 0,
+      isSnapshot: historicalOrdersData.isSnapshot,
+      timestamp: new Date().toLocaleTimeString()
+    });
+  }
+
   // Get cached user data for a specific address
   getCachedUserData(userAddress) {
     return this.userDataCache.get(userAddress);
@@ -555,6 +649,16 @@ class WebSocketService {
   // Get all cached user data
   getAllCachedUserData() {
     return Array.from(this.userDataCache.values());
+  }
+
+  // Get cached historical orders data for a specific address
+  getCachedHistoricalOrders(userAddress) {
+    return this.userHistoricalOrdersCache.get(userAddress);
+  }
+
+  // Get all cached historical orders data
+  getAllCachedHistoricalOrders() {
+    return Array.from(this.userHistoricalOrdersCache.values());
   }
 
   subscribeToSymbol(symbol, tickSizeParams = null) {
@@ -685,8 +789,10 @@ class WebSocketService {
       reconnectAttempts: this.reconnectAttempts,
       activeSubscriptions: Array.from(this.activeSubscriptions),
       userSubscriptions: Array.from(this.userSubscriptions),
+      userHistoricalOrdersSubscriptions: Array.from(this.userHistoricalOrdersSubscriptions),
       cachedTokens: this.marketDataCache.size,
-      cachedUsers: this.userDataCache.size
+      cachedUsers: this.userDataCache.size,
+      cachedHistoricalOrders: this.userHistoricalOrdersCache.size
     };
   }
 
