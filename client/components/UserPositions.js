@@ -120,7 +120,7 @@ const UserPositions = ({ className = '' }) => {
                              parseFloat(pos.position.positionValue || 0) / Math.abs(size);
             const pnl = parseFloat(pos.position.unrealizedPnl || 0);
             const positionValue = Math.abs(size) * markPrice;
-          const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
+          // const pnlPercentage = entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (size > 0 ? 1 : -1) : 0;
           const leverage = parseFloat(pos.position.leverage?.value || 1);
           const marginUsed = parseFloat(pos.position.marginUsed || 0);
           const tokenIndex = webData2Data.meta.universe.findIndex(token => token.name === pos.position.coin);
@@ -132,7 +132,7 @@ const UserPositions = ({ className = '' }) => {
             entryPrice: entryPrice,
             markPrice: markPrice,
             pnl: pnl,
-            pnlPercentage: pnlPercentage,
+            // pnlPercentage: pnlPercentage,
             leverage: leverage,
             leverageType: pos.position.leverage?.type,
             liquidationPrice: parseFloat(pos.liquidationPx || 0),
@@ -234,14 +234,14 @@ const UserPositions = ({ className = '' }) => {
         const newMarkPrice = priceMap[pos.coin];
         if (newMarkPrice && newMarkPrice !== pos.markPrice) {
           const newPositionValue = Math.abs(pos.size) * newMarkPrice;
-          const newPnlPercentage = pos.entryPrice > 0 ? 
-            ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
+          // const newPnlPercentage = pos.entryPrice > 0 ? 
+          //   ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
           
           return {
             ...pos,
             markPrice: newMarkPrice,
             positionValue: newPositionValue,
-            pnlPercentage: newPnlPercentage
+            // pnlPercentage: newPnlPercentage
           };
         }
         return pos;
@@ -262,8 +262,8 @@ const UserPositions = ({ className = '' }) => {
           const newMarkPrice = parseFloat(assetCtx.markPx);
           if (newMarkPrice !== pos.markPrice) {
             const newPositionValue = Math.abs(pos.size) * newMarkPrice;
-            const newPnlPercentage = pos.entryPrice > 0 ? 
-              ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
+            // const newPnlPercentage = pos.entryPrice > 0 ? 
+            //   ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
             
             console.log(`🔄 Updated mark price for ${pos.coin} (index ${tokenIndex}): ${pos.markPrice} → ${newMarkPrice}`);
             
@@ -271,7 +271,7 @@ const UserPositions = ({ className = '' }) => {
               ...pos,
               markPrice: newMarkPrice,
               positionValue: newPositionValue,
-              pnlPercentage: newPnlPercentage
+              // pnlPercentage: newPnlPercentage
             };
           }
         }
@@ -1210,7 +1210,7 @@ const UserPositions = ({ className = '' }) => {
                         <td className="p-3 text-right font-mono">{position.markPrice}</td>
                         <td className="p-3 text-right font-mono">
                           <div className={position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
-                            <div>{position.pnl >= 0 ? '+' : ''}${formatNumber(position.pnl)} ({position.pnlPercentage >= 0 ? '+' : ''}{formatNumber(position.pnlPercentage, 2)}%)</div>
+                            <div>{position.pnl >= 0 ? '+' : ''}${formatNumber(position.pnl)} ({position.returnOnEquity*100 >= 0 ? '+' : ''}{formatNumber(position.returnOnEquity*100, 1)}%)</div>
                           </div>
                         </td>
                         <td className="p-3 text-right font-mono">{position.liquidationPrice > 0 ? formatNumber(position.liquidationPrice) : 'N/A'}</td>
