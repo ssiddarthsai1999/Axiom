@@ -23,6 +23,12 @@ class WebSocketService {
     this.universeData = null; // Meta data about tokens
     this.isInitialized = false;
     
+    // User data cache for real-time updates
+    this.userDataCache = new Map(); // Cache for webData2 user data
+    this.userSubscriptions = new Set(); // Track user subscriptions
+    this.userHistoricalOrdersCache = new Map(); // Cache for user historical orders
+    this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
+    
     // WebSocket POST request counter for unique IDs
     this.requestId = 1;
   }
@@ -113,6 +119,18 @@ class WebSocketService {
         }
         
         if (data.channel === 'subscriptionResponse') {
+          return;
+        }
+
+        // Handle webData2 updates for user account data
+        if (data.channel === 'webData2' && data.data) {
+          this.handleWebData2Update(data.data);
+          return;
+        }
+
+        // Handle userHistoricalOrders updates
+        if (data.channel === 'userHistoricalOrders' && data.data) {
+          this.handleUserHistoricalOrdersUpdate(data.data);
           return;
         }
 
@@ -261,7 +279,7 @@ class WebSocketService {
       
       const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
       const currentPrice = parseFloat(assetCtx.markPx) || 0;
-      const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      const change24h = currentPrice - prevPrice;
       
       const tokenData = {
         symbol: token.name,
@@ -294,6 +312,62 @@ class WebSocketService {
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
+    });
+  }
+
+  // Process market data from webData2 (same structure as metaAndAssetCtxs)
+  processWebData2MarketData(meta, assetCtxs) {
+    if (!meta || !meta.universe || !assetCtxs) return;
+    
+    const universe = meta.universe;
+    const processedTokens = universe.map((token, index) => {
+      const assetCtx = assetCtxs[index];
+      if (!assetCtx || !token) return null;
+      
+      const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
+      const currentPrice = parseFloat(assetCtx.markPx) || 0;
+      const change24h = currentPrice - prevPrice;
+      
+      const tokenData = {
+        symbol: token.name,
+        maxLeverage: token.maxLeverage || 1,
+        szDecimals: token.szDecimals || 4,
+        onlyIsolated: token.onlyIsolated || false,
+        price: currentPrice,
+        oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
+        change24h: change24h,
+        volume24h: parseFloat(assetCtx.dayNtlVlm) || 0,
+        openInterest: parseFloat(assetCtx.openInterest) || 0,
+        funding: parseFloat(assetCtx.funding) || 0,
+        prevDayPx: prevPrice,
+        premium: parseFloat(assetCtx.premium) || 0,
+        midPx: parseFloat(assetCtx.midPx) || currentPrice,
+        lastUpdated: Date.now(),
+        fullAssetCtx: assetCtx
+      };
+
+      // Cache the token data
+      this.marketDataCache.set(token.name, tokenData);
+      this.assetContextCache.set(token.name, assetCtx);
+      
+      return tokenData;
+    }).filter(Boolean);
+    
+    const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
+    
+    // Update universe data for future use
+    this.universeData = universe;
+    this.isInitialized = true;
+    
+    // Broadcast the market data update
+    this.broadcast('marketDataUpdate', {
+      tokens: sortedTokens,
+      timestamp: Date.now()
+    });
+    
+    console.log('✓ Market data updated from webData2:', {
+      tokenCount: sortedTokens.length,
+      timestamp: new Date().toLocaleTimeString()
     });
   }
 
@@ -426,7 +500,7 @@ class WebSocketService {
     if (cachedData) {
       const currentPrice = this.allMidsCache.get(symbol) || cachedData.price;
       const prevPrice = parseFloat(assetCtxData.prevDayPx) || cachedData.prevDayPx;
-      const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      const change24h = currentPrice - prevPrice;
       
       const updatedData = {
         ...cachedData,
@@ -446,11 +520,209 @@ class WebSocketService {
       // Broadcast updated market data for this symbol
       this.broadcast(`marketData:${symbol}`, updatedData);
       
-      console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
+      // console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
     }
   }
 
-  subscribeToSymbol(symbol) {
+  // Subscribe to webData2 for user account data (positions, balances, orders)
+  subscribeToUserData(userAddress) {
+    if (!this.isConnected) {
+      console.log(`Cannot subscribe to webData2 for ${userAddress}: WebSocket not connected`);
+      return false;
+    }
+    
+    const userDataKey = `webData2:${userAddress}`;
+    
+    if (!this.userSubscriptions.has(userDataKey)) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: userAddress
+        }
+      };
+      
+      console.log(`🎯 Subscribing to webData2 for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.userSubscriptions.add(userDataKey);
+        console.log(`✓ Subscribed to webData2 for user ${userAddress}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to webData2 for user ${userAddress}`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to webData2 for user ${userAddress}`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from webData2 for a specific user
+  unsubscribeFromUserData(userAddress) {
+    if (!this.isConnected) return false;
+    
+    const userDataKey = `webData2:${userAddress}`;
+    
+    if (this.userSubscriptions.has(userDataKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: userAddress
+        }
+      });
+      
+      if (success) {
+        this.userSubscriptions.delete(userDataKey);
+        console.log(`✓ Unsubscribed from webData2 for user ${userAddress}`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Subscribe to userHistoricalOrders for a specific user
+  subscribeToUserHistoricalOrders(userAddress) {
+    if (!this.isConnected) {
+      console.log(`Cannot subscribe to userHistoricalOrders for ${userAddress}: WebSocket not connected`);
+      return false;
+    }
+    
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    if (!this.userHistoricalOrdersSubscriptions.has(historicalOrdersKey)) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'userHistoricalOrders', 
+          user: userAddress
+        }
+      };
+      
+      console.log(`🎯 Subscribing to userHistoricalOrders for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.userHistoricalOrdersSubscriptions.add(historicalOrdersKey);
+        console.log(`✓ Subscribed to userHistoricalOrders for user ${userAddress}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to userHistoricalOrders for user ${userAddress}`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to userHistoricalOrders for user ${userAddress}`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from userHistoricalOrders for a specific user
+  unsubscribeFromUserHistoricalOrders(userAddress) {
+    if (!this.isConnected) return false;
+    
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    if (this.userHistoricalOrdersSubscriptions.has(historicalOrdersKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'userHistoricalOrders', 
+          user: userAddress
+        }
+      });
+      
+      if (success) {
+        this.userHistoricalOrdersSubscriptions.delete(historicalOrdersKey);
+        console.log(`✓ Unsubscribed from userHistoricalOrders for user ${userAddress}`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Handle webData2 updates for user account data
+  handleWebData2Update(webData2Data) {
+    if (!webData2Data || !webData2Data.user) return;
+    
+    const userAddress = webData2Data.user;
+    const userDataKey = `webData2:${userAddress}`;
+    
+    // Cache the user data
+    this.userDataCache.set(userAddress, {
+      ...webData2Data,
+      lastUpdated: Date.now()
+    });
+    
+    // Process market data from webData2 if available
+    if (webData2Data.meta && webData2Data.assetCtxs) {
+      this.processWebData2MarketData(webData2Data.meta, webData2Data.assetCtxs);
+    }
+    
+    // Broadcast the user data update
+    this.broadcast(userDataKey, webData2Data);
+    
+    // Also broadcast to general webData2 subscribers
+    this.broadcast('webData2', webData2Data);
+    
+    console.log(`✓ Updated webData2 data for user ${userAddress}:`, {
+      positions: webData2Data.clearinghouseState?.assetPositions?.length || 0,
+      orders: webData2Data.openOrders?.length || 0,
+      accountValue: webData2Data.clearinghouseState?.marginSummary?.accountValue,
+      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString()
+    });
+  }
+
+  // Handle userHistoricalOrders updates
+  handleUserHistoricalOrdersUpdate(historicalOrdersData) {
+    if (!historicalOrdersData || !historicalOrdersData.user) return;
+    
+    const userAddress = historicalOrdersData.user;
+    const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
+    
+    // Cache the historical orders data
+    this.userHistoricalOrdersCache.set(userAddress, {
+      ...historicalOrdersData,
+      lastUpdated: Date.now()
+    });
+    
+    // Broadcast the historical orders update
+    this.broadcast(historicalOrdersKey, historicalOrdersData);
+    
+    // Also broadcast to general userHistoricalOrders subscribers
+    this.broadcast('userHistoricalOrders', historicalOrdersData);
+    
+    console.log(`✓ Updated userHistoricalOrders data for user ${userAddress}:`, {
+      orderHistoryCount: historicalOrdersData.orderHistory?.length || 0,
+      isSnapshot: historicalOrdersData.isSnapshot,
+      timestamp: new Date().toLocaleTimeString()
+    });
+  }
+
+  // Get cached user data for a specific address
+  getCachedUserData(userAddress) {
+    return this.userDataCache.get(userAddress);
+  }
+
+  // Get all cached user data
+  getAllCachedUserData() {
+    return Array.from(this.userDataCache.values());
+  }
+
+  // Get cached historical orders data for a specific address
+  getCachedHistoricalOrders(userAddress) {
+    return this.userHistoricalOrdersCache.get(userAddress);
+  }
+
+  // Get all cached historical orders data
+  getAllCachedHistoricalOrders() {
+    return Array.from(this.userHistoricalOrdersCache.values());
+  }
+
+  subscribeToSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
     const l2BookKey = `l2Book:${symbol}`;
@@ -458,18 +730,40 @@ class WebSocketService {
     
     let subscribed = false;
     
-    // Only subscribe if not already subscribed
-    if (!this.activeSubscriptions.has(l2BookKey)) {
-      const success = this.send({
-        method: 'subscribe',
-        subscription: { type: 'l2Book', coin: symbol }
+    // Always unsubscribe from existing l2Book subscription first to avoid duplicates
+    if (this.activeSubscriptions.has(l2BookKey)) {
+      // Internal unsubscribe without calling the public method to avoid recursion
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      this.send({
+        method: 'unsubscribe',
+        subscription: subscriptionParams
       });
-      
-      if (success) {
-        this.activeSubscriptions.add(l2BookKey);
-        console.log(`✓ Subscribed to l2Book for ${symbol}`);
-        subscribed = true;
+      this.activeSubscriptions.delete(l2BookKey);
+      console.log(`✓ Internal unsubscribed from l2Book for ${symbol}`);
+    }
+    
+    // Create new subscription
+    const subscriptionParams = { type: 'l2Book', coin: symbol };
+    
+    // Add tick size parameters if provided
+    if (tickSizeParams) {
+      if (tickSizeParams.nSigFigs !== undefined) {
+        subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
       }
+      if (tickSizeParams.mantissa !== undefined) {
+        subscriptionParams.mantissa = tickSizeParams.mantissa;
+      }
+    }
+    
+    const success = this.send({
+      method: 'subscribe',
+      subscription: subscriptionParams
+    });
+    
+    if (success) {
+      this.activeSubscriptions.add(l2BookKey);
+      console.log(`✓ Subscribed to l2Book for ${symbol} with params:`, subscriptionParams);
+      subscribed = true;
     }
 
     if (!this.activeSubscriptions.has(tradesKey)) {
@@ -488,7 +782,7 @@ class WebSocketService {
     return subscribed;
   }
 
-  unsubscribeFromSymbol(symbol) {
+  unsubscribeFromSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
     const l2BookKey = `l2Book:${symbol}`;
@@ -498,14 +792,26 @@ class WebSocketService {
     
     // Only unsubscribe if currently subscribed
     if (this.activeSubscriptions.has(l2BookKey)) {
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      
+      // Add tick size parameters if provided (must match subscription)
+      if (tickSizeParams) {
+        if (tickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
+        }
+        if (tickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = tickSizeParams.mantissa;
+        }
+      }
+      
       const success = this.send({
         method: 'unsubscribe',
-        subscription: { type: 'l2Book', coin: symbol }
+        subscription: subscriptionParams
       });
       
       if (success) {
         this.activeSubscriptions.delete(l2BookKey);
-        console.log(`✓ Unsubscribed from l2Book for ${symbol}`);
+        console.log(`✓ Unsubscribed from l2Book for ${symbol} with params:`, subscriptionParams);
         unsubscribed = true;
       }
     }
@@ -543,7 +849,11 @@ class WebSocketService {
       isInitialized: this.isInitialized,
       reconnectAttempts: this.reconnectAttempts,
       activeSubscriptions: Array.from(this.activeSubscriptions),
-      cachedTokens: this.marketDataCache.size
+      userSubscriptions: Array.from(this.userSubscriptions),
+      userHistoricalOrdersSubscriptions: Array.from(this.userHistoricalOrdersSubscriptions),
+      cachedTokens: this.marketDataCache.size,
+      cachedUsers: this.userDataCache.size,
+      cachedHistoricalOrders: this.userHistoricalOrdersCache.size
     };
   }
 
