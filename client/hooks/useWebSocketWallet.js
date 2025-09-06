@@ -10,26 +10,25 @@ export const useWebSocketWallet = () => {
   const { address, isConnected } = useAccount();
   const wsService = WebSocketService.getInstance();
 
-  // Connect WebSocket with initial wallet address if available
+  // Connect WebSocket and manage wallet address
   useEffect(() => {
     if (!wsService.isConnected) {
-      wsService.connect(address);
+      // Only connect if we have a valid address or if we explicitly want to connect to public data
+      if (address && isConnected) {
+        wsService.connect(address);
+      } else {
+        // Connect to public data if no wallet address
+        wsService.connect();
+      }
     } else {
-      // If WebSocket is already connected but we have a wallet address, update it
-      if (address) {
+      // If WebSocket is already connected, update wallet address based on connection status
+      if (isConnected && address) {
         wsService.updateWalletAddress(address);
+      } else {
+        wsService.updateWalletAddress(null);
       }
     }
-  }, []); // Only run once on mount
-
-  useEffect(() => {
-    // Update WebSocket service with current wallet address
-    if (isConnected && address) {
-      wsService.updateWalletAddress(address);
-    } else {
-      wsService.updateWalletAddress(null);
-    }
-  }, [isConnected, address, wsService]);
+  }, [isConnected, address, wsService]); // Run when connection status or address changes
 
   return {
     currentWalletAddress: wsService.getCurrentWalletAddress(),
