@@ -285,7 +285,6 @@ function TradingPage() {
 
   // Handle market data updates from webData2
   const handleMarketDataUpdate = useCallback((data) => {
-    console.log('🔧 handleMarketDataUpdate: data:', data);
     if (data.tokens && Array.isArray(data.tokens)) {
       const sortedTokens = data.tokens.sort((a, b) => b.volume24h - a.volume24h);
       setAvailableTokens(sortedTokens);
@@ -314,11 +313,6 @@ function TradingPage() {
       }
       
       setLoading(false);
-      console.log('✓ Market data updated from webData2 in page.js:', {
-        tokenCount: sortedTokens.length,
-        selectedSymbol: selectedSymbol,
-        timestamp: new Date().toLocaleTimeString()
-      });
     }
   }, [selectedSymbol, getTokenName]);
 
@@ -367,7 +361,6 @@ function TradingPage() {
         szDecimals: tokenData.szDecimals,
         onlyIsolated: tokenData.onlyIsolated
       };
-      console.log(`🔧 handleSymbolChange: setting marketData for ${newSymbol}:`, newMarketData);
       setMarketData(newMarketData);
     } else {
       console.log(`🔧 handleSymbolChange: No tokenData found for ${newSymbol}`);
@@ -437,7 +430,6 @@ function TradingPage() {
     
     // Unsubscribe from previous symbol's asset context if it exists
     if (previousSymbolRef.current && previousSymbolRef.current !== selectedSymbol) {
-      console.log(`🔄 Unsubscribing from previous symbol's asset context: ${previousSymbolRef.current}`);
       ws.unsubscribeFromAssetCtx(previousSymbolRef.current);
     }
     
@@ -466,7 +458,6 @@ function TradingPage() {
     previousSymbolRef.current = selectedSymbol;
     
     return () => {
-      console.log(`=== Cleaning up WebSocket subscriptions for ${selectedSymbol} ===`);
       ws.unsubscribe(l2BookKey, handleOrderBookUpdate);
       ws.unsubscribe(tradesKey, handleTradesUpdate);
       ws.unsubscribe(assetCtxKey, handleAssetCtxUpdate);

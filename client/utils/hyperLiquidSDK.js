@@ -488,7 +488,6 @@ export async function getAgentWallets(signer, isMainnet = true) {
     const infoClient = initializeInfoClient(isMainnet);
 
     const extraAgents = await infoClient.extraAgents({ user: address });
-    console.log('Extra agents for', address, ':', extraAgents);
     return extraAgents;
   } catch (error) {
     console.error('❌ Error getting agent wallets:', error);

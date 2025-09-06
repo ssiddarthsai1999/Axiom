@@ -50,8 +50,6 @@ class WebSocketService {
       this.subscribers.set(key, new Set());
     }
     this.subscribers.get(key).add(callback);
-    console.log(`✅ Subscribed to ${key}, total subscribers: ${this.subscribers.get(key).size}`);
-    console.log(`✅ All active subscriptions:`, Array.from(this.subscribers.keys()));
   }
 
   unsubscribe(key, callback) {
@@ -59,12 +57,9 @@ class WebSocketService {
       this.subscribers.get(key).delete(callback);
       if (this.subscribers.get(key).size === 0) {
         this.subscribers.delete(key);
-        console.log(`🗑️ Removed subscription for ${key}`);
       } else {
-        console.log(`🗑️ Unsubscribed from ${key}, remaining subscribers: ${this.subscribers.get(key).size}`);
       }
     }
-    console.log(`🗑️ All active subscriptions after unsubscribe:`, Array.from(this.subscribers.keys()));
   }
 
   broadcast(key, data) {
@@ -95,7 +90,6 @@ class WebSocketService {
 
   connect(initialWalletAddress = null) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
       return;
     }
 
@@ -115,10 +109,8 @@ class WebSocketService {
       
       // Check if we have an initial wallet address, otherwise subscribe to public data
       if (initialWalletAddress) {
-        console.log(`🎯 Initial wallet address provided: ${initialWalletAddress}`);
         this.updateWalletAddress(initialWalletAddress);
       } else {
-        console.log('🔌 No initial wallet address, subscribing to public data');
         this.subscribeToPublicData();
       }
     };
@@ -197,13 +189,11 @@ class WebSocketService {
       
       if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
         this.reconnectTimeout = setTimeout(() => {
           this.reconnectAttempts++;
           this.connect(this.currentWalletAddress);
         }, delay);
       } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.log('Max reconnection attempts reached');
         this.broadcast('connectionError', { error: 'Max reconnection attempts reached' });
       }
     };
@@ -259,7 +249,6 @@ class WebSocketService {
 
   // Initialize market data using WebSocket POST requests instead of REST API
   async initializeMarketData() {
-    console.log('Initializing market data via WebSocket...');
     
     // First, get the meta and asset contexts via WebSocket POST
     this.sendPost({ type: 'metaAndAssetCtxs' });
@@ -284,7 +273,6 @@ class WebSocketService {
         this.universeData = universe;
         this.processMetaAndAssetCtxs(universe, assetCtxs);
         this.isInitialized = true;
-        console.log('✓ Market data initialized via WebSocket');
       } else {
         console.warn('Invalid metaAndAssetCtxs response structure:', response);
       }
@@ -386,11 +374,7 @@ class WebSocketService {
       tokens: sortedTokens,
       timestamp: Date.now()
     });
-    
-    console.log('✓ Market data updated from webData2:', {
-      tokenCount: sortedTokens.length,
-      timestamp: new Date().toLocaleTimeString()
-    });
+
   }
 
   // Subscribe to allMids for real-time price updates
@@ -407,7 +391,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.add(allMidsKey);
-        console.log('✓ Subscribed to allMids for real-time price updates');
       }
     }
   }
@@ -428,7 +411,6 @@ class WebSocketService {
         
         if (success) {
           this.activeSubscriptions.add(activeAssetCtxKey);
-          console.log(`✓ Subscribed to activeAssetCtx for ${token.name}`);
         }
       }
     });
@@ -437,7 +419,6 @@ class WebSocketService {
   // Subscribe to activeAssetCtx for a specific symbol
   subscribeToAssetCtx(symbol) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to activeAssetCtx for ${symbol}: WebSocket not connected`);
       return false;
     }
     
@@ -454,19 +435,15 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to activeAssetCtx for ${symbol}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.activeSubscriptions.add(activeAssetCtxKey);
-        console.log(`✓ Subscribed to activeAssetCtx for ${symbol}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to activeAssetCtx for ${symbol}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to activeAssetCtx for ${symbol}`);
       return true;
     }
   }
@@ -489,14 +466,11 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.delete(activeAssetCtxKey);
-        console.log(`✓ Unsubscribed from activeAssetCtx for ${symbol}`);
         return true;
       } else {
-        console.log(`✗ Failed to unsubscribe from activeAssetCtx for ${symbol}`);
         return false;
       }
     } else {
-      console.log(`Not subscribed to activeAssetCtx for ${symbol}`);
       return true;
     }
   }
@@ -572,14 +546,12 @@ class WebSocketService {
       // Broadcast updated market data for this symbol
       this.broadcast(`marketData:${symbol}`, updatedData);
       
-      // console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
     }
   }
 
   // Subscribe to public data (zero address) for market data
   subscribeToPublicData() {
     if (!this.isConnected) {
-      console.log('Cannot subscribe to public data: WebSocket not connected');
       return false;
     }
     
@@ -592,20 +564,16 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to public data (zero address):`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.isPublicDataSubscribed = true;
         this.userSubscriptions.add(`webData2:${this.zeroAddress}`);
-        console.log(`✓ Subscribed to public data (zero address)`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to public data (zero address)`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to public data (zero address)`);
       return true;
     }
   }
@@ -626,7 +594,6 @@ class WebSocketService {
       if (success) {
         this.isPublicDataSubscribed = false;
         this.userSubscriptions.delete(`webData2:${this.zeroAddress}`);
-        console.log(`✓ Unsubscribed from public data (zero address)`);
         return true;
       }
     }
@@ -637,7 +604,6 @@ class WebSocketService {
   // Subscribe to webData2 for user account data (positions, balances, orders)
   subscribeToUserData(userAddress) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to webData2 for ${userAddress}: WebSocket not connected`);
       return false;
     }
     
@@ -652,19 +618,15 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to webData2 for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.userSubscriptions.add(userDataKey);
-        console.log(`✓ Subscribed to webData2 for user ${userAddress}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to webData2 for user ${userAddress}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to webData2 for user ${userAddress}`);
       return true;
     }
   }
@@ -686,7 +648,6 @@ class WebSocketService {
       
       if (success) {
         this.userSubscriptions.delete(userDataKey);
-        console.log(`✓ Unsubscribed from webData2 for user ${userAddress}`);
         return true;
       }
     }
@@ -696,7 +657,6 @@ class WebSocketService {
 
   // Update wallet address and manage subscriptions
   updateWalletAddress(walletAddress) {
-    console.log(`🔄 Updating wallet address: ${this.currentWalletAddress} -> ${walletAddress}`);
     
     // If wallet is being disconnected (null or undefined)
     if (!walletAddress) {
@@ -711,7 +671,6 @@ class WebSocketService {
         }
         
         this.currentWalletAddress = null;
-        console.log('✓ Wallet disconnected, switched back to public data');
       }
       return;
     }
@@ -726,7 +685,6 @@ class WebSocketService {
       
       // Unsubscribe from public data since we now have user data
       if (this.isPublicDataSubscribed) {
-        console.log('🔄 Unsubscribing from public data to switch to user data');
         this.unsubscribeFromPublicData();
       }
       
@@ -735,7 +693,6 @@ class WebSocketService {
       this.subscribeToUserHistoricalOrders(walletAddress);
       
       this.currentWalletAddress = walletAddress;
-      console.log(`✓ Wallet connected: ${walletAddress}, switched from public data to user data`);
     }
   }
 
@@ -752,7 +709,6 @@ class WebSocketService {
   // Subscribe to userHistoricalOrders for a specific user
   subscribeToUserHistoricalOrders(userAddress) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to userHistoricalOrders for ${userAddress}: WebSocket not connected`);
       return false;
     }
     
@@ -767,19 +723,15 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to userHistoricalOrders for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.userHistoricalOrdersSubscriptions.add(historicalOrdersKey);
-        console.log(`✓ Subscribed to userHistoricalOrders for user ${userAddress}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to userHistoricalOrders for user ${userAddress}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to userHistoricalOrders for user ${userAddress}`);
       return true;
     }
   }
@@ -801,7 +753,6 @@ class WebSocketService {
       
       if (success) {
         this.userHistoricalOrdersSubscriptions.delete(historicalOrdersKey);
-        console.log(`✓ Unsubscribed from userHistoricalOrders for user ${userAddress}`);
         return true;
       }
     }
@@ -832,13 +783,7 @@ class WebSocketService {
     
     // Also broadcast to general webData2 subscribers
     this.broadcast('webData2', webData2Data);
-    
-    console.log(`✓ Updated webData2 data for user ${userAddress}:`, {
-      positions: webData2Data.clearinghouseState?.assetPositions?.length || 0,
-      orders: webData2Data.openOrders?.length || 0,
-      accountValue: webData2Data.clearinghouseState?.marginSummary?.accountValue,
-      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString()
-    });
+
   }
 
   // Handle userHistoricalOrders updates
@@ -859,12 +804,7 @@ class WebSocketService {
     
     // Also broadcast to general userHistoricalOrders subscribers
     this.broadcast('userHistoricalOrders', historicalOrdersData);
-    
-    console.log(`✓ Updated userHistoricalOrders data for user ${userAddress}:`, {
-      orderHistoryCount: historicalOrdersData.orderHistory?.length || 0,
-      isSnapshot: historicalOrdersData.isSnapshot,
-      timestamp: new Date().toLocaleTimeString()
-    });
+
   }
 
   // Get cached user data for a specific address
@@ -904,7 +844,6 @@ class WebSocketService {
         subscription: subscriptionParams
       });
       this.activeSubscriptions.delete(l2BookKey);
-      console.log(`✓ Internal unsubscribed from l2Book for ${symbol}`);
     }
     
     // Create new subscription
@@ -927,7 +866,6 @@ class WebSocketService {
     
     if (success) {
       this.activeSubscriptions.add(l2BookKey);
-      console.log(`✓ Subscribed to l2Book for ${symbol} with params:`, subscriptionParams);
       subscribed = true;
     }
 
@@ -939,7 +877,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.add(tradesKey);
-        console.log(`✓ Subscribed to trades for ${symbol}`);
         subscribed = true;
       }
     }
@@ -976,7 +913,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.delete(l2BookKey);
-        console.log(`✓ Unsubscribed from l2Book for ${symbol} with params:`, subscriptionParams);
         unsubscribed = true;
       }
     }
@@ -989,7 +925,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.delete(tradesKey);
-        console.log(`✓ Unsubscribed from trades for ${symbol}`);
         unsubscribed = true;
       }
     }
