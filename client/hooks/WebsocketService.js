@@ -266,7 +266,7 @@ class WebSocketService {
     
     // Subscribe to real-time updates
     this.subscribeToAllMids();
-    this.subscribeToAllActiveAssetCtx();
+    // Note: activeAssetCtx subscriptions are now managed per selected token
   }
 
   // Handle WebSocket POST responses
@@ -467,6 +467,36 @@ class WebSocketService {
       }
     } else {
       console.log(`Already subscribed to activeAssetCtx for ${symbol}`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from activeAssetCtx for a specific symbol
+  unsubscribeFromAssetCtx(symbol) {
+    if (!this.isConnected) return false;
+    
+    const activeAssetCtxKey = `activeAssetCtx:${symbol}`;
+    
+    if (this.activeSubscriptions.has(activeAssetCtxKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'activeAssetCtx', 
+          coin: symbol,
+          // user: '0x0000000000000000000000000000000000000000'
+        }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.delete(activeAssetCtxKey);
+        console.log(`✓ Unsubscribed from activeAssetCtx for ${symbol}`);
+        return true;
+      } else {
+        console.log(`✗ Failed to unsubscribe from activeAssetCtx for ${symbol}`);
+        return false;
+      }
+    } else {
+      console.log(`Not subscribed to activeAssetCtx for ${symbol}`);
       return true;
     }
   }

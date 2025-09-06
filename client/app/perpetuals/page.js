@@ -44,6 +44,7 @@ function TradingPage() {
   // Refs for optimization
   const wsService = useRef(WebSocketService.getInstance());
   const tradeHistoryRef = useRef(new Map()); // Change to Map for better symbol-based storage
+  const previousSymbolRef = useRef(null); // Track previous symbol for cleanup
   const maxTradesCount = 40;
   const lastOrderBookUpdate = useRef(0);
   const lastTradesUpdate = useRef(0);
@@ -434,6 +435,12 @@ function TradingPage() {
   useEffect(() => {
     const ws = wsService.current;
     
+    // Unsubscribe from previous symbol's asset context if it exists
+    if (previousSymbolRef.current && previousSymbolRef.current !== selectedSymbol) {
+      console.log(`🔄 Unsubscribing from previous symbol's asset context: ${previousSymbolRef.current}`);
+      ws.unsubscribeFromAssetCtx(previousSymbolRef.current);
+    }
+    
     // Subscribe to symbol-specific channels
     const l2BookKey = `l2Book:${selectedSymbol}`;
     const tradesKey = `trades:${selectedSymbol}`;
@@ -443,24 +450,27 @@ function TradingPage() {
     ws.subscribe(tradesKey, handleTradesUpdate);
     ws.subscribe(assetCtxKey, handleAssetCtxUpdate);
     
-    
-    
     // Subscribe to the symbol when connected
     if (wsConnected) {
       // Only subscribe if we don't have tick size parameters yet (initial subscription)
       if (!currentTickSizeParams) {
         ws.subscribeToSymbol(selectedSymbol);
       }
+      // Subscribe to asset context for the selected symbol only
       ws.subscribeToAssetCtx(selectedSymbol);
     } else {
       console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
     }
+    
+    // Update the previous symbol reference
+    previousSymbolRef.current = selectedSymbol;
     
     return () => {
       console.log(`=== Cleaning up WebSocket subscriptions for ${selectedSymbol} ===`);
       ws.unsubscribe(l2BookKey, handleOrderBookUpdate);
       ws.unsubscribe(tradesKey, handleTradesUpdate);
       ws.unsubscribe(assetCtxKey, handleAssetCtxUpdate);
+      // Note: Asset context unsubscription is handled at the beginning of the next effect run
     };
   }, [selectedSymbol, wsConnected, currentTickSizeParams, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
