@@ -418,8 +418,8 @@ function TradingPage() {
     ws.subscribe('allMids', handleAllMidsUpdate);
     ws.subscribe('marketDataUpdate', handleMarketDataUpdate);
     
-    // Connect to WebSocket
-    ws.connect();
+    // Connect to WebSocket with current wallet address
+    ws.connect(address);
     
     // Cleanup function
     return () => {
@@ -495,7 +495,7 @@ function TradingPage() {
         
         // Only reconnect if we think we should be connected but the connection is unhealthys
         if (wsConnected && !isHealthy) {
-          wsService.current.connect();
+          wsService.current.connect(address);
         }
       }
     }, 10000); // Check every 10 seconds
@@ -594,7 +594,7 @@ function TradingPage() {
               onClick={() => {
                 setError(null);
                 setLoading(true);
-                wsService.current.connect();
+                wsService.current.connect(address);
               }}
               className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
             >

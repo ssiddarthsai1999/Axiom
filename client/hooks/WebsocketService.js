@@ -93,7 +93,7 @@ class WebSocketService {
     }
   }
 
-  connect() {
+  connect(initialWalletAddress = null) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       console.log('WebSocket already connected');
       return;
@@ -113,8 +113,14 @@ class WebSocketService {
       // Initialize with WebSocket requests instead of REST API
       this.initializeMarketData();
       
-      // Subscribe to public data (zero address) initially
-      this.subscribeToPublicData();
+      // Check if we have an initial wallet address, otherwise subscribe to public data
+      if (initialWalletAddress) {
+        console.log(`🎯 Initial wallet address provided: ${initialWalletAddress}`);
+        this.updateWalletAddress(initialWalletAddress);
+      } else {
+        console.log('🔌 No initial wallet address, subscribing to public data');
+        this.subscribeToPublicData();
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -194,7 +200,7 @@ class WebSocketService {
         console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
         this.reconnectTimeout = setTimeout(() => {
           this.reconnectAttempts++;
-          this.connect();
+          this.connect(this.currentWalletAddress);
         }, delay);
       } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         console.log('Max reconnection attempts reached');
@@ -690,6 +696,7 @@ class WebSocketService {
       
       // Unsubscribe from public data since we now have user data
       if (this.isPublicDataSubscribed) {
+        console.log('🔄 Unsubscribing from public data to switch to user data');
         this.unsubscribeFromPublicData();
       }
       
