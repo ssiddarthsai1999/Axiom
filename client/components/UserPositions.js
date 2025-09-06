@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 import { getOrCreateSessionAgentWallet, getAssetId } from '@/utils/hyperLiquidSDK';
+import { useWebSocketWallet } from '../hooks/useWebSocketWallet';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading';
 import * as hl from '@nktkas/hyperliquid';
 import TPSLModal from './TPSLModal';
@@ -34,6 +35,9 @@ const UserPositions = ({ className = '' }) => {
   const { data: walletClient } = useWalletClient();
   const refreshInterval = useRef(null);
   const wsService = useRef(null);
+  
+  // Use the WebSocket wallet hook to manage subscriptions automatically
+  useWebSocketWallet();
 
   // Initialize WebSocket service
   useEffect(() => {
@@ -51,8 +55,8 @@ const UserPositions = ({ className = '' }) => {
           }
           
           if (wsService.current.isHealthy()) {
-            console.log('✅ WebSocket ready, subscribing to user data...');
-            wsService.current.subscribeToUserData(address);
+            console.log('✅ WebSocket ready, subscribing to data updates...');
+            // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
             
             // Subscribe to general webData2 updates
             wsService.current.subscribe('webData2', handleWebData2Update);
@@ -73,9 +77,8 @@ const UserPositions = ({ className = '' }) => {
     }
     
     return () => {
-      if (wsService.current && address) {
-        wsService.current.unsubscribeFromUserData(address);
-        wsService.current.unsubscribeFromUserHistoricalOrders(address);
+      if (wsService.current) {
+        // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
         wsService.current.unsubscribe('webData2', handleWebData2Update);
         wsService.current.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
         wsService.current.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);

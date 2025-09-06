@@ -29,6 +29,11 @@ class WebSocketService {
     this.userHistoricalOrdersCache = new Map(); // Cache for user historical orders
     this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
     
+    // Wallet connection tracking
+    this.currentWalletAddress = null; // Current connected wallet address
+    this.zeroAddress = '0x0000000000000000000000000000000000000000'; // Zero address for public data
+    this.isPublicDataSubscribed = false; // Track if we're subscribed to public data
+    
     // WebSocket POST request counter for unique IDs
     this.requestId = 1;
   }
@@ -107,6 +112,9 @@ class WebSocketService {
       
       // Initialize with WebSocket requests instead of REST API
       this.initializeMarketData();
+      
+      // Subscribe to public data (zero address) initially
+      this.subscribeToPublicData();
     };
 
     this.ws.onmessage = (event) => {
@@ -177,6 +185,10 @@ class WebSocketService {
       // Reset connection state
       this.ws = null;
       
+      // Reset wallet tracking on disconnect
+      this.currentWalletAddress = null;
+      this.isPublicDataSubscribed = false;
+      
       if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
         console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
@@ -207,6 +219,10 @@ class WebSocketService {
     }
     this.isConnected = false;
     this.activeSubscriptions.clear();
+    
+    // Reset wallet tracking
+    this.currentWalletAddress = null;
+    this.isPublicDataSubscribed = false;
   }
 
   send(message) {
@@ -524,6 +540,64 @@ class WebSocketService {
     }
   }
 
+  // Subscribe to public data (zero address) for market data
+  subscribeToPublicData() {
+    if (!this.isConnected) {
+      console.log('Cannot subscribe to public data: WebSocket not connected');
+      return false;
+    }
+    
+    if (!this.isPublicDataSubscribed) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: this.zeroAddress
+        }
+      };
+      
+      console.log(`🎯 Subscribing to public data (zero address):`, JSON.stringify(subscriptionMessage, null, 2));
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.isPublicDataSubscribed = true;
+        this.userSubscriptions.add(`webData2:${this.zeroAddress}`);
+        console.log(`✓ Subscribed to public data (zero address)`);
+        return true;
+      } else {
+        console.log(`✗ Failed to subscribe to public data (zero address)`);
+        return false;
+      }
+    } else {
+      console.log(`Already subscribed to public data (zero address)`);
+      return true;
+    }
+  }
+
+  // Unsubscribe from public data (zero address)
+  unsubscribeFromPublicData() {
+    if (!this.isConnected) return false;
+    
+    if (this.isPublicDataSubscribed) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: this.zeroAddress
+        }
+      });
+      
+      if (success) {
+        this.isPublicDataSubscribed = false;
+        this.userSubscriptions.delete(`webData2:${this.zeroAddress}`);
+        console.log(`✓ Unsubscribed from public data (zero address)`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   // Subscribe to webData2 for user account data (positions, balances, orders)
   subscribeToUserData(userAddress) {
     if (!this.isConnected) {
@@ -582,6 +656,60 @@ class WebSocketService {
     }
     
     return false;
+  }
+
+  // Update wallet address and manage subscriptions
+  updateWalletAddress(walletAddress) {
+    console.log(`🔄 Updating wallet address: ${this.currentWalletAddress} -> ${walletAddress}`);
+    
+    // If wallet is being disconnected (null or undefined)
+    if (!walletAddress) {
+      if (this.currentWalletAddress) {
+        // Unsubscribe from user data
+        this.unsubscribeFromUserData(this.currentWalletAddress);
+        this.unsubscribeFromUserHistoricalOrders(this.currentWalletAddress);
+        
+        // Subscribe back to public data if not already subscribed
+        if (!this.isPublicDataSubscribed) {
+          this.subscribeToPublicData();
+        }
+        
+        this.currentWalletAddress = null;
+        console.log('✓ Wallet disconnected, switched back to public data');
+      }
+      return;
+    }
+    
+    // If wallet is being connected or changed
+    if (this.currentWalletAddress !== walletAddress) {
+      // If we had a previous wallet, unsubscribe from it
+      if (this.currentWalletAddress) {
+        this.unsubscribeFromUserData(this.currentWalletAddress);
+        this.unsubscribeFromUserHistoricalOrders(this.currentWalletAddress);
+      }
+      
+      // Unsubscribe from public data since we now have user data
+      if (this.isPublicDataSubscribed) {
+        this.unsubscribeFromPublicData();
+      }
+      
+      // Subscribe to new wallet address
+      this.subscribeToUserData(walletAddress);
+      this.subscribeToUserHistoricalOrders(walletAddress);
+      
+      this.currentWalletAddress = walletAddress;
+      console.log(`✓ Wallet connected: ${walletAddress}, switched from public data to user data`);
+    }
+  }
+
+  // Get current wallet address
+  getCurrentWalletAddress() {
+    return this.currentWalletAddress;
+  }
+
+  // Check if currently subscribed to public data
+  isSubscribedToPublicData() {
+    return this.isPublicDataSubscribed;
   }
 
   // Subscribe to userHistoricalOrders for a specific user
@@ -853,7 +981,9 @@ class WebSocketService {
       userHistoricalOrdersSubscriptions: Array.from(this.userHistoricalOrdersSubscriptions),
       cachedTokens: this.marketDataCache.size,
       cachedUsers: this.userDataCache.size,
-      cachedHistoricalOrders: this.userHistoricalOrdersCache.size
+      cachedHistoricalOrders: this.userHistoricalOrdersCache.size,
+      currentWalletAddress: this.currentWalletAddress,
+      isPublicDataSubscribed: this.isPublicDataSubscribed
     };
   }
 

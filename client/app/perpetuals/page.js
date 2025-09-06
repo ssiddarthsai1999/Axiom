@@ -9,6 +9,7 @@ import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
 import FavoritesTicker from '@/components/FavoritesTicker'
 import WebSocketService from '@/hooks/WebsocketService'
+import { useWebSocketWallet } from '@/hooks/useWebSocketWallet'
 import { useAccount } from 'wagmi'
 
 function TradingPage() {
@@ -29,6 +30,9 @@ function TradingPage() {
   
   // Get wallet address for webData2 subscription
   const { address } = useAccount();
+  
+  // Use the WebSocket wallet hook to manage subscriptions automatically
+  useWebSocketWallet();
   
   // Track current tick size parameters to avoid duplicate subscriptions
   const [currentTickSizeParams, setCurrentTickSizeParams] = useState(null);
@@ -460,13 +464,8 @@ function TradingPage() {
     };
   }, [selectedSymbol, wsConnected, currentTickSizeParams, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
-  // Subscribe to webData2 for market data when address is available
-  useEffect(() => {
-    if (address && wsConnected) {
-      console.log('🎯 Subscribing to webData2 for market data with address:', address);
-      wsService.current.subscribeToUserData(address);
-    }
-  }, [address, wsConnected]);
+  // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
+  // No need for manual webData2 subscription - it's managed automatically
 
 
   // Update trade timestamps periodically
