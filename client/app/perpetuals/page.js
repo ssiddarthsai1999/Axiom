@@ -91,6 +91,13 @@ function TradingPage() {
     return `${hours}h`;
   }, []);
 
+  // Cleanup function to clear previous token trades when switching symbols
+  const cleanupTradeHistoryCache = useCallback(() => {
+    const cache = tradeHistoryRef.current;
+    // Clear all entries - we want to start fresh for each new symbol
+    cache.clear();
+  }, []);
+
   // Optimized trade history management with throttling
   const addTradesToHistory = useCallback((newTrades, symbol) => {
     const now = Date.now();
@@ -337,9 +344,11 @@ function TradingPage() {
     const previousSymbol = selectedSymbol;
     setSelectedSymbol(newSymbol);
     
-    // Show trades for the selected symbol from cache
-    const symbolTrades = tradeHistoryRef.current.get(newSymbol) || [];
-    setTradesData([...symbolTrades]);
+    // Clear previous token trades when switching symbols
+    cleanupTradeHistoryCache();
+    
+    // Start with empty trades for new symbol
+    setTradesData([]);
     
     // Update market data from cache
     const tokenData = allMarketData.find(token => token.symbol === newSymbol);
@@ -378,7 +387,7 @@ function TradingPage() {
 
     // Clear order book for new symbol
     setOrderBookData({ asks: [], bids: [] });
-  }, [selectedSymbol, allMarketData, getTokenName, currentTickSizeParams]);
+  }, [selectedSymbol, allMarketData, getTokenName, currentTickSizeParams, cleanupTradeHistoryCache]);
 
   // Handle tick size changes
   const handleTickSizeChange = useCallback((tickSizeOption) => {

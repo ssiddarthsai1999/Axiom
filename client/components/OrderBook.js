@@ -1,5 +1,5 @@
 // components/OrderBook.js
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, memo } from "react";
 import numeral from "numeral";
 
 const OrderBook = ({
@@ -15,7 +15,7 @@ const OrderBook = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Standard multipliers for tick size options
+  // Standard multipliers for tick size options - memoized separately to reduce recalculations
   const standardMultipliers = useMemo(() => {
     if (selectedSymbol === "BTC") {
       return [1, 10, 20, 50, 100, 1000, 10000];
@@ -23,13 +23,36 @@ const OrderBook = ({
     return [1, 2, 5, 10, 100, 1000];
   }, [selectedSymbol]);
 
-  // Calculate available tick size options based on szDecimals
+  // Memoize the nSigFigs and mantissa calculation separately
+  const getTickSizeParams = useMemo(() => {
+    const params = {};
+    
+    if (selectedSymbol === "BTC") {
+      params[10000] = { nSigFigs: 2, mantissa: undefined };
+      params[1000] = { nSigFigs: 3, mantissa: undefined };
+      params[100] = { nSigFigs: 4, mantissa: undefined };
+      params[50] = { nSigFigs: 5, mantissa: 5 };
+      params[20] = { nSigFigs: 5, mantissa: 2 };
+      params[10] = { nSigFigs: 5, mantissa: undefined };
+      params[1] = { nSigFigs: undefined, mantissa: undefined };
+    } else {
+      params[1000] = { nSigFigs: 2, mantissa: undefined };
+      params[100] = { nSigFigs: 3, mantissa: undefined };
+      params[10] = { nSigFigs: 4, mantissa: undefined };
+      params[5] = { nSigFigs: 5, mantissa: 5 };
+      params[2] = { nSigFigs: 5, mantissa: 2 };
+      params[1] = { nSigFigs: 5, mantissa: undefined };
+    }
+    
+    return params;
+  }, [selectedSymbol]);
+
+  // Calculate available tick size options based on szDecimals - optimized to reduce recalculations
   const tickSizeOptions = useMemo(() => {
     
     // Don't calculate if szDecimals is the fallback value (3) and we're not on BTC
     // This prevents incorrect calculations while marketData is being updated
     if (szDecimals === 3 && selectedSymbol !== 'BTC') {
-      // console.log(`🔧 OrderBook: Waiting for correct szDecimals for ${selectedSymbol}`);
       return [];
     }
     
@@ -40,68 +63,18 @@ const OrderBook = ({
     return standardMultipliers.map(multiplier => {
       const tickSize = baseTickSize * multiplier;
       const tickSizeStr = tickSize.toFixed(maxPriceDecimals);
-      // console.log(tickSize, tickSizeStr, baseTickSize, multiplier, selectedTickSize, selectedSymbol)
-      // Calculate nSigFigs and mantissa based on the multiplier (not the tick size value)
-      let nSigFigs, mantissa;
-
-      if (selectedSymbol === "BTC") {
-        if (multiplier === 10000) {
-          nSigFigs = 2;
-          mantissa = undefined;
-        } else if (multiplier === 1000) {
-          nSigFigs = 3;
-          mantissa = undefined;
-        } else if (multiplier === 100) {
-          nSigFigs = 4;
-          mantissa = undefined;
-        } else if (multiplier === 50) {
-          nSigFigs = 5;
-          mantissa = 5;
-        } else if (multiplier === 20) {
-          nSigFigs = 5;
-          mantissa = 2;
-        } else if (multiplier === 10) {
-          nSigFigs = 5;
-          mantissa = undefined;
-        } else {
-          // Fallback
-          nSigFigs = undefined;
-          mantissa = undefined;
-        }
-      } else {
-        if (multiplier === 1000) {
-          nSigFigs = 2;
-          mantissa = undefined;
-        } else if (multiplier === 100) {
-          nSigFigs = 3;
-          mantissa = undefined;
-        } else if (multiplier === 10) {
-          nSigFigs = 4;
-          mantissa = undefined;
-        } else if (multiplier === 5) {
-          nSigFigs = 5;
-          mantissa = 5;
-        } else if (multiplier === 2) {
-          nSigFigs = 5;
-          mantissa = 2;
-        } else if (multiplier === 1) {
-          nSigFigs = 5;
-          mantissa = undefined;
-        } else {
-          // Fallback
-          nSigFigs = 5;
-          mantissa = undefined;
-        }
-      }
+      
+      // Use pre-computed parameters instead of recalculating
+      const params = getTickSizeParams[multiplier] || { nSigFigs: 5, mantissa: undefined };
 
       return {
         value: tickSize,
         label: tickSizeStr,
-        nSigFigs,
-        mantissa
+        nSigFigs: params.nSigFigs,
+        mantissa: params.mantissa
       };
     });
-  }, [szDecimals, standardMultipliers, selectedSymbol]);
+  }, [szDecimals, standardMultipliers, getTickSizeParams]);
 
   // Set default tick size when component mounts or szDecimals changes
   useEffect(() => {
@@ -436,4 +409,4 @@ const OrderBook = ({
   );
 };
 
-export default OrderBook;
+export default memo(OrderBook);

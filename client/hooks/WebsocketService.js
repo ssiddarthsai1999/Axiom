@@ -13,7 +13,7 @@ class WebSocketService {
     this.subscribers = new Map();
     this.messageQueue = [];
     this.lastMessageTimes = new Map();
-    this.messageThrottleMs = 8; // ~120fps max update rate for better responsiveness
+    this.messageThrottleMs = 100; // ~10fps max update rate for better performance balance
     this.activeSubscriptions = new Set(); // Track active subscriptions
     
     // Market data cache for real-time updates
