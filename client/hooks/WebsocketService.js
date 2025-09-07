@@ -13,20 +13,15 @@ class WebSocketService {
     this.subscribers = new Map();
     this.messageQueue = [];
     this.lastMessageTimes = new Map();
-    this.messageThrottleMs = 100; // ~10fps max update rate for better performance balance
+    this.messageThrottleMs = 8; // ~10fps max update rate for better performance balance
     this.activeSubscriptions = new Set(); // Track active subscriptions
     
-    // Market data cache for real-time updates
-    this.marketDataCache = new Map();
-    this.allMidsCache = new Map();
-    this.assetContextCache = new Map(); // For oracle prices and funding
+    // Essential data for WebSocket functionality
     this.universeData = null; // Meta data about tokens
     this.isInitialized = false;
     
-    // User data cache for real-time updates
-    this.userDataCache = new Map(); // Cache for webData2 user data
+    // User subscriptions tracking (still needed for subscription management)
     this.userSubscriptions = new Set(); // Track user subscriptions
-    this.userHistoricalOrdersCache = new Map(); // Cache for user historical orders
     this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
     
     // Wallet connection tracking
@@ -308,17 +303,13 @@ class WebSocketService {
         lastUpdated: Date.now(),
         fullAssetCtx: assetCtx
       };
-
-      // Cache the token data
-      this.marketDataCache.set(token.name, tokenData);
-      this.assetContextCache.set(token.name, assetCtx);
       
       return tokenData;
     }).filter(Boolean);
     
     const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
     
-    // Broadcast the market data update
+    // Broadcast the market data update directly - no caching needed
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
@@ -355,10 +346,6 @@ class WebSocketService {
         lastUpdated: Date.now(),
         fullAssetCtx: assetCtx
       };
-
-      // Cache the token data
-      this.marketDataCache.set(token.name, tokenData);
-      this.assetContextCache.set(token.name, assetCtx);
       
       return tokenData;
     }).filter(Boolean);
@@ -369,12 +356,11 @@ class WebSocketService {
     this.universeData = universe;
     this.isInitialized = true;
     
-    // Broadcast the market data update
+    // Broadcast the market data update directly - no caching needed
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
     });
-
   }
 
   // Subscribe to allMids for real-time price updates
@@ -475,78 +461,20 @@ class WebSocketService {
     }
   }
 
-  // Handle allMids updates to update cached market data
+  // Handle allMids updates - simplified to just broadcast the data
   handleAllMidsUpdate(allMidsData) {
     if (!allMidsData.mids) return;
 
-    const updateCount = Object.keys(allMidsData.mids).length;
-    
-    // Update market data cache with new prices
-    Object.entries(allMidsData.mids).forEach(([symbol, midPrice]) => {
-      const price = parseFloat(midPrice);
-      if (isNaN(price)) return;
-
-      // Store in allMids cache
-      this.allMidsCache.set(symbol, price);
-
-      const cachedData = this.marketDataCache.get(symbol);
-      if (cachedData) {
-        // Calculate 24h change if we have previous price data
-        const prevPrice = cachedData.prevDayPx || cachedData.price;
-        const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
-        
-        const updatedData = {
-          ...cachedData,
-          price: price,
-          change24h: change24h,
-          lastUpdated: Date.now()
-        };
-        
-        this.marketDataCache.set(symbol, updatedData);
-        
-        // Broadcast updated market data for this symbol
-        this.broadcast(`marketData:${symbol}`, updatedData);
-      }
-    });
-
-    // Broadcast the allMids update for components that want raw data
+    // Broadcast the allMids update directly to components
     this.broadcast('allMids', allMidsData);
   }
 
-  // Handle activeAssetCtx updates for oracle prices and funding
+  // Handle activeAssetCtx updates - simplified to just broadcast the data
   handleActiveAssetCtxUpdate(assetCtxData) {
     if (!assetCtxData.coin) return;
     
-    const symbol = assetCtxData.coin;
-    
-    // Update asset context cache
-    this.assetContextCache.set(symbol, assetCtxData);
-    
-    const cachedData = this.marketDataCache.get(symbol);
-    if (cachedData) {
-      const currentPrice = this.allMidsCache.get(symbol) || cachedData.price;
-      const prevPrice = parseFloat(assetCtxData.prevDayPx) || cachedData.prevDayPx;
-      const change24h = currentPrice - prevPrice;
-      
-      const updatedData = {
-        ...cachedData,
-        oraclePrice: parseFloat(assetCtxData.oraclePx) || cachedData.oraclePrice,
-        funding: parseFloat(assetCtxData.funding) || cachedData.funding,
-        volume24h: parseFloat(assetCtxData.dayNtlVlm) || cachedData.volume24h,
-        openInterest: parseFloat(assetCtxData.openInterest) || cachedData.openInterest,
-        premium: parseFloat(assetCtxData.premium) || cachedData.premium,
-        prevDayPx: prevPrice,
-        change24h: change24h,
-        lastUpdated: Date.now(),
-        fullAssetCtx: assetCtxData
-      };
-      
-      this.marketDataCache.set(symbol, updatedData);
-      
-      // Broadcast updated market data for this symbol
-      this.broadcast(`marketData:${symbol}`, updatedData);
-      
-    }
+    // Broadcast the asset context update directly to components
+    this.broadcast(`assetCtx:${assetCtxData.coin}`, { data: assetCtxData });
   }
 
   // Subscribe to public data (zero address) for market data
@@ -767,23 +695,16 @@ class WebSocketService {
     const userAddress = webData2Data.user;
     const userDataKey = `webData2:${userAddress}`;
     
-    // Cache the user data
-    this.userDataCache.set(userAddress, {
-      ...webData2Data,
-      lastUpdated: Date.now()
-    });
-    
     // Process market data from webData2 if available
     if (webData2Data.meta && webData2Data.assetCtxs) {
       this.processWebData2MarketData(webData2Data.meta, webData2Data.assetCtxs);
     }
     
-    // Broadcast the user data update
+    // Broadcast the user data update directly - no caching needed
     this.broadcast(userDataKey, webData2Data);
     
     // Also broadcast to general webData2 subscribers
     this.broadcast('webData2', webData2Data);
-
   }
 
   // Handle userHistoricalOrders updates
@@ -793,39 +714,14 @@ class WebSocketService {
     const userAddress = historicalOrdersData.user;
     const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
     
-    // Cache the historical orders data
-    this.userHistoricalOrdersCache.set(userAddress, {
-      ...historicalOrdersData,
-      lastUpdated: Date.now()
-    });
-    
-    // Broadcast the historical orders update
+    // Broadcast the historical orders update directly - no caching needed
     this.broadcast(historicalOrdersKey, historicalOrdersData);
     
     // Also broadcast to general userHistoricalOrders subscribers
     this.broadcast('userHistoricalOrders', historicalOrdersData);
-
   }
 
-  // Get cached user data for a specific address
-  getCachedUserData(userAddress) {
-    return this.userDataCache.get(userAddress);
-  }
-
-  // Get all cached user data
-  getAllCachedUserData() {
-    return Array.from(this.userDataCache.values());
-  }
-
-  // Get cached historical orders data for a specific address
-  getCachedHistoricalOrders(userAddress) {
-    return this.userHistoricalOrdersCache.get(userAddress);
-  }
-
-  // Get all cached historical orders data
-  getAllCachedHistoricalOrders() {
-    return Array.from(this.userHistoricalOrdersCache.values());
-  }
+  // Removed unused cache getter methods - data is now broadcast directly to components
 
   subscribeToSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
@@ -932,15 +828,7 @@ class WebSocketService {
     return unsubscribed;
   }
 
-  // Get cached market data for a symbol
-  getCachedMarketData(symbol) {
-    return this.marketDataCache.get(symbol);
-  }
-
-  // Get all cached market data
-  getAllCachedMarketData() {
-    return Array.from(this.marketDataCache.values());
-  }
+  // Removed unused market data cache getter methods - data is now broadcast directly to components
 
   // Get connection status
   getConnectionStatus() {
@@ -951,9 +839,6 @@ class WebSocketService {
       activeSubscriptions: Array.from(this.activeSubscriptions),
       userSubscriptions: Array.from(this.userSubscriptions),
       userHistoricalOrdersSubscriptions: Array.from(this.userHistoricalOrdersSubscriptions),
-      cachedTokens: this.marketDataCache.size,
-      cachedUsers: this.userDataCache.size,
-      cachedHistoricalOrders: this.userHistoricalOrdersCache.size,
       currentWalletAddress: this.currentWalletAddress,
       isPublicDataSubscribed: this.isPublicDataSubscribed
     };
@@ -1013,14 +898,7 @@ class WebSocketService {
     return true;
   }
 
-  // Public method to get market data (replaces the old fetchMarketData)
-  async getMarketData() {
-    if (!this.isInitialized) {
-      await this.waitForInitialization();
-    }
-    
-    return this.getAllCachedMarketData().sort((a, b) => b.volume24h - a.volume24h);
-  }
+  // Removed unused getMarketData method - components now use broadcast data directly
 }
 
 export default WebSocketService;
