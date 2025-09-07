@@ -50,9 +50,9 @@ const OrderBook = ({
   // Calculate available tick size options based on szDecimals - optimized to reduce recalculations
   const tickSizeOptions = useMemo(() => {
     
-    // Don't calculate if szDecimals is the fallback value (3) and we're not on BTC
+    // Don't calculate if szDecimals is null/undefined or invalid
     // This prevents incorrect calculations while marketData is being updated
-    if (szDecimals === 3 && selectedSymbol !== 'BTC') {
+    if (szDecimals === null || szDecimals === undefined || (szDecimals === 3 && selectedSymbol !== 'BTC')) {
       return [];
     }
     
@@ -74,7 +74,7 @@ const OrderBook = ({
         mantissa: params.mantissa
       };
     });
-  }, [szDecimals, standardMultipliers, getTickSizeParams]);
+  }, [szDecimals, standardMultipliers, getTickSizeParams, selectedSymbol]);
 
   // Set default tick size when component mounts or szDecimals changes
   useEffect(() => {
@@ -86,7 +86,7 @@ const OrderBook = ({
         onTickSizeChange(defaultOption);
       }
     }
-  }, [tickSizeOptions, selectedTickSize, onTickSizeChange]);
+  }, [tickSizeOptions, selectedTickSize, onTickSizeChange, szDecimals, selectedSymbol]);
 
   // Reset selectedTickSize when symbol changes and szDecimals is updated
   useEffect(() => {

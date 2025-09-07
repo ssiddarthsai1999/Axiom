@@ -34,14 +34,13 @@ const UserPositions = ({ className = '' }) => {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const refreshInterval = useRef(null);
-  const wsService = useRef(null);
   
   // Use the WebSocket wallet hook to manage subscriptions automatically
-  useWebSocketWallet();
+  const { wsService } = useWebSocketWallet();
 
   // Initialize WebSocket service
   useEffect(() => {
-    wsService.current = WebSocketService.getInstance();
+    // Use the WebSocket service from the hook instead of creating a new instance
     
     // Subscribe to webData2 for user data
     if (isConnected && address) {
@@ -49,18 +48,18 @@ const UserPositions = ({ className = '' }) => {
       const initializeWebSocket = async () => {
         setWsInitializing(true);
         try {
-          if (!wsService.current.isHealthy()) {
-            await wsService.current.waitForInitialization(500);
+          if (!wsService.isHealthy()) {
+            await wsService.waitForInitialization(500);
           }
           
-          if (wsService.current.isHealthy()) {
+          if (wsService.isHealthy()) {
             // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
             
             // Subscribe to general webData2 updates
-            wsService.current.subscribe('webData2', handleWebData2Update);
+            wsService.subscribe('webData2', handleWebData2Update);
             
             // Subscribe to market data updates for real-time prices
-            wsService.current.subscribe('marketDataUpdate', handleMarketDataUpdate);
+            wsService.subscribe('marketDataUpdate', handleMarketDataUpdate);
           } else {
             console.log('⚠️ WebSocket not ready, will use API fallback');
           }
@@ -75,14 +74,14 @@ const UserPositions = ({ className = '' }) => {
     }
     
     return () => {
-      if (wsService.current) {
+      if (wsService) {
         // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
-        wsService.current.unsubscribe('webData2', handleWebData2Update);
-        wsService.current.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
-        wsService.current.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);
+        wsService.unsubscribe('webData2', handleWebData2Update);
+        wsService.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
+        wsService.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);
       }
     };
-  }, [isConnected, address]);
+  }, [isConnected, address, wsService]);
 
   // Handle webData2 updates from websocket
   const handleWebData2Update = (webData2Data) => {

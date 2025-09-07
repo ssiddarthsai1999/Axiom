@@ -32,17 +32,24 @@ function TradingPage() {
   const { address } = useAccount();
   
   // Use the WebSocket wallet hook to manage subscriptions automatically
-  useWebSocketWallet();
+  const { wsService: walletWsService } = useWebSocketWallet();
   
   // Track current tick size parameters to avoid duplicate subscriptions
   const [currentTickSizeParams, setCurrentTickSizeParams] = useState(null);
+  
+  // Throttling for rapid symbol switches
+  const symbolSwitchTimeoutRef = useRef(null);
+  const lastSymbolSwitchRef = useRef(0);
 
   // Available tokens list
   const [availableTokens, setAvailableTokens] = useState([]);
   const [allMarketData, setAllMarketData] = useState([]);
 
-  // Refs for optimization
-  const wsService = useRef(WebSocketService.getInstance());
+  //TODO: Check setAllMarketData and setMarketData set and usage.
+  // they can be removed.
+
+  // Use the same WebSocket service instance from the wallet hook to avoid multiple connections
+  const wsService = useRef(walletWsService);
   const tradeHistoryRef = useRef(new Map()); // Change to Map for better symbol-based storage
   const previousSymbolRef = useRef(null); // Track previous symbol for cleanup
   const maxTradesCount = 40;
@@ -339,9 +346,33 @@ function TradingPage() {
 
 
 
-  // Handle symbol changes
+  // Handle symbol changes with throttling to prevent rapid switching issues
   const handleSymbolChange = useCallback((newSymbol) => {
+    // Prevent rapid symbol switches (minimum 100ms between switches)
+    const now = Date.now();
+    const timeSinceLastSwitch = now - lastSymbolSwitchRef.current;
+    
+    if (timeSinceLastSwitch < 100) {
+      // Clear any pending symbol switch
+      if (symbolSwitchTimeoutRef.current) {
+        clearTimeout(symbolSwitchTimeoutRef.current);
+      }
+      
+      // Schedule the symbol switch for later
+      symbolSwitchTimeoutRef.current = setTimeout(() => {
+        handleSymbolChange(newSymbol);
+      }, 100 - timeSinceLastSwitch);
+      return;
+    }
+    
+    lastSymbolSwitchRef.current = now;
     const previousSymbol = selectedSymbol;
+    
+    // Skip if switching to the same symbol
+    if (previousSymbol === newSymbol) {
+      return;
+    }
+    
     setSelectedSymbol(newSymbol);
     
     // Clear previous token trades when switching symbols
@@ -375,19 +406,15 @@ function TradingPage() {
       console.log(`🔧 handleSymbolChange: No tokenData found for ${newSymbol}`);
     }
 
-    // Update WebSocket subscriptions
+    // Update WebSocket subscriptions - improved cleanup is handled in useEffect
     if (wsService.current.isConnected) {
-      if (previousSymbol && previousSymbol !== newSymbol) {
-        wsService.current.unsubscribeFromSymbol(previousSymbol, currentTickSizeParams);
-      }
       // Reset tick size parameters for new symbol
       setCurrentTickSizeParams(null);
-      wsService.current.subscribeToSymbol(newSymbol);
     }
 
     // Clear order book for new symbol
     setOrderBookData({ asks: [], bids: [] });
-  }, [selectedSymbol, allMarketData, getTokenName, currentTickSizeParams, cleanupTradeHistoryCache]);
+  }, [selectedSymbol, allMarketData, getTokenName, cleanupTradeHistoryCache]);
 
   // Handle tick size changes
   const handleTickSizeChange = useCallback((tickSizeOption) => {
@@ -421,56 +448,99 @@ function TradingPage() {
     ws.subscribe('allMids', handleAllMidsUpdate);
     ws.subscribe('marketDataUpdate', handleMarketDataUpdate);
     
-    // Connect to WebSocket with current wallet address
-    ws.connect(address);
+    // WebSocket connection is now managed by useWebSocketWallet hook
+    // No need to call connect here as it's already handled
     
     // Cleanup function
     return () => {
       ws.unsubscribe('connection', handleConnection);
       ws.unsubscribe('allMids', handleAllMidsUpdate);
       ws.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
-      ws.disconnect();
+      
+      // Clear any pending symbol switch timeouts
+      if (symbolSwitchTimeoutRef.current) {
+        clearTimeout(symbolSwitchTimeoutRef.current);
+        symbolSwitchTimeoutRef.current = null;
+      }
+      
+      // WebSocket disconnect is managed by useWebSocketWallet hook
+      // Don't disconnect here as other components might still need it
     };
-  }, [handleConnection, handleAllMidsUpdate, handleMarketDataUpdate]); // Include all dependencies
+  }, [address, handleConnection, handleAllMidsUpdate, handleMarketDataUpdate]); // Include all dependencies
 
-  // Subscribe to symbol-specific WebSocket events
+  // Subscribe to symbol-specific WebSocket events with improved cleanup and delayed subscription
   useEffect(() => {
     const ws = wsService.current;
     
-    // Unsubscribe from previous symbol's asset context if it exists
-    if (previousSymbolRef.current && previousSymbolRef.current !== selectedSymbol) {
-      ws.unsubscribeFromAssetCtx(previousSymbolRef.current);
-    }
+    // Add delay to prevent rapid subscription churn during initialization
+    const subscriptionDelay = wsConnected && previousSymbolRef.current ? 0 : 100; // Delay only on initial load
     
-    // Subscribe to symbol-specific channels
-    const l2BookKey = `l2Book:${selectedSymbol}`;
-    const tradesKey = `trades:${selectedSymbol}`;
-    const assetCtxKey = `assetCtx:${selectedSymbol}`;
-    
-    ws.subscribe(l2BookKey, handleOrderBookUpdate);
-    ws.subscribe(tradesKey, handleTradesUpdate);
-    ws.subscribe(assetCtxKey, handleAssetCtxUpdate);
-    
-    // Subscribe to the symbol when connected
-    if (wsConnected) {
-      // Only subscribe if we don't have tick size parameters yet (initial subscription)
-      if (!currentTickSizeParams) {
-        ws.subscribeToSymbol(selectedSymbol);
+    const subscriptionTimeout = setTimeout(() => {
+      // Cleanup function to unsubscribe from all previous symbol subscriptions
+      const cleanupPreviousSubscriptions = () => {
+        if (previousSymbolRef.current && previousSymbolRef.current !== selectedSymbol) {
+          // Unsubscribe from previous symbol's WebSocket subscriptions
+          ws.unsubscribeFromSymbol(previousSymbolRef.current);
+          ws.unsubscribeFromAssetCtx(previousSymbolRef.current);
+          
+          // Unsubscribe from previous symbol's callback subscriptions
+          const prevL2BookKey = `l2Book:${previousSymbolRef.current}`;
+          const prevTradesKey = `trades:${previousSymbolRef.current}`;
+          const prevAssetCtxKey = `assetCtx:${previousSymbolRef.current}`;
+          
+          ws.unsubscribe(prevL2BookKey, handleOrderBookUpdate);
+          ws.unsubscribe(prevTradesKey, handleTradesUpdate);
+          ws.unsubscribe(prevAssetCtxKey, handleAssetCtxUpdate);
+        }
+      };
+      
+      // Clean up previous subscriptions first
+      cleanupPreviousSubscriptions();
+      
+      // Subscribe to new symbol-specific channels
+      const l2BookKey = `l2Book:${selectedSymbol}`;
+      const tradesKey = `trades:${selectedSymbol}`;
+      const assetCtxKey = `assetCtx:${selectedSymbol}`;
+      
+      ws.subscribe(l2BookKey, handleOrderBookUpdate);
+      ws.subscribe(tradesKey, handleTradesUpdate);
+      ws.subscribe(assetCtxKey, handleAssetCtxUpdate);
+      
+      // Subscribe to the symbol when connected - but wait for tick size params if available
+      if (wsConnected) {
+        // Check if we already have tick size params and should use them
+        if (currentTickSizeParams) {
+          // Subscribe with existing tick size parameters
+          ws.subscribeToSymbol(selectedSymbol, currentTickSizeParams);
+        } else {
+          // Subscribe without tick size parameters initially
+          ws.subscribeToSymbol(selectedSymbol);
+        }
+        
+        // Subscribe to asset context for the selected symbol only
+        ws.subscribeToAssetCtx(selectedSymbol);
+      } else {
+        console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
       }
-      // Subscribe to asset context for the selected symbol only
-      ws.subscribeToAssetCtx(selectedSymbol);
-    } else {
-      console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
-    }
-    
-    // Update the previous symbol reference
-    previousSymbolRef.current = selectedSymbol;
+      
+      // Update the previous symbol reference
+      previousSymbolRef.current = selectedSymbol;
+    }, subscriptionDelay);
     
     return () => {
+      // Clear the subscription timeout if component unmounts before timeout completes
+      if (subscriptionTimeout) {
+        clearTimeout(subscriptionTimeout);
+      }
+      
+      // Cleanup current subscriptions when component unmounts or symbol changes
+      const l2BookKey = `l2Book:${selectedSymbol}`;
+      const tradesKey = `trades:${selectedSymbol}`;
+      const assetCtxKey = `assetCtx:${selectedSymbol}`;
+      
       ws.unsubscribe(l2BookKey, handleOrderBookUpdate);
       ws.unsubscribe(tradesKey, handleTradesUpdate);
       ws.unsubscribe(assetCtxKey, handleAssetCtxUpdate);
-      // Note: Asset context unsubscription is handled at the beginning of the next effect run
     };
   }, [selectedSymbol, wsConnected, currentTickSizeParams, handleOrderBookUpdate, handleTradesUpdate, handleAssetCtxUpdate]);
 
@@ -511,7 +581,7 @@ function TradingPage() {
     }, 10000); // Check every 10 seconds
 
     return () => clearInterval(healthCheckInterval);
-  }, [wsConnected]);
+  }, [wsConnected, address]);
 
   // Mobile Tab Component - memoized
   const MobileTabs = useMemo(() => {

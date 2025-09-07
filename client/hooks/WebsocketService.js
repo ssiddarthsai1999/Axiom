@@ -3,6 +3,7 @@
 
 class WebSocketService {
   static instance = null;
+  static isConnecting = false; // Global flag to prevent multiple connection attempts
   
   constructor() {
     this.ws = null;
@@ -23,6 +24,10 @@ class WebSocketService {
     // User subscriptions tracking (still needed for subscription management)
     this.userSubscriptions = new Set(); // Track user subscriptions
     this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
+    
+    // Subscription state tracking to prevent rapid churn
+    this.pendingSubscriptions = new Map(); // Track pending subscriptions to avoid duplicates
+    this.subscriptionDebounceMs = 100; // Debounce rapid subscription changes
     
     // Wallet connection tracking
     this.currentWalletAddress = null; // Current connected wallet address
@@ -91,12 +96,19 @@ class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
       return;
     }
-
+    
+    // Global flag to prevent multiple connection attempts from different components
+    if (WebSocketService.isConnecting) {
+      return;
+    }
+    
+    WebSocketService.isConnecting = true;
     this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
 
     this.ws.onopen = () => {
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      WebSocketService.isConnecting = false; // Clear the connecting flag
       this.broadcast('connection', { connected: true });
       
       // Initialize with WebSocket requests instead of REST API
@@ -172,6 +184,7 @@ class WebSocketService {
 
     this.ws.onclose = (event) => {
       this.isConnected = false;
+      WebSocketService.isConnecting = false; // Clear the connecting flag on close
       this.activeSubscriptions.clear(); // Clear active subscriptions on disconnect
       this.broadcast('connection', { connected: false });
       
@@ -194,7 +207,8 @@ class WebSocketService {
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('❌ WebSocket error:', error);
+      WebSocketService.isConnecting = false; // Clear the connecting flag on error
       this.broadcast('error', error);
     };
   }
@@ -204,12 +218,32 @@ class WebSocketService {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    
+    // Properly unsubscribe from all active subscriptions before disconnecting
+    if (this.isConnected) {
+      this.unsubscribeFromAllSymbols();
+      
+      // Unsubscribe from asset context subscriptions
+      const assetCtxSubscriptions = Array.from(this.activeSubscriptions).filter(key => 
+        key.startsWith('activeAssetCtx:')
+      );
+      
+      for (const subscriptionKey of assetCtxSubscriptions) {
+        const symbol = subscriptionKey.replace('activeAssetCtx:', '');
+        this.unsubscribeFromAssetCtx(symbol);
+      }
+    }
+    
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect');
       this.ws = null;
     }
     this.isConnected = false;
+    WebSocketService.isConnecting = false; // Clear the connecting flag
     this.activeSubscriptions.clear();
+    
+    // Clear pending subscriptions
+    this.pendingSubscriptions.clear();
     
     // Reset wallet tracking
     this.currentWalletAddress = null;
@@ -285,11 +319,12 @@ class WebSocketService {
       const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
       const currentPrice = parseFloat(assetCtx.markPx) || 0;
       const change24h = currentPrice - prevPrice;
+
       
       const tokenData = {
         symbol: token.name,
         maxLeverage: token.maxLeverage || 1,
-        szDecimals: token.szDecimals || 4,
+        szDecimals: token.szDecimals !== undefined ? token.szDecimals : null, // Use actual value from HyperLiquid, no fallback
         onlyIsolated: token.onlyIsolated || false,
         price: currentPrice,
         oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
@@ -332,7 +367,7 @@ class WebSocketService {
       const tokenData = {
         symbol: token.name,
         maxLeverage: token.maxLeverage || 1,
-        szDecimals: token.szDecimals || 4,
+        szDecimals: token.szDecimals !== undefined ? token.szDecimals : null, // Use actual value from HyperLiquid, no fallback
         onlyIsolated: token.onlyIsolated || false,
         price: currentPrice,
         oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
@@ -729,17 +764,61 @@ class WebSocketService {
     const l2BookKey = `l2Book:${symbol}`;
     const tradesKey = `trades:${symbol}`;
     
+    // Create a unique key for this subscription request
+    const subscriptionRequestKey = `${symbol}:${JSON.stringify(tickSizeParams)}`;
+    
+    // Check if we have a pending subscription for this exact request
+    if (this.pendingSubscriptions.has(subscriptionRequestKey)) {
+      return false;
+    }
+    
+    // Mark this subscription as pending
+    this.pendingSubscriptions.set(subscriptionRequestKey, Date.now());
+    
+    // Clear the pending status after debounce period
+    setTimeout(() => {
+      this.pendingSubscriptions.delete(subscriptionRequestKey);
+    }, this.subscriptionDebounceMs);
+    
     let subscribed = false;
     
+    // Store tick size params with the subscription key for proper cleanup
+    const l2BookKeyWithParams = tickSizeParams 
+      ? `${l2BookKey}:${JSON.stringify(tickSizeParams)}`
+      : l2BookKey;
+    
+    // Check if we already have this exact subscription
+    if (this.activeSubscriptions.has(l2BookKeyWithParams)) {
+      return true;
+    }
+    
     // Always unsubscribe from existing l2Book subscription first to avoid duplicates
-    if (this.activeSubscriptions.has(l2BookKey)) {
-      // Internal unsubscribe without calling the public method to avoid recursion
+    // Check for any existing l2Book subscription for this symbol (regardless of tick size)
+    const existingL2BookSubs = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith(`l2Book:${symbol}`)
+    );
+    
+    for (const existingKey of existingL2BookSubs) {
+      // Extract tick size params from existing subscription if any
+      const existingTickSizeParams = existingKey.includes(':') && existingKey.split(':').length > 2
+        ? JSON.parse(existingKey.split(':').slice(2).join(':'))
+        : null;
+      
       const subscriptionParams = { type: 'l2Book', coin: symbol };
+      if (existingTickSizeParams) {
+        if (existingTickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
+        }
+        if (existingTickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = existingTickSizeParams.mantissa;
+        }
+      }
+      
       this.send({
         method: 'unsubscribe',
         subscription: subscriptionParams
       });
-      this.activeSubscriptions.delete(l2BookKey);
+      this.activeSubscriptions.delete(existingKey);
     }
     
     // Create new subscription
@@ -755,23 +834,24 @@ class WebSocketService {
       }
     }
     
-    const success = this.send({
+    const l2BookSuccess = this.send({
       method: 'subscribe',
       subscription: subscriptionParams
     });
     
-    if (success) {
-      this.activeSubscriptions.add(l2BookKey);
+    if (l2BookSuccess) {
+      this.activeSubscriptions.add(l2BookKeyWithParams);
       subscribed = true;
     }
 
+    // Subscribe to trades if not already subscribed
     if (!this.activeSubscriptions.has(tradesKey)) {
-      const success = this.send({
+      const tradesSuccess = this.send({
         method: 'subscribe',
         subscription: { type: 'trades', coin: symbol }
       });
       
-      if (success) {
+      if (tradesSuccess) {
         this.activeSubscriptions.add(tradesKey);
         subscribed = true;
       }
@@ -783,22 +863,27 @@ class WebSocketService {
   unsubscribeFromSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
-    const l2BookKey = `l2Book:${symbol}`;
     const tradesKey = `trades:${symbol}`;
-    
     let unsubscribed = false;
     
-    // Only unsubscribe if currently subscribed
-    if (this.activeSubscriptions.has(l2BookKey)) {
-      const subscriptionParams = { type: 'l2Book', coin: symbol };
+    // Find and unsubscribe from all l2Book subscriptions for this symbol
+    const existingL2BookSubs = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith(`l2Book:${symbol}`)
+    );
+    
+    for (const existingKey of existingL2BookSubs) {
+      // Extract tick size params from existing subscription if any
+      const existingTickSizeParams = existingKey.includes(':') && existingKey.split(':').length > 2
+        ? JSON.parse(existingKey.split(':').slice(2).join(':'))
+        : null;
       
-      // Add tick size parameters if provided (must match subscription)
-      if (tickSizeParams) {
-        if (tickSizeParams.nSigFigs !== undefined) {
-          subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      if (existingTickSizeParams) {
+        if (existingTickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
         }
-        if (tickSizeParams.mantissa !== undefined) {
-          subscriptionParams.mantissa = tickSizeParams.mantissa;
+        if (existingTickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = existingTickSizeParams.mantissa;
         }
       }
       
@@ -808,11 +893,12 @@ class WebSocketService {
       });
       
       if (success) {
-        this.activeSubscriptions.delete(l2BookKey);
+        this.activeSubscriptions.delete(existingKey);
         unsubscribed = true;
       }
     }
 
+    // Unsubscribe from trades
     if (this.activeSubscriptions.has(tradesKey)) {
       const success = this.send({
         method: 'unsubscribe',
@@ -826,6 +912,68 @@ class WebSocketService {
     }
     
     return unsubscribed;
+  }
+
+  // Bulk subscription management methods for better cleanup
+  
+  // Unsubscribe from all symbol-related subscriptions
+  unsubscribeFromAllSymbols() {
+    if (!this.isConnected) return false;
+    
+    let unsubscribed = false;
+    const symbolSubscriptions = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith('l2Book:') || key.startsWith('trades:')
+    );
+    
+    for (const subscriptionKey of symbolSubscriptions) {
+      const [type, symbol] = subscriptionKey.split(':');
+      
+      if (type === 'l2Book') {
+        // Handle l2Book subscriptions with potential tick size params
+        const existingTickSizeParams = subscriptionKey.includes(':') && subscriptionKey.split(':').length > 2
+          ? JSON.parse(subscriptionKey.split(':').slice(2).join(':'))
+          : null;
+        
+        const subscriptionParams = { type: 'l2Book', coin: symbol };
+        if (existingTickSizeParams) {
+          if (existingTickSizeParams.nSigFigs !== undefined) {
+            subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
+          }
+          if (existingTickSizeParams.mantissa !== undefined) {
+            subscriptionParams.mantissa = existingTickSizeParams.mantissa;
+          }
+        }
+        
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: subscriptionParams
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          unsubscribed = true;
+        }
+      } else if (type === 'trades') {
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: { type: 'trades', coin: symbol }
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          unsubscribed = true;
+        }
+      }
+    }
+    
+    return unsubscribed;
+  }
+
+  // Get all active symbol subscriptions for debugging
+  getActiveSymbolSubscriptions() {
+    return Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith('l2Book:') || key.startsWith('trades:')
+    );
   }
 
   // Removed unused market data cache getter methods - data is now broadcast directly to components
