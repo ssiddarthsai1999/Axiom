@@ -2,7 +2,7 @@
 // Based on TradingView's UDF-compatible datafeed structure
 
 import WebSocketService from '../hooks/WebsocketService.js';
-import { globalCleanup } from './hyperliquid-cleanup.js';
+// import { globalCleanup } from './hyperliquid-cleanup.js';
 
 // Configuration for HyperLiquid datafeed
 const configurationData = {
