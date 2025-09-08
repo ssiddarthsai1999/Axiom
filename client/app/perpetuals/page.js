@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import TradingViewChart from '@/components/TradingViewChart'
+import TradingViewChartHyperLiquid from '@/components/TradingViewChartHyperLiquid'
 import OrderBook from '@/components/OrderBook'
 import TokenData from '@/components/TokenData'
 import TradingPanel from '@/components/TradingPanel'
@@ -52,6 +52,7 @@ function TradingPage() {
   const wsService = useRef(walletWsService);
   const tradeHistoryRef = useRef(new Map()); // Change to Map for better symbol-based storage
   const previousSymbolRef = useRef(null); // Track previous symbol for cleanup
+  const previousTickSizeParamsRef = useRef(null); // Track previous tick size params for cleanup
   const maxTradesCount = 40;
   const lastOrderBookUpdate = useRef(0);
   const lastTradesUpdate = useRef(0);
@@ -427,15 +428,8 @@ function TradingPage() {
     
     // Only update if parameters actually changed
     if (JSON.stringify(currentTickSizeParams) !== JSON.stringify(tickSizeParams)) {
-      // Unsubscribe from current l2Book subscription
-      wsService.current.unsubscribeFromSymbol(selectedSymbol, currentTickSizeParams);
-      
-      // Subscribe with new tick size parameters
-      wsService.current.subscribeToSymbol(selectedSymbol, tickSizeParams);
-      
-      // Update current parameters
+      // Just update the parameters - the main subscription effect will handle the actual subscription
       setCurrentTickSizeParams(tickSizeParams);
-      
     }
   }, [selectedSymbol, currentTickSizeParams]);
 
@@ -508,6 +502,14 @@ function TradingPage() {
       
       // Subscribe to the symbol when connected - but wait for tick size params if available
       if (wsConnected) {
+        // Handle tick size parameter changes for the same symbol
+        if (previousSymbolRef.current === selectedSymbol && previousTickSizeParamsRef.current) {
+          // Unsubscribe from previous tick size parameters if they changed
+          if (JSON.stringify(previousTickSizeParamsRef.current) !== JSON.stringify(currentTickSizeParams)) {
+            ws.unsubscribeFromSymbol(selectedSymbol, previousTickSizeParamsRef.current);
+          }
+        }
+        
         // Check if we already have tick size params and should use them
         if (currentTickSizeParams) {
           // Subscribe with existing tick size parameters
@@ -519,6 +521,9 @@ function TradingPage() {
         
         // Subscribe to asset context for the selected symbol only
         ws.subscribeToAssetCtx(selectedSymbol);
+        
+        // Store current tick size params for next comparison
+        previousTickSizeParamsRef.current = currentTickSizeParams;
       } else {
         console.log(`WebSocket not connected, cannot subscribe to symbol: ${selectedSymbol}`);
       }
@@ -716,9 +721,8 @@ function TradingPage() {
                 className="shrink-0"
               />
               <div className='flex flex-1 w-full '>
-                <TradingViewChart 
-                  symbol={`${selectedSymbol}USD`}
-                  onSymbolChange={handleSymbolChange}
+                <TradingViewChartHyperLiquid 
+                  symbol={selectedSymbol}
                   className="flex-1 w-full"
                 />
               </div>
@@ -765,9 +769,8 @@ function TradingPage() {
           className="shrink-0"
         />
         <div className='flex-1'>
-          <TradingViewChart 
-            symbol={`${selectedSymbol}USD`}
-            onSymbolChange={handleSymbolChange}
+          <TradingViewChartHyperLiquid 
+            symbol={selectedSymbol}
             className="w-full h-full"
           />
         </div>

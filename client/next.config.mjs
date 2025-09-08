@@ -4,6 +4,16 @@ const nextConfig = {
   // For newer Next.js versions with server external packages support
   serverExternalPackages: ['pino-pretty', 'encoding'],
   
+  // Serve charting library files as static assets
+  async rewrites() {
+    return [
+      {
+        source: '/charting_library-master/:path*',
+        destination: '/charting_library-master/:path*',
+      },
+    ];
+  },
+  
   webpack: (config, { nextRuntime }) => {
     // Apply fallbacks only for browser bundles (not for server-side)
     if (typeof nextRuntime === "undefined") {

@@ -173,6 +173,10 @@ class WebSocketService {
         } else if (data.channel === 'trades' && data.data && Array.isArray(data.data) && data.data.length > 0) {
           const coin = data.data[0].coin; // Get coin from first trade
           this.broadcast(`trades:${coin}`, data);
+        } else if (data.channel === 'candle' && data.data) {
+          // Handle candle updates for TradingView chart
+          this.handleCandleUpdate(data);
+          return;
         } else {
           // Fallback for other message types
           this.broadcast(data.channel, data);
@@ -1047,6 +1051,100 @@ class WebSocketService {
   }
 
   // Removed unused getMarketData method - components now use broadcast data directly
+
+  // ===== CANDLE SUBSCRIPTION METHODS FOR TRADINGVIEW CHART =====
+
+  /**
+   * Handle candle data updates from WebSocket
+   */
+  handleCandleUpdate(data) {
+    const candleData = data.data;
+    const coin = candleData.s; // symbol from candle data
+    const interval = candleData.i; // interval from candle data
+    
+    if (!candleData || !coin || !interval) {
+      return;
+    }
+
+    const channelString = `${coin}_${interval}`;
+    
+    // Map HyperLiquid field names to TradingView format
+    const bar = {
+      time: candleData.t,                    // t -> time (already in milliseconds)
+      open: +candleData.o,                   // o -> open (faster than parseFloat)
+      high: +candleData.h,                   // h -> high
+      low: +candleData.l,                    // l -> low
+      close: +candleData.c,                  // c -> close
+      volume: +candleData.v || 0             // v -> volume
+    };
+    
+    // Broadcast to candle subscribers
+    this.broadcast(`candle:${channelString}`, bar);
+  }
+
+  /**
+   * Subscribe to candle data for TradingView chart
+   */
+  subscribeToCandle(symbol, interval, callback) {
+    if (!this.isConnected) return false;
+    
+    const channelString = `${symbol}_${interval}`;
+    const candleKey = `candle:${channelString}`;
+    
+    // Subscribe to the callback
+    this.subscribe(candleKey, callback);
+    
+    // Subscribe to WebSocket candle data if not already subscribed
+    const subscriptionKey = `candle:${channelString}`;
+    if (!this.activeSubscriptions.has(subscriptionKey)) {
+      const success = this.send({
+        method: 'subscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.add(subscriptionKey);
+        return true;
+      } else {
+        // If subscription failed, remove the callback subscription
+        this.unsubscribe(candleKey, callback);
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  /**
+   * Unsubscribe from candle data
+   */
+  unsubscribeFromCandle(symbol, interval, callback) {
+    if (!this.isConnected) return false;
+    
+    const channelString = `${symbol}_${interval}`;
+    const candleKey = `candle:${channelString}`;
+    const subscriptionKey = `candle:${channelString}`;
+    
+    // Unsubscribe from the callback
+    this.unsubscribe(candleKey, callback);
+    
+    // If no more subscribers for this candle, unsubscribe from WebSocket
+    if (!this.subscribers.has(candleKey) || this.subscribers.get(candleKey).size === 0) {
+      if (this.activeSubscriptions.has(subscriptionKey)) {
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: { type: 'candle', coin: symbol, interval: interval }
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          return true;
+        }
+      }
+    }
+    
+    return true;
+  }
 }
 
 export default WebSocketService;
