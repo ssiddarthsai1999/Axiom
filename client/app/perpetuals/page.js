@@ -7,7 +7,7 @@ import TradingPanel from '@/components/TradingPanel'
 import UserPositions from '@/components/UserPositions'
 import SimpleAtomTrader from '@/components/SimpleAtomTrader'
 import Navbar from '@/components/Navbar'
-import FavoritesTicker from '@/components/FavoritesTicker'
+// import FavoritesTicker from '@/components/FavoritesTicker'
 import WebSocketService from '@/hooks/WebsocketService'
 import { useWebSocketWallet } from '@/hooks/useWebSocketWallet'
 import { useAccount } from 'wagmi'
@@ -702,11 +702,11 @@ function TradingPage() {
 
       {/* Desktop Layout */}
       <div className="flex flex-col">
-      <FavoritesTicker 
+      {/* <FavoritesTicker 
                 selectedSymbol={selectedSymbol}
                 setSelectedSymbol={handleSymbolChange}
                 allMarketData={allMarketData}
-              />
+              /> */}
       <div className="hidden lg:flex flex-1 min-h-0">
         <div className='flex flex-col flex-1 min-w-0'>
         
@@ -756,11 +756,11 @@ function TradingPage() {
 
       {/* Mobile Layout */}
       <div className="lg:hidden flex flex-col flex-1">
-        <FavoritesTicker 
+        {/* <FavoritesTicker 
           selectedSymbol={selectedSymbol}
           setSelectedSymbol={handleSymbolChange}
           allMarketData={allMarketData}
-        />
+        /> */}
         <TokenData 
           marketData={marketData}
           selectedSymbol={selectedSymbol}

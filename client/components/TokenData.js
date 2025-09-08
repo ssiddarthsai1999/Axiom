@@ -1,5 +1,5 @@
 // components/TokenData.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, Search, Star } from 'lucide-react';
 import numeral from 'numeral';
 import { getTokenLogo } from '@/utils/getTokenLogo';
@@ -14,6 +14,19 @@ const TokenData = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [fundingCountdown, setFundingCountdown] = useState('00:00:00');
   const [favorites, setFavorites] = useState(new Set());
+
+  // Cache token logo URLs to prevent infinite fetching
+  const currentTokenLogo = useMemo(() => {
+    return marketData?.symbol ? getTokenLogo(marketData.symbol) : '';
+  }, [marketData?.symbol]);
+
+  // Cache token logos for dropdown list
+  const tokenLogos = useMemo(() => {
+    return availableTokens.reduce((acc, token) => {
+      acc[token.symbol] = getTokenLogo(token.symbol);
+      return acc;
+    }, {});
+  }, [availableTokens]);
 
   
 
@@ -179,7 +192,7 @@ const formatFunding = (funding) => {
             >
               <div className="w-8 h-8  rounded-full flex items-center justify-center">
                 <img 
-                  src={getTokenLogo(marketData.symbol)} 
+                  src={currentTokenLogo} 
                   alt={marketData.symbol}
                   className="w-8 h-8 rounded-full"
                   onError={(e) => {
@@ -245,7 +258,7 @@ const formatFunding = (funding) => {
                         />
                         <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center">
                           <img 
-                            src={getTokenLogo(token.symbol)} 
+                            src={tokenLogos[token.symbol] || ''} 
                             alt={token.symbol}
                             className="w-6 h-6 rounded-full"
                             onError={(e) => {
@@ -354,7 +367,7 @@ const formatFunding = (funding) => {
             >
   <div className="w-6 h-6 rounded-full flex items-center justify-center">
   <img 
-    src={getTokenLogo(marketData.symbol)} 
+    src={currentTokenLogo} 
     alt={`${marketData.symbol} logo`}
     className="w-full h-full rounded-full object-cover"
   />
@@ -428,7 +441,7 @@ const formatFunding = (funding) => {
                         />
                         <div className="min-w-6 min-h-6 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs font-bold text-white">
                           <img 
-                            src={getTokenLogo(token.symbol)} 
+                            src={tokenLogos[token.symbol] || ''} 
                             alt={token.symbol}
                             className="w-6 h-6 rounded-full"
                             onError={(e) => {

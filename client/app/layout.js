@@ -3,7 +3,7 @@ import "./globals.css";
 import { AppKitProvider } from "@/context/AppKitProvider";
 import Navbar from "@/components/Navbar";
 import DynamicFooter from "@/components/DynamicFooter";
-import FavoritesTicker from "@/components/FavoritesTicker";
+// import FavoritesTicker from "@/components/FavoritesTicker";
 import ReduxProvider from "@/redux/ReduxProvider"
 
 const geistSans = Geist({
