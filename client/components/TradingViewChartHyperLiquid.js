@@ -120,10 +120,16 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
           container: container.current,
           library_path: "/charting_library-master/charting_library/",
           locale: "en",
+          theme: "dark",
+          allow_symbol_change: false,
+          gridColor: "#181a20",
+          backgroundColor: "#0d0c0e",
           disabled_features: [
             "use_localstorage_for_settings",
             "volume_force_overlay",
-            "create_volume_indicator_by_default"
+            "create_volume_indicator_by_default",
+            "header_symbol_search",
+            "header_compare",
           ],
           enabled_features: [
             "side_toolbar_in_fullscreen_mode",
@@ -160,11 +166,11 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
             "paneProperties.backgroundType": "solid",
             "paneProperties.backgroundGradientStartColor": "#0d0c0e",
             "paneProperties.backgroundGradientEndColor": "#0d0c0e",
-            "scalesProperties.backgroundColor": "#0d0c0e",
+            // "scalesProperties.backgroundColor": "#0d0c0e",
             "paneProperties.horzGridProperties.color": "#2a2a2a",
             "paneProperties.crossHairProperties.color": "#666666",
             "scalesProperties.textColor": "#b3b3b3",
-            "scalesProperties.backgroundColor": "#000000",
+            // "scalesProperties.backgroundColor": "#000000",
             "mainSeriesProperties.candleStyle.upColor": "#00ff88",
             "mainSeriesProperties.candleStyle.downColor": "#ff4757",
             "mainSeriesProperties.candleStyle.drawWick": true,
@@ -276,9 +282,9 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         <div className="absolute inset-0 bg-[#0d0c0e] flex items-center justify-center">
           <div className="text-center text-gray-400">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
-            <p className="text-lg font-semibold">Loading HyperLiquid Chart...</p>
+            {/* <p className="text-lg font-semibold">Loading HyperLiquid Chart...</p> */}
             <p className="text-sm">
-              {!containerElement ? 'Initializing container...' : 'Connecting to real-time data'}
+              {/* {!containerElement ? 'Initializing container...' : 'Connecting to real-time data'} */}
             </p>
           </div>
         </div>

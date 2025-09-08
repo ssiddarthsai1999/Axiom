@@ -659,9 +659,9 @@ function TradingPage() {
           <div className="flex flex-col items-center space-y-4">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <div className="text-gray-400 text-sm">Loading market data...</div>
-            {!wsConnected && (
+            {/* {!wsConnected && (
               <div className="text-yellow-400 text-xs">Connecting to real-time data...</div>
-            )}
+            )} */}
           </div>
         </div>
       </div>
@@ -694,11 +694,11 @@ function TradingPage() {
   return (
     <div className=' min-h-[94vh] flex flex-col bg-[#0d0c0e]'>
       {/* WebSocket connection status indicatorss */}
-      {!wsConnected && (
+      {/* {!wsConnected && (
         <div className="bg-yellow-600 text-black text-center py-1 text-xs">
           Connecting to real-time data...
         </div>
-      )}
+      )} */}
 
       {/* Desktop Layout */}
       <div className="flex flex-col">
