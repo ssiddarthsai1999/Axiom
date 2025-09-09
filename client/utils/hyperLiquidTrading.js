@@ -33,7 +33,6 @@ class HyperliquidUtils {
       }
 
       const meta = await response.json();
-      console.log('meta------------------', meta);
       this.metaCache = meta;
       return meta;
     } catch (error) {
@@ -77,14 +76,12 @@ class HyperliquidUtils {
     }
 
     try {
-      console.log(`🔍 Fetching asset info for symbol: ${symbol}`);
       
       // First try perpetuals
       const meta = await this.getMeta(isMainnet);
       
       if (meta?.universe) {
         const perpAsset = meta.universe.find(asset => asset.name === symbol);
-        console.log('perpAsset------------------', perpAsset);
         if (perpAsset) {
           const assetInfo = {
             index: perpAsset.index || meta.universe.indexOf(perpAsset),
@@ -95,7 +92,6 @@ class HyperliquidUtils {
           };
           
           this.assetCache.set(cacheKey, assetInfo);
-          console.log(`✅ Found perpetual asset: ${symbol} with index ${assetInfo.index}`);
           return assetInfo;
         }
       }
@@ -123,13 +119,11 @@ class HyperliquidUtils {
           };
           
           this.assetCache.set(cacheKey, assetInfo);
-          console.log(`✅ Found spot asset: ${symbol} with index ${assetInfo.index}`);
           return assetInfo;
         }
       }
 
       // Asset not found, return fallback
-      console.warn(`⚠️ Asset ${symbol} not found, using fallback`);
       const fallbackInfo = {
         index: 0,
         name: symbol,
@@ -159,7 +153,6 @@ class HyperliquidUtils {
   // Get user account state
   async getUserAccountState(address, isMainnet = true) {
     try {
-      // console.log(`🔍 Fetching user state for: ${address}`);
       
       const response = await fetch(`${this.getApiUrl(isMainnet)}/info`, {
         method: 'POST',
@@ -175,7 +168,6 @@ class HyperliquidUtils {
       }
 
       const result = await response.json();
-      // console.log(`✅ User state fetched successfully:`, result);
       return result;
       
     } catch (error) {
@@ -187,7 +179,6 @@ class HyperliquidUtils {
   // Place order using new signing service
   async placeOrder(orderParams, signer, isMainnet = true, vaultAddress = null) {
     try {
-      console.log('📤 Placing order with params:', orderParams);
       
       // Validate required parameters
       if (!orderParams.assetIndex && orderParams.assetIndex !== 0) {
@@ -221,7 +212,6 @@ class HyperliquidUtils {
       // Use the new signing service
       const result = await placeOrder(finalOrderParams, signer, isMainnet, vaultAddress);
       
-      console.log('✅ Order placed successfully:', result);
       return result;
       
     } catch (error) {
@@ -239,7 +229,6 @@ class HyperliquidUtils {
       };
 
       const result = await cancelOrder(cancelParams, signer, isMainnet, vaultAddress);
-      console.log('✅ Order cancelled successfully:', result);
       return result;
       
     } catch (error) {
@@ -252,7 +241,6 @@ class HyperliquidUtils {
   async updateLeverage(assetIndex, leverage, isCross, signer, isMainnet = true, vaultAddress = null) {
     try {
       const result = await updateLeverage(assetIndex, leverage, isCross, signer, isMainnet, vaultAddress);
-      console.log('✅ Leverage updated successfully:', result);
       return result;
       
     } catch (error) {
@@ -319,7 +307,6 @@ class HyperliquidUtils {
     this.assetCache.clear();
     this.metaCache = null;
     this.spotMetaCache = null;
-    console.log('🧹 Hyperliquid cache cleared');
   }
 }
 

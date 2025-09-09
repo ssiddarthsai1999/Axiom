@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 import { getOrCreateSessionAgentWallet, getAssetId } from '@/utils/hyperLiquidSDK';
+import { useWebSocketWallet } from '../hooks/useWebSocketWallet';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading';
 import * as hl from '@nktkas/hyperliquid';
 import TPSLModal from './TPSLModal';
@@ -33,11 +34,13 @@ const UserPositions = ({ className = '' }) => {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const refreshInterval = useRef(null);
-  const wsService = useRef(null);
+  
+  // Use the WebSocket wallet hook to manage subscriptions automatically
+  const { wsService } = useWebSocketWallet();
 
   // Initialize WebSocket service
   useEffect(() => {
-    wsService.current = WebSocketService.getInstance();
+    // Use the WebSocket service from the hook instead of creating a new instance
     
     // Subscribe to webData2 for user data
     if (isConnected && address) {
@@ -45,20 +48,18 @@ const UserPositions = ({ className = '' }) => {
       const initializeWebSocket = async () => {
         setWsInitializing(true);
         try {
-          if (!wsService.current.isHealthy()) {
-            console.log('⏳ Waiting for WebSocket connection...');
-            await wsService.current.waitForInitialization(500);
+          if (!wsService.isHealthy()) {
+            await wsService.waitForInitialization(500);
           }
           
-          if (wsService.current.isHealthy()) {
-            console.log('✅ WebSocket ready, subscribing to user data...');
-            wsService.current.subscribeToUserData(address);
+          if (wsService.isHealthy()) {
+            // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
             
             // Subscribe to general webData2 updates
-            wsService.current.subscribe('webData2', handleWebData2Update);
+            wsService.subscribe('webData2', handleWebData2Update);
             
             // Subscribe to market data updates for real-time prices
-            wsService.current.subscribe('marketDataUpdate', handleMarketDataUpdate);
+            wsService.subscribe('marketDataUpdate', handleMarketDataUpdate);
           } else {
             console.log('⚠️ WebSocket not ready, will use API fallback');
           }
@@ -73,15 +74,14 @@ const UserPositions = ({ className = '' }) => {
     }
     
     return () => {
-      if (wsService.current && address) {
-        wsService.current.unsubscribeFromUserData(address);
-        wsService.current.unsubscribeFromUserHistoricalOrders(address);
-        wsService.current.unsubscribe('webData2', handleWebData2Update);
-        wsService.current.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
-        wsService.current.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);
+      if (wsService) {
+        // WebSocket wallet management is now handled automatically by useWebSocketWallet hook
+        wsService.unsubscribe('webData2', handleWebData2Update);
+        wsService.unsubscribe('marketDataUpdate', handleMarketDataUpdate);
+        wsService.unsubscribe('userHistoricalOrders', handleOrderHistoryUpdate);
       }
     };
-  }, [isConnected, address]);
+  }, [isConnected, address, wsService]);
 
   // Handle webData2 updates from websocket
   const handleWebData2Update = (webData2Data) => {
@@ -89,17 +89,7 @@ const UserPositions = ({ className = '' }) => {
     
     // Store webData2 data for use in modals
     setWebData2Data(webData2Data);
-    
-    console.log('🔍 Received webData2 update:', {
-      positions: webData2Data.clearinghouseState.assetPositions?.length || 0,
-      orders: webData2Data.openOrders?.length || 0,
-      accountValue: webData2Data.clearinghouseState.marginSummary?.accountValue,
-      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString(),
-      hasAssetCtxs: !!webData2Data.assetCtxs,
-      assetCtxsCount: webData2Data.assetCtxs?.length || 0,
-      hasMeta: !!webData2Data.meta,
-      universeCount: webData2Data.meta?.universe?.length || 0
-    });
+
     
         // Process positions from webData2
     if (webData2Data.clearinghouseState.assetPositions) {
@@ -150,7 +140,6 @@ const UserPositions = ({ className = '' }) => {
         });
       
       setPositions(formattedPositions);
-      console.log('✅ Positions updated from webData2:', formattedPositions);
     }
     
     // Process balances from webData2
@@ -168,7 +157,6 @@ const UserPositions = ({ className = '' }) => {
         });
       
       setBalances(formattedBalances);
-      console.log('✅ Balances updated from webData2:', formattedBalances);
     }
     
     // Process open orders from webData2
@@ -209,7 +197,6 @@ const UserPositions = ({ className = '' }) => {
       });
       
       setOpenOrders(formattedOrders);
-      console.log('✅ Orders updated from webData2:', formattedOrders);
     }
     
     // Process spot balances if available
@@ -281,8 +268,6 @@ const UserPositions = ({ className = '' }) => {
             // const newPnlPercentage = pos.entryPrice > 0 ? 
             //   ((newMarkPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'Long' ? 1 : -1) : 0;
             
-            console.log(`🔄 Updated mark price for ${pos.coin} (index ${tokenIndex}): ${pos.markPrice} → ${newMarkPrice}`);
-            
             return {
               ...pos,
               markPrice: newMarkPrice,
@@ -306,7 +291,6 @@ const UserPositions = ({ className = '' }) => {
       if (tokenIndex !== -1 && webData2Data.assetCtxs[tokenIndex]) {
         const assetCtx = webData2Data.assetCtxs[tokenIndex];
         if (assetCtx.markPx) {
-          // console.log(`🔍 Mark price from webData2 for ${coin} (index ${tokenIndex}):`, assetCtx.markPx);
           return parseFloat(assetCtx.markPx);
         }
       }
@@ -370,7 +354,6 @@ const UserPositions = ({ className = '' }) => {
         });
         
         setCurrentPrices(prev => ({ ...prev, ...priceMap }));
-        // console.log('✅ Current prices updated (fallback):', priceMap);
       }
     } catch (error) {
       console.error('❌ Error fetching current prices:', error);
@@ -418,7 +401,6 @@ const UserPositions = ({ className = '' }) => {
     if (!wsService.current || !address) return;
     
     try {
-      console.log('🔍 Subscribing to order history...');
       
       // Subscribe to userHistoricalOrders
       wsService.current.subscribeToUserHistoricalOrders(address);
@@ -434,12 +416,7 @@ const UserPositions = ({ className = '' }) => {
   // Handle order history updates from WebSocket
   const handleOrderHistoryUpdate = (historicalOrdersData) => {
     if (!historicalOrdersData || !historicalOrdersData.orderHistory) return;
-    
-    console.log('🔍 Received order history update:', {
-      orderCount: historicalOrdersData.orderHistory.length,
-      isSnapshot: historicalOrdersData.isSnapshot,
-      user: historicalOrdersData.user
-    });
+
     
     // Format the order history data to match our table structure
     const formattedOrderHistory = historicalOrdersData.orderHistory.map(orderEntry => {
@@ -531,7 +508,7 @@ const UserPositions = ({ className = '' }) => {
             direction: trade.dir || 'Unknown'
           }));
           setTrades(formattedTrades);
-          console.log('✅ Trades loaded:', formattedTrades);
+
         }
       }
     } catch (error) {
@@ -548,7 +525,7 @@ const UserPositions = ({ className = '' }) => {
     
     try {
       // Fetch initial positions via API if websocket is not ready
-      console.log('🔍 Fetching initial positions via API...');
+
       const response = await fetch('https://api.hyperliquid.xyz/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -676,7 +653,6 @@ const UserPositions = ({ className = '' }) => {
   const cancelOrder = async (orderId, symbol) => {
 
     try {
-      console.log(`🗑️ Canceling order ${orderId} for ${symbol}`);
       
       // Get asset index for the symbol
       const assetIndex = getAssetId(symbol);
@@ -684,7 +660,6 @@ const UserPositions = ({ className = '' }) => {
         throw new Error(`Unknown symbol: ${symbol}`);
       }
       
-      console.log(`📊 Asset index for ${symbol}: ${assetIndex}`);
       
       // Show loading state
       setLoading(true);
@@ -702,13 +677,7 @@ const UserPositions = ({ className = '' }) => {
         }]
       };
       
-      console.log('📤 Sending cancel request:', cancelParams);
       const result = await exchClient.cancel(cancelParams);
-      
-      console.log('✅ Order cancelled successfully:', result);
-      
-      // Show success message
-      
       // Refresh data to reflect the cancellation
       await fetchInitialUserData();
       
@@ -722,7 +691,6 @@ const UserPositions = ({ className = '' }) => {
 
   const closePosition = async (symbol) => {
     try {
-      console.log(`🔒 Closing position for ${symbol}`);
       // Implementation would need proper position closing with nktkas SDK
       // This would require implementing position closing in the hyperLiquidSDK.js
       // alert(`Position closing for ${symbol} - Implementation needed`);
@@ -780,19 +748,12 @@ const UserPositions = ({ className = '' }) => {
     }
 
     try {
-      console.log('🔒 Closing position with order:', orderData);
       
       // Get asset information for the symbol
       const assetInfo = await hyperliquidUtils.getAssetInfo(orderData.symbol, true);
       if (!assetInfo) {
         throw new Error(`Could not find asset information for ${orderData.symbol}`);
       }
-      
-      console.log('📊 Asset info:', assetInfo);
-      
-      // Show loading state
-      const loadingMessage = `Submitting ${orderData.type.toUpperCase()} close order for ${orderData.symbol}...`;
-      console.log(loadingMessage);
       
       // Use agent wallet approach like placeOrderWithAgentWallet
       const agentWallet = getOrCreateSessionAgentWallet();
@@ -829,18 +790,6 @@ const UserPositions = ({ className = '' }) => {
         ? formatPriceToMaxDecimals(finalPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
         : parseFloat(finalPrice.toFixed(6)).toString();
 
-      console.log('💰 Using price for order:', {
-        type: orderData.type,
-        side: orderData.side,
-        specifiedPrice: orderData.price,
-        currentPrice: currentPrices[orderData.symbol],
-        markPrice: positionToClose.markPrice,
-        basePrice: orderData.type === 'market' ? (currentPrices[orderData.symbol] || positionToClose.markPrice) : null,
-        adjustment: orderData.type === 'market' ? (orderData.side === 'Buy' ? '+5%' : '-5%') : 'none',
-        rawFinalPrice: finalPrice,
-        formattedPrice: formattedPrice
-      });
-
       // Prepare order in nktkas SDK format
       const orderRequest = {
         orders: [{
@@ -859,12 +808,10 @@ const UserPositions = ({ className = '' }) => {
         grouping: 'na'
       };
       
-      console.log('📋 Order request (HyperLiquid format):', JSON.stringify(orderRequest, null, 2));
       
       // Place the order using agent wallet
       const result = await exchClient.order(orderRequest);
       
-      console.log('✅ Order placed successfully:', result);
       
       // Check if the order was successful
       if (result?.status === 'ok') {

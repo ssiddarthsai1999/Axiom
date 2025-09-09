@@ -52,12 +52,6 @@ const [applyToAll, setApplyToAll] = useState(false);
   
   // Debug: Log leverage changes
   useEffect(() => {
-    console.log('🔧 Leverage state changed:', {
-      symbol: selectedSymbol,
-      leverage: leverage,
-      marginMode: marginMode,
-      address: address
-    });
   }, [leverage, marginMode, selectedSymbol, address]);
 
   // Initialize tempLeverage with current leverage when component mounts
@@ -91,7 +85,6 @@ const [applyToAll, setApplyToAll] = useState(false);
       const agentWallet = getOrCreateSessionAgentWallet();
       const approved = await isAgentWalletApproved(wallet.signer, agentWallet, true);
       setIsAgentWalletReady(approved);
-      console.log('🤖 Agent wallet status:', { approved, agentAddress: agentWallet.address });
     } catch (error) {
       console.error('❌ Error checking agent wallet status:', error);
       setIsAgentWalletReady(false);
@@ -120,7 +113,6 @@ const [applyToAll, setApplyToAll] = useState(false);
   }
 
   const handleLeverageClick = () => {
-    console.log('🔧 Leverage clicked:', leverage);
     setTempLeverage(leverage); // Set to current leverage instead of max leverage
     setShowLeverageModal(true);
     // Clear any previous error/success messages when opening modal
@@ -187,13 +179,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       // Determine if cross margin based on marginMode
       const isCross = marginMode === 'cross';
       
-      console.log('🔧 Updating leverage:', {
-        symbol: selectedSymbol,
-        assetIndex,
-        leverage: tempLeverage,
-        isCross,
-        applyToAll
-      });
+   
 
       // Update leverage using SDK
       const result = await updateLeverageSDK(
@@ -204,18 +190,12 @@ const [applyToAll, setApplyToAll] = useState(false);
         true // isMainnet
       );
 
-      console.log('✅ Leverage updated successfully:', result);
+   
       
       // Update local state only after successful API call
       setLeverage(tempLeverage);
       setLeverageSuccess(`Leverage updated to ${tempLeverage}x for ${selectedSymbol}`);
       setLastLeverageSync(new Date());
-      
-      console.log('✅ Leverage state updated locally:', {
-        symbol: selectedSymbol,
-        newLeverage: tempLeverage,
-        newMarginMode: marginMode
-      });
       
       // Close modal after a short delay to show success message
       setTimeout(() => {
@@ -270,15 +250,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Maintenance margin is typically 1/2 of initial margin (or 1/(2*leverage) of position value)
     const maintenanceMarginRequired = positionValue / (parseFloat(leverage) * 2);
     
-    console.log('🧮 Margin calculation breakdown:', {
-      orderSize: parseFloat(orderSize),
-      price: parseFloat(price),
-      leverage: parseFloat(leverage),
-      positionValue: positionValue,
-      initialMarginRequired: initialMarginRequired,
-      maintenanceMarginRequired: maintenanceMarginRequired,
-      symbol: selectedSymbol
-    });
+
     
     return initialMarginRequired;
   };
@@ -370,7 +342,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     const fetchCurrentLeverage = async () => {
       if (address && selectedSymbol && assetInfo) {
         try {
-          console.log('🔄 Fetching current leverage for:', selectedSymbol);
+
           await checkActualLeverage();
         } catch (error) {
           console.error('❌ Error fetching current leverage on symbol change:', error);
@@ -386,7 +358,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     const initialLeverageFetch = async () => {
       if (address && selectedSymbol && assetInfo && isConnected) {
         try {
-          console.log('🚀 Initial leverage fetch on component mount');
+
           await checkActualLeverage();
         } catch (error) {
           console.error('❌ Error in initial leverage fetch:', error);
@@ -423,11 +395,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
           setUsdcBalance(usdcBal);
           
-          console.log('💰 Wallet balances:', {
-            eth: ethBal,
-            usdc: usdcBal,
-            address: address
-          });
+
           
         } catch (error) {
           console.error('Error fetching balances:', error);
@@ -441,20 +409,13 @@ const [applyToAll, setApplyToAll] = useState(false);
   // Check actual leverage setting from Hyperliquid API
   const checkActualLeverage = async () => {
     if (!address || !selectedSymbol || !assetInfo) {
-      console.log('⏳ Skipping leverage check - missing required data:', {
-        hasAddress: !!address,
-        hasSymbol: !!selectedSymbol,
-        hasAssetInfo: !!assetInfo
-      });
+
       return;
     }
     
     try {
       setIsFetchingLeverage(true);
-      console.log('🔍 Checking actual leverage from Hyperliquid API...', {
-        address: address,
-        symbol: selectedSymbol
-      });
+
       
       // Use the new API to get current leverage
       const leverageData = await getCurrentLeverage(address, selectedSymbol);
@@ -463,23 +424,16 @@ const [applyToAll, setApplyToAll] = useState(false);
         const actualLeverage = leverageData.value;
         const actualMarginMode = leverageData.type;
         
-        console.log('📊 Found actual leverage from Hyperliquid API:', {
-          symbol: selectedSymbol,
-          actualLeverage: actualLeverage,
-          actualMarginMode: actualMarginMode,
-          appLeverage: leverage,
-          appMarginMode: marginMode,
-          match: actualLeverage === leverage && actualMarginMode === marginMode
-        });
+
         
         // Update app leverage and margin mode if they don't match
         if (actualLeverage !== leverage) {
-          console.log('⚠️ Leverage mismatch! Updating app leverage to match Hyperliquid');
+
           setLeverage(actualLeverage);
         }
         
         if (actualMarginMode !== marginMode) {
-          console.log('⚠️ Margin mode mismatch! Updating app margin mode to match Hyperliquid');
+
           setMarginMode(actualMarginMode);
         }
         
@@ -504,7 +458,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setLeverageSuccess(null);
     
     try {
-      console.log('🔄 Manually syncing leverage with Hyperliquid...');
+     
       await checkActualLeverage();
       setLeverageSuccess('Leverage synced with Hyperliquid');
       setLastLeverageSync(new Date());
@@ -522,7 +476,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setCheckingOnboarding(true);
     try {
       const userState = await hyperliquidUtils.getUserAccountState(address, true);
-      console.log('📊 Full user state response:', userState);
+     
       
       if (userState && (userState.marginSummary || userState.balances)) {
         setIsOnboarded(true);
@@ -538,17 +492,12 @@ const [applyToAll, setApplyToAll] = useState(false);
           // Available margin = Account Value - Margin Used - some buffer for safety
           availableMargin = Math.max(0, accountValue - marginUsed);
           
-          console.log('💰 Margin Summary:', {
-            accountValue: accountValue,
-            marginUsed: marginUsed,
-            calculatedAvailableMargin: availableMargin
-          });
         }
         
         // Cross-reference with withdrawable amount (should be similar to available margin)
         if (userState.withdrawable) {
           const withdrawable = parseFloat(userState.withdrawable);
-          console.log('💸 Withdrawable amount:', withdrawable);
+         
           
           // Use the more conservative estimate
           if (withdrawable > 0) {
@@ -566,11 +515,7 @@ const [applyToAll, setApplyToAll] = useState(false);
               availableMargin = Math.max(availableMargin, available);
               accountValue = Math.max(accountValue, total);
               
-              console.log('💰 USDC Balance fallback:', {
-                total,
-                hold,
-                available
-              });
+              
             }
           });
         }
@@ -581,11 +526,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           accountValue: accountValue
         }));
         
-        console.log('✅ Final account data:', {
-          availableMargin: availableMargin,
-          accountValue: accountValue,
-          address: address
-        });
+        
         
         // Check actual leverage after getting account data
         await checkActualLeverage();
@@ -593,7 +534,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         return true;
       } else {
         setIsOnboarded(false);
-        console.log('❌ User not onboarded - no margin summary or balances found');
+        
         return false;
       }
     } catch (error) {
@@ -607,11 +548,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   useEffect(() => {
     if (isConnected && address && walletClient) {
-      console.log('🔄 Wallet connection changed:', {
-        address,
-        chainId: walletClient.chain?.id,
-        chainName: walletClient.chain?.name
-      });
+     
       
       setAccountData(prev => ({
         ...prev,
@@ -700,14 +637,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
       
-      console.log('📊 Position calculation (margin-based):', {
-        availableMargin: availableBalance,
-        marginToUse,
-        leverage,
-        positionValue,
-        tokenAmount,
-        price: marketData.price
-      });
+     
     }
   };
 
@@ -728,7 +658,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
 
     try {
-      console.log('🔍 Creating signer for address:', address);
+     
       
       if (walletClient.chain?.id !== 42161) {
         setOrderError('Please switch to Arbitrum network');
@@ -745,8 +675,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       const signer = await provider.getSigner();
       const signerAddress = await signer.getAddress();
       
-      // console.log('🔍 Signer address:', signerAddress);
-      // console.log('🔍 Expected address:', address);
+     
       
       const normalizedSignerAddress = signerAddress.toLowerCase();
       const normalizedExpectedAddress = address.toLowerCase();
@@ -757,7 +686,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         return;
       }
       
-      // console.log('✅ Basic wallet verification passed');
+     
       
       setWallet({
         address: normalizedExpectedAddress,
@@ -766,7 +695,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         walletClient: walletClient
       });
       
-      // console.log('✅ Signer created successfully with address:', normalizedExpectedAddress);
+     
       
       await checkOnboardingStatus();
       await checkBuilderFeeStatus();
@@ -784,7 +713,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setBuilderFeeError(null);
     
     try {
-      console.log('🔍 Checking builder fee status...');
+     
       
       // Option 1: Check specific builder address (requires that address to have 100 USDC in Hyperliquid)
       const builderAddress = '0xD4418418F6673B48E1828F539bED0340F78114E1';
@@ -798,7 +727,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       const isApproved = maxFee > 0;
       setBuilderFeeApproved(isApproved);
       
-      console.log('💰 Builder fee status:', { maxFee, isApproved, builderAddress });
+
     } catch (error) {
       console.error('❌ Error checking builder fee:', error);
       setBuilderFeeError('Failed to check builder fee status');
@@ -837,7 +766,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       setBuilderFeeSuccess(null);
       
       try {
-        console.log('🔧 Approving builder fee...');
+       
         
         // Approve with a reasonable max fee rate (1% as percentage string)
         const maxFeeRate = "1%"; // 1% as percentage string format required by HyperLiquid API
@@ -850,7 +779,7 @@ const [applyToAll, setApplyToAll] = useState(false);
         
         const result = await approveBuilderFee(wallet.signer, maxFeeRate, true, builderAddress);
         
-        console.log('✅ Builder fee approved:', result);
+        
         setBuilderFeeSuccess('Builder fee approved successfully!');
         setBuilderFeeApproved(true);
         setOrderSuccess('✅ Builder fee approved! You can now place orders.');
@@ -1174,16 +1103,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Apply HyperLiquid tick size rounding
     const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-    console.log('🎯 TradingPanel HyperLiquid formatting:', {
-      original: value,
-      parsed: parseFloat(value),
-      adjustedNum: num,
-      szDecimals,
-      isSpot,
-      tickRounded,
-      tickSize: getHyperLiquidTickSize(num, szDecimals),
-      symbol: selectedSymbol
-    });
+
     
     return tickRounded.toString();
   };
@@ -1937,13 +1857,9 @@ const [applyToAll, setApplyToAll] = useState(false);
                     const sideMultiplier = side === 'Long' ? 1 : -1;
                     const userLeverage = leverage; // e.g., 5
                     const maxAssetLeverage = assetInfo?.maxLeverage; // e.g., 50
-                    // console.log(assetInfo, 'assetInfo')
-                    // console.log(marketData, 'marketData')
                     // 2. Calculate Order Value
                     const orderValue = (positionSize * currentPrice).toFixed(2);
-                    // console.log(orderValue, 'orderValue')
                     const estimatedFee = orderValue * takerFeeRate;
-                    // console.log(estimatedFee, 'estimatedFee', orderValue, takerFeeRate)
                     // 3. Calculate the EXACT Initial Margin for this trade
                     // This is the key fix: We derive it here instead of using a separate variable.
                     const initialMargin = orderValue / userLeverage;

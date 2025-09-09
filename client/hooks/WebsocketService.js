@@ -3,6 +3,7 @@
 
 class WebSocketService {
   static instance = null;
+  static isConnecting = false; // Global flag to prevent multiple connection attempts
   
   constructor() {
     this.ws = null;
@@ -13,21 +14,25 @@ class WebSocketService {
     this.subscribers = new Map();
     this.messageQueue = [];
     this.lastMessageTimes = new Map();
-    this.messageThrottleMs = 8; // ~120fps max update rate for better responsiveness
+    this.messageThrottleMs = 8; // ~10fps max update rate for better performance balance
     this.activeSubscriptions = new Set(); // Track active subscriptions
     
-    // Market data cache for real-time updates
-    this.marketDataCache = new Map();
-    this.allMidsCache = new Map();
-    this.assetContextCache = new Map(); // For oracle prices and funding
+    // Essential data for WebSocket functionality
     this.universeData = null; // Meta data about tokens
     this.isInitialized = false;
     
-    // User data cache for real-time updates
-    this.userDataCache = new Map(); // Cache for webData2 user data
+    // User subscriptions tracking (still needed for subscription management)
     this.userSubscriptions = new Set(); // Track user subscriptions
-    this.userHistoricalOrdersCache = new Map(); // Cache for user historical orders
     this.userHistoricalOrdersSubscriptions = new Set(); // Track historical orders subscriptions
+    
+    // Subscription state tracking to prevent rapid churn
+    this.pendingSubscriptions = new Map(); // Track pending subscriptions to avoid duplicates
+    this.subscriptionDebounceMs = 100; // Debounce rapid subscription changes
+    
+    // Wallet connection tracking
+    this.currentWalletAddress = null; // Current connected wallet address
+    this.zeroAddress = '0x0000000000000000000000000000000000000000'; // Zero address for public data
+    this.isPublicDataSubscribed = false; // Track if we're subscribed to public data
     
     // WebSocket POST request counter for unique IDs
     this.requestId = 1;
@@ -45,8 +50,6 @@ class WebSocketService {
       this.subscribers.set(key, new Set());
     }
     this.subscribers.get(key).add(callback);
-    console.log(`✅ Subscribed to ${key}, total subscribers: ${this.subscribers.get(key).size}`);
-    console.log(`✅ All active subscriptions:`, Array.from(this.subscribers.keys()));
   }
 
   unsubscribe(key, callback) {
@@ -54,12 +57,9 @@ class WebSocketService {
       this.subscribers.get(key).delete(callback);
       if (this.subscribers.get(key).size === 0) {
         this.subscribers.delete(key);
-        console.log(`🗑️ Removed subscription for ${key}`);
       } else {
-        console.log(`🗑️ Unsubscribed from ${key}, remaining subscribers: ${this.subscribers.get(key).size}`);
       }
     }
-    console.log(`🗑️ All active subscriptions after unsubscribe:`, Array.from(this.subscribers.keys()));
   }
 
   broadcast(key, data) {
@@ -88,25 +88,38 @@ class WebSocketService {
     }
   }
 
-  connect() {
+  connect(initialWalletAddress = null) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
       return;
     }
 
     if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
       return;
     }
-
+    
+    // Global flag to prevent multiple connection attempts from different components
+    if (WebSocketService.isConnecting) {
+      return;
+    }
+    
+    WebSocketService.isConnecting = true;
     this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
 
     this.ws.onopen = () => {
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      WebSocketService.isConnecting = false; // Clear the connecting flag
       this.broadcast('connection', { connected: true });
       
       // Initialize with WebSocket requests instead of REST API
       this.initializeMarketData();
+      
+      // Check if we have an initial wallet address, otherwise subscribe to public data
+      if (initialWalletAddress) {
+        this.updateWalletAddress(initialWalletAddress);
+      } else {
+        this.subscribeToPublicData();
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -160,6 +173,10 @@ class WebSocketService {
         } else if (data.channel === 'trades' && data.data && Array.isArray(data.data) && data.data.length > 0) {
           const coin = data.data[0].coin; // Get coin from first trade
           this.broadcast(`trades:${coin}`, data);
+        } else if (data.channel === 'candle' && data.data) {
+          // Handle candle updates for TradingView chart
+          this.handleCandleUpdate(data);
+          return;
         } else {
           // Fallback for other message types
           this.broadcast(data.channel, data);
@@ -171,27 +188,31 @@ class WebSocketService {
 
     this.ws.onclose = (event) => {
       this.isConnected = false;
+      WebSocketService.isConnecting = false; // Clear the connecting flag on close
       this.activeSubscriptions.clear(); // Clear active subscriptions on disconnect
       this.broadcast('connection', { connected: false });
       
       // Reset connection state
       this.ws = null;
       
+      // Reset wallet tracking on disconnect
+      this.currentWalletAddress = null;
+      this.isPublicDataSubscribed = false;
+      
       if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
         this.reconnectTimeout = setTimeout(() => {
           this.reconnectAttempts++;
-          this.connect();
+          this.connect(this.currentWalletAddress);
         }, delay);
       } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.log('Max reconnection attempts reached');
         this.broadcast('connectionError', { error: 'Max reconnection attempts reached' });
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('❌ WebSocket error:', error);
+      WebSocketService.isConnecting = false; // Clear the connecting flag on error
       this.broadcast('error', error);
     };
   }
@@ -201,12 +222,36 @@ class WebSocketService {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    
+    // Properly unsubscribe from all active subscriptions before disconnecting
+    if (this.isConnected) {
+      this.unsubscribeFromAllSymbols();
+      
+      // Unsubscribe from asset context subscriptions
+      const assetCtxSubscriptions = Array.from(this.activeSubscriptions).filter(key => 
+        key.startsWith('activeAssetCtx:')
+      );
+      
+      for (const subscriptionKey of assetCtxSubscriptions) {
+        const symbol = subscriptionKey.replace('activeAssetCtx:', '');
+        this.unsubscribeFromAssetCtx(symbol);
+      }
+    }
+    
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect');
       this.ws = null;
     }
     this.isConnected = false;
+    WebSocketService.isConnecting = false; // Clear the connecting flag
     this.activeSubscriptions.clear();
+    
+    // Clear pending subscriptions
+    this.pendingSubscriptions.clear();
+    
+    // Reset wallet tracking
+    this.currentWalletAddress = null;
+    this.isPublicDataSubscribed = false;
   }
 
   send(message) {
@@ -237,14 +282,13 @@ class WebSocketService {
 
   // Initialize market data using WebSocket POST requests instead of REST API
   async initializeMarketData() {
-    console.log('Initializing market data via WebSocket...');
     
     // First, get the meta and asset contexts via WebSocket POST
     this.sendPost({ type: 'metaAndAssetCtxs' });
     
     // Subscribe to real-time updates
     this.subscribeToAllMids();
-    this.subscribeToAllActiveAssetCtx();
+    // Note: activeAssetCtx subscriptions are now managed per selected token
   }
 
   // Handle WebSocket POST responses
@@ -262,7 +306,6 @@ class WebSocketService {
         this.universeData = universe;
         this.processMetaAndAssetCtxs(universe, assetCtxs);
         this.isInitialized = true;
-        console.log('✓ Market data initialized via WebSocket');
       } else {
         console.warn('Invalid metaAndAssetCtxs response structure:', response);
       }
@@ -280,11 +323,12 @@ class WebSocketService {
       const prevPrice = parseFloat(assetCtx.prevDayPx) || 0;
       const currentPrice = parseFloat(assetCtx.markPx) || 0;
       const change24h = currentPrice - prevPrice;
+
       
       const tokenData = {
         symbol: token.name,
         maxLeverage: token.maxLeverage || 1,
-        szDecimals: token.szDecimals || 4,
+        szDecimals: token.szDecimals !== undefined ? token.szDecimals : null, // Use actual value from HyperLiquid, no fallback
         onlyIsolated: token.onlyIsolated || false,
         price: currentPrice,
         oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
@@ -298,17 +342,13 @@ class WebSocketService {
         lastUpdated: Date.now(),
         fullAssetCtx: assetCtx
       };
-
-      // Cache the token data
-      this.marketDataCache.set(token.name, tokenData);
-      this.assetContextCache.set(token.name, assetCtx);
       
       return tokenData;
     }).filter(Boolean);
     
     const sortedTokens = processedTokens.sort((a, b) => b.volume24h - a.volume24h);
     
-    // Broadcast the market data update
+    // Broadcast the market data update directly - no caching needed
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
@@ -331,7 +371,7 @@ class WebSocketService {
       const tokenData = {
         symbol: token.name,
         maxLeverage: token.maxLeverage || 1,
-        szDecimals: token.szDecimals || 4,
+        szDecimals: token.szDecimals !== undefined ? token.szDecimals : null, // Use actual value from HyperLiquid, no fallback
         onlyIsolated: token.onlyIsolated || false,
         price: currentPrice,
         oraclePrice: parseFloat(assetCtx.oraclePx) || currentPrice,
@@ -345,10 +385,6 @@ class WebSocketService {
         lastUpdated: Date.now(),
         fullAssetCtx: assetCtx
       };
-
-      // Cache the token data
-      this.marketDataCache.set(token.name, tokenData);
-      this.assetContextCache.set(token.name, assetCtx);
       
       return tokenData;
     }).filter(Boolean);
@@ -359,15 +395,10 @@ class WebSocketService {
     this.universeData = universe;
     this.isInitialized = true;
     
-    // Broadcast the market data update
+    // Broadcast the market data update directly - no caching needed
     this.broadcast('marketDataUpdate', {
       tokens: sortedTokens,
       timestamp: Date.now()
-    });
-    
-    console.log('✓ Market data updated from webData2:', {
-      tokenCount: sortedTokens.length,
-      timestamp: new Date().toLocaleTimeString()
     });
   }
 
@@ -385,7 +416,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.add(allMidsKey);
-        console.log('✓ Subscribed to allMids for real-time price updates');
       }
     }
   }
@@ -406,7 +436,6 @@ class WebSocketService {
         
         if (success) {
           this.activeSubscriptions.add(activeAssetCtxKey);
-          console.log(`✓ Subscribed to activeAssetCtx for ${token.name}`);
         }
       }
     });
@@ -415,7 +444,6 @@ class WebSocketService {
   // Subscribe to activeAssetCtx for a specific symbol
   subscribeToAssetCtx(symbol) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to activeAssetCtx for ${symbol}: WebSocket not connected`);
       return false;
     }
     
@@ -432,102 +460,117 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to activeAssetCtx for ${symbol}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.activeSubscriptions.add(activeAssetCtxKey);
-        console.log(`✓ Subscribed to activeAssetCtx for ${symbol}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to activeAssetCtx for ${symbol}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to activeAssetCtx for ${symbol}`);
       return true;
     }
   }
 
-  // Handle allMids updates to update cached market data
+  // Unsubscribe from activeAssetCtx for a specific symbol
+  unsubscribeFromAssetCtx(symbol) {
+    if (!this.isConnected) return false;
+    
+    const activeAssetCtxKey = `activeAssetCtx:${symbol}`;
+    
+    if (this.activeSubscriptions.has(activeAssetCtxKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'activeAssetCtx', 
+          coin: symbol,
+          // user: '0x0000000000000000000000000000000000000000'
+        }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.delete(activeAssetCtxKey);
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return true;
+    }
+  }
+
+  // Handle allMids updates - simplified to just broadcast the data
   handleAllMidsUpdate(allMidsData) {
     if (!allMidsData.mids) return;
 
-    const updateCount = Object.keys(allMidsData.mids).length;
-    
-    // Update market data cache with new prices
-    Object.entries(allMidsData.mids).forEach(([symbol, midPrice]) => {
-      const price = parseFloat(midPrice);
-      if (isNaN(price)) return;
-
-      // Store in allMids cache
-      this.allMidsCache.set(symbol, price);
-
-      const cachedData = this.marketDataCache.get(symbol);
-      if (cachedData) {
-        // Calculate 24h change if we have previous price data
-        const prevPrice = cachedData.prevDayPx || cachedData.price;
-        const change24h = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
-        
-        const updatedData = {
-          ...cachedData,
-          price: price,
-          change24h: change24h,
-          lastUpdated: Date.now()
-        };
-        
-        this.marketDataCache.set(symbol, updatedData);
-        
-        // Broadcast updated market data for this symbol
-        this.broadcast(`marketData:${symbol}`, updatedData);
-      }
-    });
-
-    // Broadcast the allMids update for components that want raw data
+    // Broadcast the allMids update directly to components
     this.broadcast('allMids', allMidsData);
   }
 
-  // Handle activeAssetCtx updates for oracle prices and funding
+  // Handle activeAssetCtx updates - simplified to just broadcast the data
   handleActiveAssetCtxUpdate(assetCtxData) {
     if (!assetCtxData.coin) return;
     
-    const symbol = assetCtxData.coin;
+    // Broadcast the asset context update directly to components
+    this.broadcast(`assetCtx:${assetCtxData.coin}`, { data: assetCtxData });
+  }
+
+  // Subscribe to public data (zero address) for market data
+  subscribeToPublicData() {
+    if (!this.isConnected) {
+      return false;
+    }
     
-    // Update asset context cache
-    this.assetContextCache.set(symbol, assetCtxData);
-    
-    const cachedData = this.marketDataCache.get(symbol);
-    if (cachedData) {
-      const currentPrice = this.allMidsCache.get(symbol) || cachedData.price;
-      const prevPrice = parseFloat(assetCtxData.prevDayPx) || cachedData.prevDayPx;
-      const change24h = currentPrice - prevPrice;
-      
-      const updatedData = {
-        ...cachedData,
-        oraclePrice: parseFloat(assetCtxData.oraclePx) || cachedData.oraclePrice,
-        funding: parseFloat(assetCtxData.funding) || cachedData.funding,
-        volume24h: parseFloat(assetCtxData.dayNtlVlm) || cachedData.volume24h,
-        openInterest: parseFloat(assetCtxData.openInterest) || cachedData.openInterest,
-        premium: parseFloat(assetCtxData.premium) || cachedData.premium,
-        prevDayPx: prevPrice,
-        change24h: change24h,
-        lastUpdated: Date.now(),
-        fullAssetCtx: assetCtxData
+    if (!this.isPublicDataSubscribed) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: this.zeroAddress
+        }
       };
       
-      this.marketDataCache.set(symbol, updatedData);
+      const success = this.send(subscriptionMessage);
       
-      // Broadcast updated market data for this symbol
-      this.broadcast(`marketData:${symbol}`, updatedData);
-      
-      // console.log(`✓ Updated oracle price and funding for ${symbol}: Oracle=${updatedData.oraclePrice}, Funding=${updatedData.funding}`);
+      if (success) {
+        this.isPublicDataSubscribed = true;
+        this.userSubscriptions.add(`webData2:${this.zeroAddress}`);
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return true;
     }
+  }
+
+  // Unsubscribe from public data (zero address)
+  unsubscribeFromPublicData() {
+    if (!this.isConnected) return false;
+    
+    if (this.isPublicDataSubscribed) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'webData2', 
+          user: this.zeroAddress
+        }
+      });
+      
+      if (success) {
+        this.isPublicDataSubscribed = false;
+        this.userSubscriptions.delete(`webData2:${this.zeroAddress}`);
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   // Subscribe to webData2 for user account data (positions, balances, orders)
   subscribeToUserData(userAddress) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to webData2 for ${userAddress}: WebSocket not connected`);
       return false;
     }
     
@@ -542,19 +585,15 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to webData2 for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.userSubscriptions.add(userDataKey);
-        console.log(`✓ Subscribed to webData2 for user ${userAddress}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to webData2 for user ${userAddress}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to webData2 for user ${userAddress}`);
       return true;
     }
   }
@@ -576,7 +615,6 @@ class WebSocketService {
       
       if (success) {
         this.userSubscriptions.delete(userDataKey);
-        console.log(`✓ Unsubscribed from webData2 for user ${userAddress}`);
         return true;
       }
     }
@@ -584,10 +622,60 @@ class WebSocketService {
     return false;
   }
 
+  // Update wallet address and manage subscriptions
+  updateWalletAddress(walletAddress) {
+    
+    // If wallet is being disconnected (null or undefined)
+    if (!walletAddress) {
+      if (this.currentWalletAddress) {
+        // Unsubscribe from user data
+        this.unsubscribeFromUserData(this.currentWalletAddress);
+        this.unsubscribeFromUserHistoricalOrders(this.currentWalletAddress);
+        
+        // Subscribe back to public data if not already subscribed
+        if (!this.isPublicDataSubscribed) {
+          this.subscribeToPublicData();
+        }
+        
+        this.currentWalletAddress = null;
+      }
+      return;
+    }
+    
+    // If wallet is being connected or changed
+    if (this.currentWalletAddress !== walletAddress) {
+      // If we had a previous wallet, unsubscribe from it
+      if (this.currentWalletAddress) {
+        this.unsubscribeFromUserData(this.currentWalletAddress);
+        this.unsubscribeFromUserHistoricalOrders(this.currentWalletAddress);
+      }
+      
+      // Unsubscribe from public data since we now have user data
+      if (this.isPublicDataSubscribed) {
+        this.unsubscribeFromPublicData();
+      }
+      
+      // Subscribe to new wallet address
+      this.subscribeToUserData(walletAddress);
+      this.subscribeToUserHistoricalOrders(walletAddress);
+      
+      this.currentWalletAddress = walletAddress;
+    }
+  }
+
+  // Get current wallet address
+  getCurrentWalletAddress() {
+    return this.currentWalletAddress;
+  }
+
+  // Check if currently subscribed to public data
+  isSubscribedToPublicData() {
+    return this.isPublicDataSubscribed;
+  }
+
   // Subscribe to userHistoricalOrders for a specific user
   subscribeToUserHistoricalOrders(userAddress) {
     if (!this.isConnected) {
-      console.log(`Cannot subscribe to userHistoricalOrders for ${userAddress}: WebSocket not connected`);
       return false;
     }
     
@@ -602,19 +690,15 @@ class WebSocketService {
         }
       };
       
-      console.log(`🎯 Subscribing to userHistoricalOrders for user ${userAddress}:`, JSON.stringify(subscriptionMessage, null, 2));
       const success = this.send(subscriptionMessage);
       
       if (success) {
         this.userHistoricalOrdersSubscriptions.add(historicalOrdersKey);
-        console.log(`✓ Subscribed to userHistoricalOrders for user ${userAddress}`);
         return true;
       } else {
-        console.log(`✗ Failed to subscribe to userHistoricalOrders for user ${userAddress}`);
         return false;
       }
     } else {
-      console.log(`Already subscribed to userHistoricalOrders for user ${userAddress}`);
       return true;
     }
   }
@@ -636,7 +720,6 @@ class WebSocketService {
       
       if (success) {
         this.userHistoricalOrdersSubscriptions.delete(historicalOrdersKey);
-        console.log(`✓ Unsubscribed from userHistoricalOrders for user ${userAddress}`);
         return true;
       }
     }
@@ -651,29 +734,16 @@ class WebSocketService {
     const userAddress = webData2Data.user;
     const userDataKey = `webData2:${userAddress}`;
     
-    // Cache the user data
-    this.userDataCache.set(userAddress, {
-      ...webData2Data,
-      lastUpdated: Date.now()
-    });
-    
     // Process market data from webData2 if available
     if (webData2Data.meta && webData2Data.assetCtxs) {
       this.processWebData2MarketData(webData2Data.meta, webData2Data.assetCtxs);
     }
     
-    // Broadcast the user data update
+    // Broadcast the user data update directly - no caching needed
     this.broadcast(userDataKey, webData2Data);
     
     // Also broadcast to general webData2 subscribers
     this.broadcast('webData2', webData2Data);
-    
-    console.log(`✓ Updated webData2 data for user ${userAddress}:`, {
-      positions: webData2Data.clearinghouseState?.assetPositions?.length || 0,
-      orders: webData2Data.openOrders?.length || 0,
-      accountValue: webData2Data.clearinghouseState?.marginSummary?.accountValue,
-      timestamp: new Date(webData2Data.serverTime).toLocaleTimeString()
-    });
   }
 
   // Handle userHistoricalOrders updates
@@ -683,44 +753,14 @@ class WebSocketService {
     const userAddress = historicalOrdersData.user;
     const historicalOrdersKey = `userHistoricalOrders:${userAddress}`;
     
-    // Cache the historical orders data
-    this.userHistoricalOrdersCache.set(userAddress, {
-      ...historicalOrdersData,
-      lastUpdated: Date.now()
-    });
-    
-    // Broadcast the historical orders update
+    // Broadcast the historical orders update directly - no caching needed
     this.broadcast(historicalOrdersKey, historicalOrdersData);
     
     // Also broadcast to general userHistoricalOrders subscribers
     this.broadcast('userHistoricalOrders', historicalOrdersData);
-    
-    console.log(`✓ Updated userHistoricalOrders data for user ${userAddress}:`, {
-      orderHistoryCount: historicalOrdersData.orderHistory?.length || 0,
-      isSnapshot: historicalOrdersData.isSnapshot,
-      timestamp: new Date().toLocaleTimeString()
-    });
   }
 
-  // Get cached user data for a specific address
-  getCachedUserData(userAddress) {
-    return this.userDataCache.get(userAddress);
-  }
-
-  // Get all cached user data
-  getAllCachedUserData() {
-    return Array.from(this.userDataCache.values());
-  }
-
-  // Get cached historical orders data for a specific address
-  getCachedHistoricalOrders(userAddress) {
-    return this.userHistoricalOrdersCache.get(userAddress);
-  }
-
-  // Get all cached historical orders data
-  getAllCachedHistoricalOrders() {
-    return Array.from(this.userHistoricalOrdersCache.values());
-  }
+  // Removed unused cache getter methods - data is now broadcast directly to components
 
   subscribeToSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
@@ -728,18 +768,61 @@ class WebSocketService {
     const l2BookKey = `l2Book:${symbol}`;
     const tradesKey = `trades:${symbol}`;
     
+    // Create a unique key for this subscription request
+    const subscriptionRequestKey = `${symbol}:${JSON.stringify(tickSizeParams)}`;
+    
+    // Check if we have a pending subscription for this exact request
+    if (this.pendingSubscriptions.has(subscriptionRequestKey)) {
+      return false;
+    }
+    
+    // Mark this subscription as pending
+    this.pendingSubscriptions.set(subscriptionRequestKey, Date.now());
+    
+    // Clear the pending status after debounce period
+    setTimeout(() => {
+      this.pendingSubscriptions.delete(subscriptionRequestKey);
+    }, this.subscriptionDebounceMs);
+    
     let subscribed = false;
     
+    // Store tick size params with the subscription key for proper cleanup
+    const l2BookKeyWithParams = tickSizeParams 
+      ? `${l2BookKey}:${JSON.stringify(tickSizeParams)}`
+      : l2BookKey;
+    
+    // Check if we already have this exact subscription
+    if (this.activeSubscriptions.has(l2BookKeyWithParams)) {
+      return true;
+    }
+    
     // Always unsubscribe from existing l2Book subscription first to avoid duplicates
-    if (this.activeSubscriptions.has(l2BookKey)) {
-      // Internal unsubscribe without calling the public method to avoid recursion
+    // Check for any existing l2Book subscription for this symbol (regardless of tick size)
+    const existingL2BookSubs = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith(`l2Book:${symbol}`)
+    );
+    
+    for (const existingKey of existingL2BookSubs) {
+      // Extract tick size params from existing subscription if any
+      const existingTickSizeParams = existingKey.includes(':') && existingKey.split(':').length > 2
+        ? JSON.parse(existingKey.split(':').slice(2).join(':'))
+        : null;
+      
       const subscriptionParams = { type: 'l2Book', coin: symbol };
+      if (existingTickSizeParams) {
+        if (existingTickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
+        }
+        if (existingTickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = existingTickSizeParams.mantissa;
+        }
+      }
+      
       this.send({
         method: 'unsubscribe',
         subscription: subscriptionParams
       });
-      this.activeSubscriptions.delete(l2BookKey);
-      console.log(`✓ Internal unsubscribed from l2Book for ${symbol}`);
+      this.activeSubscriptions.delete(existingKey);
     }
     
     // Create new subscription
@@ -755,26 +838,25 @@ class WebSocketService {
       }
     }
     
-    const success = this.send({
+    const l2BookSuccess = this.send({
       method: 'subscribe',
       subscription: subscriptionParams
     });
     
-    if (success) {
-      this.activeSubscriptions.add(l2BookKey);
-      console.log(`✓ Subscribed to l2Book for ${symbol} with params:`, subscriptionParams);
+    if (l2BookSuccess) {
+      this.activeSubscriptions.add(l2BookKeyWithParams);
       subscribed = true;
     }
 
+    // Subscribe to trades if not already subscribed
     if (!this.activeSubscriptions.has(tradesKey)) {
-      const success = this.send({
+      const tradesSuccess = this.send({
         method: 'subscribe',
         subscription: { type: 'trades', coin: symbol }
       });
       
-      if (success) {
+      if (tradesSuccess) {
         this.activeSubscriptions.add(tradesKey);
-        console.log(`✓ Subscribed to trades for ${symbol}`);
         subscribed = true;
       }
     }
@@ -785,22 +867,27 @@ class WebSocketService {
   unsubscribeFromSymbol(symbol, tickSizeParams = null) {
     if (!this.isConnected) return false;
     
-    const l2BookKey = `l2Book:${symbol}`;
     const tradesKey = `trades:${symbol}`;
-    
     let unsubscribed = false;
     
-    // Only unsubscribe if currently subscribed
-    if (this.activeSubscriptions.has(l2BookKey)) {
-      const subscriptionParams = { type: 'l2Book', coin: symbol };
+    // Find and unsubscribe from all l2Book subscriptions for this symbol
+    const existingL2BookSubs = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith(`l2Book:${symbol}`)
+    );
+    
+    for (const existingKey of existingL2BookSubs) {
+      // Extract tick size params from existing subscription if any
+      const existingTickSizeParams = existingKey.includes(':') && existingKey.split(':').length > 2
+        ? JSON.parse(existingKey.split(':').slice(2).join(':'))
+        : null;
       
-      // Add tick size parameters if provided (must match subscription)
-      if (tickSizeParams) {
-        if (tickSizeParams.nSigFigs !== undefined) {
-          subscriptionParams.nSigFigs = tickSizeParams.nSigFigs;
+      const subscriptionParams = { type: 'l2Book', coin: symbol };
+      if (existingTickSizeParams) {
+        if (existingTickSizeParams.nSigFigs !== undefined) {
+          subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
         }
-        if (tickSizeParams.mantissa !== undefined) {
-          subscriptionParams.mantissa = tickSizeParams.mantissa;
+        if (existingTickSizeParams.mantissa !== undefined) {
+          subscriptionParams.mantissa = existingTickSizeParams.mantissa;
         }
       }
       
@@ -810,12 +897,12 @@ class WebSocketService {
       });
       
       if (success) {
-        this.activeSubscriptions.delete(l2BookKey);
-        console.log(`✓ Unsubscribed from l2Book for ${symbol} with params:`, subscriptionParams);
+        this.activeSubscriptions.delete(existingKey);
         unsubscribed = true;
       }
     }
 
+    // Unsubscribe from trades
     if (this.activeSubscriptions.has(tradesKey)) {
       const success = this.send({
         method: 'unsubscribe',
@@ -824,7 +911,6 @@ class WebSocketService {
       
       if (success) {
         this.activeSubscriptions.delete(tradesKey);
-        console.log(`✓ Unsubscribed from trades for ${symbol}`);
         unsubscribed = true;
       }
     }
@@ -832,15 +918,69 @@ class WebSocketService {
     return unsubscribed;
   }
 
-  // Get cached market data for a symbol
-  getCachedMarketData(symbol) {
-    return this.marketDataCache.get(symbol);
+  // Bulk subscription management methods for better cleanup
+  
+  // Unsubscribe from all symbol-related subscriptions
+  unsubscribeFromAllSymbols() {
+    if (!this.isConnected) return false;
+    
+    let unsubscribed = false;
+    const symbolSubscriptions = Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith('l2Book:') || key.startsWith('trades:')
+    );
+    
+    for (const subscriptionKey of symbolSubscriptions) {
+      const [type, symbol] = subscriptionKey.split(':');
+      
+      if (type === 'l2Book') {
+        // Handle l2Book subscriptions with potential tick size params
+        const existingTickSizeParams = subscriptionKey.includes(':') && subscriptionKey.split(':').length > 2
+          ? JSON.parse(subscriptionKey.split(':').slice(2).join(':'))
+          : null;
+        
+        const subscriptionParams = { type: 'l2Book', coin: symbol };
+        if (existingTickSizeParams) {
+          if (existingTickSizeParams.nSigFigs !== undefined) {
+            subscriptionParams.nSigFigs = existingTickSizeParams.nSigFigs;
+          }
+          if (existingTickSizeParams.mantissa !== undefined) {
+            subscriptionParams.mantissa = existingTickSizeParams.mantissa;
+          }
+        }
+        
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: subscriptionParams
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          unsubscribed = true;
+        }
+      } else if (type === 'trades') {
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: { type: 'trades', coin: symbol }
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          unsubscribed = true;
+        }
+      }
+    }
+    
+    return unsubscribed;
   }
 
-  // Get all cached market data
-  getAllCachedMarketData() {
-    return Array.from(this.marketDataCache.values());
+  // Get all active symbol subscriptions for debugging
+  getActiveSymbolSubscriptions() {
+    return Array.from(this.activeSubscriptions).filter(key => 
+      key.startsWith('l2Book:') || key.startsWith('trades:')
+    );
   }
+
+  // Removed unused market data cache getter methods - data is now broadcast directly to components
 
   // Get connection status
   getConnectionStatus() {
@@ -851,9 +991,8 @@ class WebSocketService {
       activeSubscriptions: Array.from(this.activeSubscriptions),
       userSubscriptions: Array.from(this.userSubscriptions),
       userHistoricalOrdersSubscriptions: Array.from(this.userHistoricalOrdersSubscriptions),
-      cachedTokens: this.marketDataCache.size,
-      cachedUsers: this.userDataCache.size,
-      cachedHistoricalOrders: this.userHistoricalOrdersCache.size
+      currentWalletAddress: this.currentWalletAddress,
+      isPublicDataSubscribed: this.isPublicDataSubscribed
     };
   }
 
@@ -911,13 +1050,100 @@ class WebSocketService {
     return true;
   }
 
-  // Public method to get market data (replaces the old fetchMarketData)
-  async getMarketData() {
-    if (!this.isInitialized) {
-      await this.waitForInitialization();
+  // Removed unused getMarketData method - components now use broadcast data directly
+
+  // ===== CANDLE SUBSCRIPTION METHODS FOR TRADINGVIEW CHART =====
+
+  /**
+   * Handle candle data updates from WebSocket
+   */
+  handleCandleUpdate(data) {
+    const candleData = data.data;
+    const coin = candleData.s; // symbol from candle data
+    const interval = candleData.i; // interval from candle data
+    
+    if (!candleData || !coin || !interval) {
+      return;
+    }
+
+    const channelString = `${coin}_${interval}`;
+    
+    // Map HyperLiquid field names to TradingView format
+    const bar = {
+      time: candleData.t,                    // t -> time (already in milliseconds)
+      open: +candleData.o,                   // o -> open (faster than parseFloat)
+      high: +candleData.h,                   // h -> high
+      low: +candleData.l,                    // l -> low
+      close: +candleData.c,                  // c -> close
+      volume: +candleData.v || 0             // v -> volume
+    };
+    
+    // Broadcast to candle subscribers
+    this.broadcast(`candle:${channelString}`, bar);
+  }
+
+  /**
+   * Subscribe to candle data for TradingView chart
+   */
+  subscribeToCandle(symbol, interval, callback) {
+    if (!this.isConnected) return false;
+    
+    const channelString = `${symbol}_${interval}`;
+    const candleKey = `candle:${channelString}`;
+    
+    // Subscribe to the callback
+    this.subscribe(candleKey, callback);
+    
+    // Subscribe to WebSocket candle data if not already subscribed
+    const subscriptionKey = `candle:${channelString}`;
+    if (!this.activeSubscriptions.has(subscriptionKey)) {
+      const success = this.send({
+        method: 'subscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.add(subscriptionKey);
+        return true;
+      } else {
+        // If subscription failed, remove the callback subscription
+        this.unsubscribe(candleKey, callback);
+        return false;
+      }
     }
     
-    return this.getAllCachedMarketData().sort((a, b) => b.volume24h - a.volume24h);
+    return true;
+  }
+
+  /**
+   * Unsubscribe from candle data
+   */
+  unsubscribeFromCandle(symbol, interval, callback) {
+    if (!this.isConnected) return false;
+    
+    const channelString = `${symbol}_${interval}`;
+    const candleKey = `candle:${channelString}`;
+    const subscriptionKey = `candle:${channelString}`;
+    
+    // Unsubscribe from the callback
+    this.unsubscribe(candleKey, callback);
+    
+    // If no more subscribers for this candle, unsubscribe from WebSocket
+    if (!this.subscribers.has(candleKey) || this.subscribers.get(candleKey).size === 0) {
+      if (this.activeSubscriptions.has(subscriptionKey)) {
+        const success = this.send({
+          method: 'unsubscribe',
+          subscription: { type: 'candle', coin: symbol, interval: interval }
+        });
+        
+        if (success) {
+          this.activeSubscriptions.delete(subscriptionKey);
+          return true;
+        }
+      }
+    }
+    
+    return true;
   }
 }
 

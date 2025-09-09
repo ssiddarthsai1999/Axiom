@@ -113,9 +113,9 @@ const FavoritesTicker = ({selectedSymbol, setSelectedSymbol }) => {
     fetchFavoritesData();
     
     // Poll every 30 seconds
-    const interval = setInterval(fetchFavoritesData, 300000);
+    // const interval = setInterval(fetchFavoritesData, 300000);
     
-    return () => clearInterval(interval);
+    // return () => clearInterval(interval);
   }, []);
 
   // Individual ticker item component
