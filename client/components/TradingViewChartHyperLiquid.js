@@ -1,6 +1,7 @@
 // components/TradingViewChartHyperLiquid.js - Custom HyperLiquid datafeed implementation
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import hyperliquidDatafeed from '../datafeeds/hyperliquid-datafeed.js';
+import WebSocketService from '../hooks/WebsocketService.js';
 import numeral from "numeral";
 
 function formatPrice(num) {
@@ -60,6 +61,29 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
     if (container.current) {
       container.current.innerHTML = '';
     }
+    
+    // Clean up previous widget if it exists
+    if (tvWidget.current) {
+      // Manually unsubscribe from all active subscriptions before removing the widget
+      // This ensures proper cleanup of WebSocket subscriptions
+      if (hyperliquidDatafeed && hyperliquidDatafeed.unsubscribeBars) {
+        // Get all active subscriptions and unsubscribe from them
+        const activeSubscriptions = Array.from(hyperliquidDatafeed.activeSubscriptions?.keys() || []);
+        activeSubscriptions.forEach(subscriberUID => {
+          const subscription = hyperliquidDatafeed.activeSubscriptions.get(subscriberUID);
+          if (subscription) {
+            const { symbol, interval } = subscription;
+            // Use force unsubscribe to ensure WebSocket cleanup
+            const wsService = WebSocketService.getInstance();
+            wsService.forceUnsubscribeFromCandle(symbol, interval);
+          }
+          hyperliquidDatafeed.unsubscribeBars(subscriberUID);
+        });
+      }
+      
+      tvWidget.current.remove();
+      tvWidget.current = null;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -101,7 +125,6 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
 
         // Check if datafeed is properly loaded
         if (!hyperliquidDatafeed) {
-          console.error('HyperLiquid datafeed not loaded');
           setError('HyperLiquid datafeed not loaded. Please try again.');
           setIsLoading(false);
           return;
@@ -235,13 +258,8 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         const config = isMobile ? mobileConfig : desktopConfig;
         
         
-        // Create TradingView widget only if not already created
-        if (!tvWidget.current) {
-          tvWidget.current = new window.TradingView.widget(config);
-        } else {
-          setIsLoading(false);
-          return;
-        }
+        // Create TradingView widget
+        tvWidget.current = new window.TradingView.widget(config);
         
         // Set up ready callback
         tvWidget.current.onChartReady(() => {
