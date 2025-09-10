@@ -105,49 +105,49 @@ async function fetchHistoricalData(coin, interval, startTime, endTime) {
     }
 }
 
-// /**
-//  * Get available symbols from HyperLiquid
-//  * @returns {Promise<Array>} Array of available symbols
-//  */
-// async function getAvailableSymbols() {
-//     try {
-//         const response = await fetch('https://api.hyperliquid.xyz/info', {
-//             method: 'POST',
-//             headers: {
-//                 'Content-Type': 'application/json',
-//             },
-//             body: JSON.stringify({
-//                 type: 'metaAndAssetCtxs'
-//             })
-//         });
+/**
+ * Get available symbols from HyperLiquid
+ * @returns {Promise<Array>} Array of available symbols
+ */
+async function getAvailableSymbols() {
+    try {
+        const response = await fetch('https://api.hyperliquid.xyz/info', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: 'metaAndAssetCtxs'
+            })
+        });
 
-//         if (!response.ok) {
-//             throw new Error(`HTTP error! status: ${response.status}`);
-//         }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-//         const [meta] = await response.json();
-//         return meta.universe.map(asset => ({
-//             symbol: asset.name,
-//             full_name: asset.name,
-//             description: `${asset.name} Perpetual`,
-//             exchange: 'HyperLiquid',
-//             type: 'crypto',
-//             session: '24x7',
-//             timezone: 'Etc/UTC',
-//             minmov: 1,
-//             pricescale: 100,
-//             has_intraday: true,
-//             has_no_volume: false,
-//             has_weekly_and_monthly: true,
-//             supported_resolutions: configurationData.supported_resolutions,
-//             volume_precision: 2,
-//             data_status: 'streaming'
-//         }));
-//     } catch (error) {
-//         console.error('Error fetching available symbols:', error);
-//         return [];
-//     }
-// }
+        const [meta] = await response.json();
+        return meta.universe.map(asset => ({
+            symbol: asset.name,
+            full_name: asset.name,
+            description: `${asset.name}`,
+            exchange: 'Medusa',
+            type: 'crypto',
+            session: '24x7',
+            timezone: 'Etc/UTC',
+            minmov: 1,
+            pricescale: 100,
+            has_intraday: true,
+            has_no_volume: false,
+            has_weekly_and_monthly: true,
+            supported_resolutions: configurationData.supported_resolutions,
+            volume_precision: 2,
+            data_status: 'streaming'
+        }));
+    } catch (error) {
+        console.error('Error fetching available symbols:', error);
+        return [];
+    }
+}
 
 // Main datafeed object
 const datafeed = {
@@ -157,20 +157,20 @@ const datafeed = {
     setTimeout(() => callback(configurationData), 0);
   },
 
-    // searchSymbols: async (userInput, exchange, symbolType, onResult) => {
+    searchSymbols: async (userInput, exchange, symbolType, onResult) => {
 
-    //     try {
-    //         const symbols = await getAvailableSymbols();
-    //         const filteredSymbols = symbols.filter(symbol => 
-    //             symbol.symbol.toLowerCase().includes(userInput.toLowerCase())
-    //         );
+        try {
+            const symbols = await getAvailableSymbols();
+            const filteredSymbols = symbols.filter(symbol => 
+                symbol.symbol.toLowerCase().includes(userInput.toLowerCase())
+            );
             
-    //         onResult(filteredSymbols.slice(0, 30)); // Limit to 30 results
-    //     } catch (error) {
-    //         console.error('[searchSymbols]: Error', error);
-    //         onResult([]);
-    //     }
-    // },
+            onResult(filteredSymbols.slice(0, 30)); // Limit to 30 results
+        } catch (error) {
+            console.error('[searchSymbols]: Error', error);
+            onResult([]);
+        }
+    },
 
   resolveSymbol: async (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
         // Get a sample price to determine the correct pricescale

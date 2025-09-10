@@ -169,6 +169,7 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
             "create_volume_indicator_by_default",
             "header_symbol_search",
             "header_compare",
+            "search_symbol_enabled",
           ],
           enabled_features: [
             "side_toolbar_in_fullscreen_mode",
