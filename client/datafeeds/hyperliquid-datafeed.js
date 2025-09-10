@@ -197,7 +197,7 @@ const datafeed = {
             minmov: 1,
             pricescale: pricescale,
             has_intraday: true,
-            has_no_volume: false,
+            // has_no_volume: false,
             has_weekly_and_monthly: true,
             supported_resolutions: configurationData.supported_resolutions,
             volume_precision: 2,
