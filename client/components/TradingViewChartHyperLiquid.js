@@ -19,6 +19,7 @@ function formatPrice(num) {
 
 
 function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
+  // console.log('TradingViewChartHyperLiquid ++++++++++++++++++++++++++++++++++++', symbol);
   const container = useRef();
   const tvWidget = useRef();
   const [isMobile, setIsMobile] = useState(false);
@@ -73,6 +74,7 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
           const subscription = hyperliquidDatafeed.activeSubscriptions.get(subscriberUID);
           if (subscription) {
             const { symbol, interval } = subscription;
+            console.log('TradingViewChartHyperLiquid ++++++++++++++++++++++++++++++++++++', symbol);
             // Use force unsubscribe to ensure WebSocket cleanup
             const wsService = WebSocketService.getInstance();
             wsService.forceUnsubscribeFromCandle(symbol, interval);

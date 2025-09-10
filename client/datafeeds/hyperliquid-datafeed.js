@@ -31,19 +31,6 @@ const activeSubscriptions = new Map(); // Map<subscriberUID, {symbol, interval, 
 const wsService = WebSocketService.getInstance();
 
 /**
- * Parse symbol name to extract coin information
- * @param {string} symbolName - Symbol name like "BTC", "ETH", etc.
- * @returns {object} Parsed symbol information
- */
-function parseSymbol(symbolName) {
-    // HyperLiquid uses simple coin names like BTC, ETH, etc.
-    return {
-        coin: symbolName.toUpperCase(),
-        exchange: 'HyperLiquid'
-    };
-}
-
-/**
  * Convert TradingView resolution to HyperLiquid interval
  * @param {string} resolution - TradingView resolution (1, 5, 15, etc.)
  * @returns {string} HyperLiquid interval
@@ -186,13 +173,11 @@ const datafeed = {
     // },
 
   resolveSymbol: async (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
-
-        const parsedSymbol = parseSymbol(symbolName);
         // Get a sample price to determine the correct pricescale
         let pricescale = 100; // default
         try {
             // Fetch a small amount of historical data to get a sample price
-            const sampleData = await fetchHistoricalData(parsedSymbol.coin, '1m', Math.floor(Date.now() / 1000) - 3600, Math.floor(Date.now() / 1000));
+            const sampleData = await fetchHistoricalData(symbolName, '1m', Math.floor(Date.now() / 1000) - 3600, Math.floor(Date.now() / 1000));
             if (sampleData && sampleData.length > 0) {
                 const samplePrice = parseFloat(sampleData[0].c);
                 pricescale = getPriceScaleFromPrice(samplePrice);
@@ -202,13 +187,13 @@ const datafeed = {
         }
 
         const symbolInfo = {
-            ticker: parsedSymbol.coin,
-            name: parsedSymbol.coin,
-            description: `${parsedSymbol.coin} Perpetual`,
+            ticker: symbolName,
+            name: symbolName,
+            description: `${symbolName} on medusa.trade`,
             type: 'crypto',
             session: '24x7',
             timezone: 'Etc/UTC',
-            exchange: parsedSymbol.exchange,
+            exchange: 'medusa.trade',
             minmov: 1,
             pricescale: pricescale,
             has_intraday: true,
@@ -224,10 +209,9 @@ const datafeed = {
 
   getBars: async (symbolInfo, resolution, periodParams, onHistoryCallback, onErrorCallback) => {
     const { from, to, firstDataRequest } = periodParams;
-        const parsedSymbol = parseSymbol(symbolInfo.full_name || symbolInfo.name);
         const interval = resolutionToInterval(resolution);
         try {
-            const data = await fetchHistoricalData(parsedSymbol.coin, interval, from, to);
+            const data = await fetchHistoricalData(symbolInfo.name, interval, from, to);
 
             if (!data || data.length === 0) {
                 onHistoryCallback([], { noData: true });
@@ -266,7 +250,6 @@ const datafeed = {
     },
 
   subscribeBars: (symbolInfo, resolution, onRealtimeCallback, subscriberUID, onResetCacheNeededCallback) => {
-        const parsedSymbol = parseSymbol(symbolInfo.full_name || symbolInfo.name);
         const interval = resolutionToInterval(resolution);
 
         // Create callback wrapper for cleanup
@@ -278,12 +261,12 @@ const datafeed = {
         };
 
         // Subscribe to candle data using WebSocketService
-        const success = wsService.subscribeToCandle(parsedSymbol.coin, interval, callbackWrapper);
+        const success = wsService.subscribeToCandle(symbolInfo.name, interval, callbackWrapper);
 
         if (success) {
             // Track this subscription for proper cleanup
             activeSubscriptions.set(subscriberUID, {
-                symbol: parsedSymbol.coin,
+                symbol: symbolInfo.name,
                 interval: interval,
                 callback: callbackWrapper
             });
