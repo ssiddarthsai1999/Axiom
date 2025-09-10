@@ -74,7 +74,6 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
           const subscription = hyperliquidDatafeed.activeSubscriptions.get(subscriberUID);
           if (subscription) {
             const { symbol, interval } = subscription;
-            console.log('TradingViewChartHyperLiquid ++++++++++++++++++++++++++++++++++++', symbol);
             // Use force unsubscribe to ensure WebSocket cleanup
             const wsService = WebSocketService.getInstance();
             wsService.forceUnsubscribeFromCandle(symbol, interval);
@@ -156,7 +155,7 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         const desktopConfig = {
           symbol: symbol,
           datafeed: hyperliquidDatafeed,
-          interval: "5",
+          interval: "240",
           container: container.current,
           library_path: "/charting_library-master/charting_library/",
           locale: "en",
