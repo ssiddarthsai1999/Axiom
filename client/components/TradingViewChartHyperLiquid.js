@@ -1,6 +1,21 @@
 // components/TradingViewChartHyperLiquid.js - Custom HyperLiquid datafeed implementation
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import hyperliquidDatafeed from '../datafeeds/hyperliquid-datafeed.js';
+import numeral from "numeral";
+
+function formatPrice(num) {
+  const number = Number(num);
+  if (isNaN(number)) return "";
+  if (Number.isInteger(number)) {
+    return numeral(number).format("0,0");
+  }
+
+  const parts = num.toString().split(".");
+  const decimalPlaces = parts[1]?.length || 0;
+
+  return numeral(number).format(`0,0.${"0".repeat(decimalPlaces)}`);
+}
+
 
 function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
   const container = useRef();
@@ -135,6 +150,9 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
             "side_toolbar_in_fullscreen_mode",
             "header_in_fullscreen_mode"
           ],
+          custom_formatters: {
+            priceFormatter: formatPrice,   // for y-axis + tooltips
+          },
           charts_storage_url: "https://saveload.tradingview.com",
           charts_storage_api_version: "1.1",
           client_id: "tradingview.com",

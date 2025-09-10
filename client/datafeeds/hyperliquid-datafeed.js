@@ -60,25 +60,14 @@ function resolutionToInterval(resolution) {
     return intervalMap[resolution] || '1m';
 }
 
-/**
- * Convert HyperLiquid interval to TradingView resolution
- * @param {string} interval - HyperLiquid interval
- * @returns {string} TradingView resolution
- */
-function intervalToResolution(interval) {
-    const resolutionMap = {
-        '1m': '1',
-        '5m': '5',
-        '15m': '15', 
-        '30m': '30',
-        '1h': '60',
-        '4h': '240',
-        '1d': '1D',
-        '1w': '1W',
-        '1M': '1M'
-    };
-    return resolutionMap[interval] || '1';
-}
+function getPriceScaleFromPrice(price) {
+    const str = price.toString();
+    if (str.includes('.')) {
+      const decimals = str.split('.')[1].length;
+      return Math.pow(10, decimals);
+    }
+    return 1; // no decimals
+  }
 
 /**
  * Fetch historical candle data from HyperLiquid API
@@ -126,49 +115,49 @@ async function fetchHistoricalData(coin, interval, startTime, endTime) {
     }
 }
 
-/**
- * Get available symbols from HyperLiquid
- * @returns {Promise<Array>} Array of available symbols
- */
-async function getAvailableSymbols() {
-    try {
-        const response = await fetch('https://api.hyperliquid.xyz/info', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                type: 'metaAndAssetCtxs'
-            })
-        });
+// /**
+//  * Get available symbols from HyperLiquid
+//  * @returns {Promise<Array>} Array of available symbols
+//  */
+// async function getAvailableSymbols() {
+//     try {
+//         const response = await fetch('https://api.hyperliquid.xyz/info', {
+//             method: 'POST',
+//             headers: {
+//                 'Content-Type': 'application/json',
+//             },
+//             body: JSON.stringify({
+//                 type: 'metaAndAssetCtxs'
+//             })
+//         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+//         if (!response.ok) {
+//             throw new Error(`HTTP error! status: ${response.status}`);
+//         }
 
-        const [meta] = await response.json();
-        return meta.universe.map(asset => ({
-            symbol: asset.name,
-            full_name: asset.name,
-            description: `${asset.name} Perpetual`,
-            exchange: 'HyperLiquid',
-            type: 'crypto',
-            session: '24x7',
-            timezone: 'Etc/UTC',
-            minmov: 1,
-            pricescale: 100,
-            has_intraday: true,
-            has_no_volume: false,
-            has_weekly_and_monthly: true,
-            supported_resolutions: configurationData.supported_resolutions,
-            volume_precision: 2,
-            data_status: 'streaming'
-        }));
-    } catch (error) {
-        console.error('Error fetching available symbols:', error);
-        return [];
-    }
-}
+//         const [meta] = await response.json();
+//         return meta.universe.map(asset => ({
+//             symbol: asset.name,
+//             full_name: asset.name,
+//             description: `${asset.name} Perpetual`,
+//             exchange: 'HyperLiquid',
+//             type: 'crypto',
+//             session: '24x7',
+//             timezone: 'Etc/UTC',
+//             minmov: 1,
+//             pricescale: 100,
+//             has_intraday: true,
+//             has_no_volume: false,
+//             has_weekly_and_monthly: true,
+//             supported_resolutions: configurationData.supported_resolutions,
+//             volume_precision: 2,
+//             data_status: 'streaming'
+//         }));
+//     } catch (error) {
+//         console.error('Error fetching available symbols:', error);
+//         return [];
+//     }
+// }
 
 // Main datafeed object
 const datafeed = {
@@ -176,26 +165,37 @@ const datafeed = {
     setTimeout(() => callback(configurationData), 0);
   },
 
-    searchSymbols: async (userInput, exchange, symbolType, onResult) => {
+    // searchSymbols: async (userInput, exchange, symbolType, onResult) => {
 
-        try {
-            const symbols = await getAvailableSymbols();
-            const filteredSymbols = symbols.filter(symbol => 
-                symbol.symbol.toLowerCase().includes(userInput.toLowerCase())
-            );
+    //     try {
+    //         const symbols = await getAvailableSymbols();
+    //         const filteredSymbols = symbols.filter(symbol => 
+    //             symbol.symbol.toLowerCase().includes(userInput.toLowerCase())
+    //         );
             
-            onResult(filteredSymbols.slice(0, 30)); // Limit to 30 results
-        } catch (error) {
-            console.error('[searchSymbols]: Error', error);
-            onResult([]);
-        }
-    },
+    //         onResult(filteredSymbols.slice(0, 30)); // Limit to 30 results
+    //     } catch (error) {
+    //         console.error('[searchSymbols]: Error', error);
+    //         onResult([]);
+    //     }
+    // },
 
-  resolveSymbol: (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
+  resolveSymbol: async (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
 
-        
         const parsedSymbol = parseSymbol(symbolName);
-        
+        // Get a sample price to determine the correct pricescale
+        let pricescale = 100; // default
+        try {
+            // Fetch a small amount of historical data to get a sample price
+            const sampleData = await fetchHistoricalData(parsedSymbol.coin, '1m', Math.floor(Date.now() / 1000) - 3600, Math.floor(Date.now() / 1000));
+            if (sampleData && sampleData.length > 0) {
+                const samplePrice = parseFloat(sampleData[0].c);
+                pricescale = getPriceScaleFromPrice(samplePrice);
+            }
+        } catch (error) {
+            console.log('Could not fetch sample data for pricescale, using default:', error);
+        }
+
         const symbolInfo = {
             ticker: parsedSymbol.coin,
             name: parsedSymbol.coin,
@@ -205,7 +205,7 @@ const datafeed = {
             timezone: 'Etc/UTC',
             exchange: parsedSymbol.exchange,
             minmov: 1,
-            pricescale: 100,
+            pricescale: pricescale,
             has_intraday: true,
             has_no_volume: false,
             has_weekly_and_monthly: true,
@@ -213,7 +213,6 @@ const datafeed = {
             volume_precision: 2,
             data_status: 'streaming'
         };
-
 
         setTimeout(() => onSymbolResolvedCallback(symbolInfo), 0);
     },
@@ -224,11 +223,11 @@ const datafeed = {
         const interval = resolutionToInterval(resolution);
         try {
             const data = await fetchHistoricalData(parsedSymbol.coin, interval, from, to);
+
             if (!data || data.length === 0) {
                 onHistoryCallback([], { noData: true });
                 return;
             }
-
             let bars = [];
             data.forEach((bar, index) => {
                 // Map HyperLiquid field names to TradingView format
@@ -262,20 +261,13 @@ const datafeed = {
     },
 
   subscribeBars: (symbolInfo, resolution, onRealtimeCallback, subscriberUID, onResetCacheNeededCallback) => {
-        console.log('📡 [subscribeBars]: Method call - HyperLiquid datafeed subscribing to bars with subscriberUID:', subscriberUID);
-        console.log('📡 [subscribeBars]: Symbol info:', symbolInfo);
-        console.log('📡 [subscribeBars]: Resolution:', resolution);
-        
         const parsedSymbol = parseSymbol(symbolInfo.full_name || symbolInfo.name);
         const interval = resolutionToInterval(resolution);
-        console.log('[subscribeBars]: Parsed symbol:', parsedSymbol);
-        console.log('[subscribeBars]: Interval:', interval);
 
         // Subscribe to candle data using WebSocketService
         const success = wsService.subscribeToCandle(parsedSymbol.coin, interval, (bar) => {
             // Update the last bar cache
             lastBarsCache.set(symbolInfo.full_name || symbolInfo.name, bar);
-            
             // Call the real-time callback
             onRealtimeCallback(bar);
         });
