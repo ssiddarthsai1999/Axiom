@@ -161,8 +161,8 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
           locale: "en",
           theme: "dark",
           allow_symbol_change: false,
-          gridColor: "#181a20",
-          backgroundColor: "#0d0c0e",
+          gridColor: "rgba(242, 242, 242, 0.06)",
+          backgroundColor: "#0F0F0F",
           disabled_features: [
             "use_localstorage_for_settings",
             "volume_force_overlay",
@@ -203,6 +203,7 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
             // "volume.volume ma.transparency": 30,
             // "volume.volume ma.linewidth": 1
           },
+          studies: ["Volume"],
           overrides: {
             "paneProperties.background": "#0d0c0e",
             "paneProperties.backgroundType": "solid",
@@ -265,6 +266,8 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         // Set up ready callback
         tvWidget.current.onChartReady(() => {
           setIsLoading(false);
+            // Add volume study
+          tvWidget.current.chart().createStudy('Volume', false, false, []);
         });
 
       } catch (error) {
