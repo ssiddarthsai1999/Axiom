@@ -60,6 +60,7 @@ const UserPositions = ({ className = '' }) => {
             
             // Subscribe to market data updates for real-time prices
             wsService.subscribe('marketDataUpdate', handleMarketDataUpdate);
+            wsService.subscribe('userHistoricalOrders', handleOrderHistoryUpdate);
           } else {
             console.log('⚠️ WebSocket not ready, will use API fallback');
           }
@@ -367,7 +368,7 @@ const UserPositions = ({ className = '' }) => {
       fetchCurrentPrices();
       
       // If websocket is not ready, fetch initial data via API
-      if (!wsService.current || !wsService.current.isHealthy()) {
+      if (!wsService || !wsService.isHealthy()) {
         fetchInitialUserData();
       }
     } else {
@@ -398,15 +399,14 @@ const UserPositions = ({ className = '' }) => {
 
   // Subscribe to order history via WebSocket
   const subscribeToOrderHistory = () => {
-    if (!wsService.current || !address) return;
+    if (!wsService || !address) return;
     
     try {
-      
       // Subscribe to userHistoricalOrders
-      wsService.current.subscribeToUserHistoricalOrders(address);
+      wsService.subscribeToUserHistoricalOrders(address);
       
       // Subscribe to order history updates
-      wsService.current.subscribe('userHistoricalOrders', handleOrderHistoryUpdate);
+      wsService.subscribe('userHistoricalOrders', handleOrderHistoryUpdate);
       
     } catch (error) {
       console.error('❌ Error subscribing to order history:', error);
@@ -1011,9 +1011,9 @@ const UserPositions = ({ className = '' }) => {
 
   // Get connection status for display
   const getConnectionStatus = () => {
-    if (!wsService.current) return { status: 'disconnected', text: 'Disconnected' };
+    if (!wsService) return { status: 'disconnected', text: 'Disconnected' };
     
-    const status = wsService.current.getConnectionStatus();
+    const status = wsService.getConnectionStatus();
     if (status.isConnected && status.userSubscriptions.includes(`webData2:${address}`)) {
       return { status: 'connected', text: 'Live Data' };
     } else if (status.isConnected) {
