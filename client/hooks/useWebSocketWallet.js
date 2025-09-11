@@ -19,11 +19,10 @@ export const useWebSocketWallet = () => {
       hasInitialized.current = true;
       
       if (!wsService.isConnected) {
-        // Only connect if we have a valid address or if we explicitly want to connect to public data
+        // Connect with wallet address if available, otherwise connect to public data
         if (address && isConnected) {
           wsService.connect(address);
         } else {
-          // Connect to public data if no wallet address
           wsService.connect();
         }
       }

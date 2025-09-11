@@ -1,8 +1,25 @@
 // components/TradingViewChartHyperLiquid.js - Custom HyperLiquid datafeed implementation
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import hyperliquidDatafeed from '../datafeeds/hyperliquid-datafeed.js';
+import WebSocketService from '../hooks/WebsocketService.js';
+import numeral from "numeral";
+
+function formatPrice(num) {
+  const number = Number(num);
+  if (isNaN(number)) return "";
+  if (Number.isInteger(number)) {
+    return numeral(number).format("0,0");
+  }
+
+  const parts = num.toString().split(".");
+  const decimalPlaces = parts[1]?.length || 0;
+
+  return numeral(number).format(`0,0.${"0".repeat(decimalPlaces)}`);
+}
+
 
 function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
+  // console.log('TradingViewChartHyperLiquid ++++++++++++++++++++++++++++++++++++', symbol);
   const container = useRef();
   const tvWidget = useRef();
   const [isMobile, setIsMobile] = useState(false);
@@ -45,6 +62,29 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
     if (container.current) {
       container.current.innerHTML = '';
     }
+    
+    // Clean up previous widget if it exists
+    if (tvWidget.current) {
+      // Manually unsubscribe from all active subscriptions before removing the widget
+      // This ensures proper cleanup of WebSocket subscriptions
+      if (hyperliquidDatafeed && hyperliquidDatafeed.unsubscribeBars) {
+        // Get all active subscriptions and unsubscribe from them
+        const activeSubscriptions = Array.from(hyperliquidDatafeed.activeSubscriptions?.keys() || []);
+        activeSubscriptions.forEach(subscriberUID => {
+          const subscription = hyperliquidDatafeed.activeSubscriptions.get(subscriberUID);
+          if (subscription) {
+            const { symbol, interval } = subscription;
+            // Use force unsubscribe to ensure WebSocket cleanup
+            const wsService = WebSocketService.getInstance();
+            wsService.forceUnsubscribeFromCandle(symbol, interval);
+          }
+          hyperliquidDatafeed.unsubscribeBars(subscriberUID);
+        });
+      }
+      
+      tvWidget.current.remove();
+      tvWidget.current = null;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -86,7 +126,6 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
 
         // Check if datafeed is properly loaded
         if (!hyperliquidDatafeed) {
-          console.error('HyperLiquid datafeed not loaded');
           setError('HyperLiquid datafeed not loaded. Please try again.');
           setIsLoading(false);
           return;
@@ -116,25 +155,29 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         const desktopConfig = {
           symbol: symbol,
           datafeed: hyperliquidDatafeed,
-          interval: "5",
+          interval: "240",
           container: container.current,
           library_path: "/charting_library-master/charting_library/",
           locale: "en",
           theme: "dark",
           allow_symbol_change: false,
-          gridColor: "#181a20",
-          backgroundColor: "#0d0c0e",
+          gridColor: "rgba(242, 242, 242, 0.06)",
+          backgroundColor: "#0F0F0F",
           disabled_features: [
             "use_localstorage_for_settings",
             "volume_force_overlay",
             "create_volume_indicator_by_default",
             "header_symbol_search",
             "header_compare",
+            "search_symbol_enabled",
           ],
           enabled_features: [
             "side_toolbar_in_fullscreen_mode",
             "header_in_fullscreen_mode"
           ],
+          custom_formatters: {
+            priceFormatter: formatPrice,   // for y-axis + tooltips
+          },
           charts_storage_url: "https://saveload.tradingview.com",
           charts_storage_api_version: "1.1",
           client_id: "tradingview.com",
@@ -145,22 +188,23 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
             "volume.volume.color.0": "#00ff88",
             "volume.volume.color.1": "#ff4757",
             "volume.volume.transparency": 70,
-            "volume.pma.color": "#2196F3",
-            "volume.pma.transparency": 30,
-            "volume.pma.linewidth": 1,
-            "volume.sma.color": "#FF6D00",
-            "volume.sma.transparency": 30,
-            "volume.sma.linewidth": 1,
-            "volume.ema.color": "#9C27B0",
-            "volume.ema.transparency": 30,
-            "volume.ema.linewidth": 1,
-            "volume.wma.color": "#E91E63",
-            "volume.wma.transparency": 30,
-            "volume.wma.linewidth": 1,
-            "volume.volume ma.color": "#673AB7",
-            "volume.volume ma.transparency": 30,
-            "volume.volume ma.linewidth": 1
+            // "volume.pma.color": "#2196F3",
+            // "volume.pma.transparency": 30,
+            // "volume.pma.linewidth": 1,
+            // "volume.sma.color": "#FF6D00",
+            // "volume.sma.transparency": 30,
+            // "volume.sma.linewidth": 1,
+            // "volume.ema.color": "#9C27B0",
+            // "volume.ema.transparency": 30,
+            // "volume.ema.linewidth": 1,
+            // "volume.wma.color": "#E91E63",
+            // "volume.wma.transparency": 30,
+            // "volume.wma.linewidth": 1,
+            // "volume.volume ma.color": "#673AB7",
+            // "volume.volume ma.transparency": 30,
+            // "volume.volume ma.linewidth": 1
           },
+          studies: ["Volume"],
           overrides: {
             "paneProperties.background": "#0d0c0e",
             "paneProperties.backgroundType": "solid",
@@ -217,17 +261,14 @@ function TradingViewChartHyperLiquid({ symbol = 'BTC' }) {
         const config = isMobile ? mobileConfig : desktopConfig;
         
         
-        // Create TradingView widget only if not already created
-        if (!tvWidget.current) {
-          tvWidget.current = new window.TradingView.widget(config);
-        } else {
-          setIsLoading(false);
-          return;
-        }
+        // Create TradingView widget
+        tvWidget.current = new window.TradingView.widget(config);
         
         // Set up ready callback
         tvWidget.current.onChartReady(() => {
           setIsLoading(false);
+            // Add volume study
+          tvWidget.current.chart().createStudy('Volume', false, false, []);
         });
 
       } catch (error) {

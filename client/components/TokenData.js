@@ -179,7 +179,14 @@ const formatFunding = (funding) => {
   }
 
   return (
-    <div className={`bg-[#0d0c0e] text-white p-2 font-mono ${className}`}>
+    <div 
+      className={`text-white p-2 font-mono ${className}`}
+      style={{
+        backgroundColor: '#1a1a1a',
+        borderColor: '#6a6a6a75',
+        borderBottomWidth: 'thin'
+      }}
+    >
       {/* Mobile Layout */}
       <div className="block md:hidden">
         {/* Top Section: Token Info with Price */}

@@ -24,21 +24,11 @@ const configurationData = {
 // Cache for last bars to enable real-time updates
 const lastBarsCache = new Map();
 
+// Track active subscriptions for proper cleanup
+const activeSubscriptions = new Map(); // Map<subscriberUID, {symbol, interval, callback}>
+
 // Get WebSocket service instance
 const wsService = WebSocketService.getInstance();
-
-/**
- * Parse symbol name to extract coin information
- * @param {string} symbolName - Symbol name like "BTC", "ETH", etc.
- * @returns {object} Parsed symbol information
- */
-function parseSymbol(symbolName) {
-    // HyperLiquid uses simple coin names like BTC, ETH, etc.
-    return {
-        coin: symbolName.toUpperCase(),
-        exchange: 'HyperLiquid'
-    };
-}
 
 /**
  * Convert TradingView resolution to HyperLiquid interval
@@ -60,25 +50,14 @@ function resolutionToInterval(resolution) {
     return intervalMap[resolution] || '1m';
 }
 
-/**
- * Convert HyperLiquid interval to TradingView resolution
- * @param {string} interval - HyperLiquid interval
- * @returns {string} TradingView resolution
- */
-function intervalToResolution(interval) {
-    const resolutionMap = {
-        '1m': '1',
-        '5m': '5',
-        '15m': '15', 
-        '30m': '30',
-        '1h': '60',
-        '4h': '240',
-        '1d': '1D',
-        '1w': '1W',
-        '1M': '1M'
-    };
-    return resolutionMap[interval] || '1';
-}
+function getPriceScaleFromPrice(price) {
+    const str = price.toString();
+    if (str.includes('.')) {
+      const decimals = str.split('.')[1].length;
+      return Math.pow(10, decimals);
+    }
+    return 1; // no decimals
+  }
 
 /**
  * Fetch historical candle data from HyperLiquid API
@@ -150,8 +129,8 @@ async function getAvailableSymbols() {
         return meta.universe.map(asset => ({
             symbol: asset.name,
             full_name: asset.name,
-            description: `${asset.name} Perpetual`,
-            exchange: 'HyperLiquid',
+            description: `${asset.name}`,
+            exchange: 'Medusa',
             type: 'crypto',
             session: '24x7',
             timezone: 'Etc/UTC',
@@ -172,6 +151,8 @@ async function getAvailableSymbols() {
 
 // Main datafeed object
 const datafeed = {
+  // Expose activeSubscriptions for manual cleanup
+  activeSubscriptions: activeSubscriptions,
   onReady: (callback) => {
     setTimeout(() => callback(configurationData), 0);
   },
@@ -191,44 +172,51 @@ const datafeed = {
         }
     },
 
-  resolveSymbol: (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
+  resolveSymbol: async (symbolName, onSymbolResolvedCallback, onResolveErrorCallback) => {
+        // Get a sample price to determine the correct pricescale
+        let pricescale = 100; // default
+        try {
+            // Fetch a small amount of historical data to get a sample price
+            const sampleData = await fetchHistoricalData(symbolName, '1m', Math.floor(Date.now() / 1000) - 3600, Math.floor(Date.now() / 1000));
+            if (sampleData && sampleData.length > 0) {
+                const samplePrice = parseFloat(sampleData[0].c);
+                pricescale = getPriceScaleFromPrice(samplePrice);
+            }
+        } catch (error) {
+            console.log('Could not fetch sample data for pricescale, using default:', error);
+        }
 
-        
-        const parsedSymbol = parseSymbol(symbolName);
-        
         const symbolInfo = {
-            ticker: parsedSymbol.coin,
-            name: parsedSymbol.coin,
-            description: `${parsedSymbol.coin} Perpetual`,
+            ticker: symbolName,
+            name: symbolName,
+            description: `${symbolName} on medusa.trade`,
             type: 'crypto',
             session: '24x7',
             timezone: 'Etc/UTC',
-            exchange: parsedSymbol.exchange,
+            exchange: 'medusa.trade',
             minmov: 1,
-            pricescale: 100,
+            pricescale: pricescale,
             has_intraday: true,
-            has_no_volume: false,
+            // has_no_volume: false,
             has_weekly_and_monthly: true,
             supported_resolutions: configurationData.supported_resolutions,
             volume_precision: 2,
             data_status: 'streaming'
         };
 
-
         setTimeout(() => onSymbolResolvedCallback(symbolInfo), 0);
     },
 
   getBars: async (symbolInfo, resolution, periodParams, onHistoryCallback, onErrorCallback) => {
     const { from, to, firstDataRequest } = periodParams;
-        const parsedSymbol = parseSymbol(symbolInfo.full_name || symbolInfo.name);
         const interval = resolutionToInterval(resolution);
         try {
-            const data = await fetchHistoricalData(parsedSymbol.coin, interval, from, to);
+            const data = await fetchHistoricalData(symbolInfo.name, interval, from, to);
+
             if (!data || data.length === 0) {
                 onHistoryCallback([], { noData: true });
                 return;
             }
-
             let bars = [];
             data.forEach((bar, index) => {
                 // Map HyperLiquid field names to TradingView format
@@ -262,35 +250,46 @@ const datafeed = {
     },
 
   subscribeBars: (symbolInfo, resolution, onRealtimeCallback, subscriberUID, onResetCacheNeededCallback) => {
-        console.log('📡 [subscribeBars]: Method call - HyperLiquid datafeed subscribing to bars with subscriberUID:', subscriberUID);
-        console.log('📡 [subscribeBars]: Symbol info:', symbolInfo);
-        console.log('📡 [subscribeBars]: Resolution:', resolution);
-        
-        const parsedSymbol = parseSymbol(symbolInfo.full_name || symbolInfo.name);
         const interval = resolutionToInterval(resolution);
-        console.log('[subscribeBars]: Parsed symbol:', parsedSymbol);
-        console.log('[subscribeBars]: Interval:', interval);
 
-        // Subscribe to candle data using WebSocketService
-        const success = wsService.subscribeToCandle(parsedSymbol.coin, interval, (bar) => {
+        // Create callback wrapper for cleanup
+        const callbackWrapper = (bar) => {
             // Update the last bar cache
             lastBarsCache.set(symbolInfo.full_name || symbolInfo.name, bar);
-            
             // Call the real-time callback
             onRealtimeCallback(bar);
-        });
+        };
 
-        if (!success) {
+        // Subscribe to candle data using WebSocketService
+        const success = wsService.subscribeToCandle(symbolInfo.name, interval, callbackWrapper);
+
+        if (success) {
+            // Track this subscription for proper cleanup
+            activeSubscriptions.set(subscriberUID, {
+                symbol: symbolInfo.name,
+                interval: interval,
+                callback: callbackWrapper
+            });
+        } else {
             console.error('[subscribeBars]: Failed to subscribe to candle data');
         }
     },
 
     unsubscribeBars: (subscriberUID) => {
-        console.log('📡 [unsubscribeBars]: Method call - HyperLiquid datafeed unsubscribing from bars with subscriberUID:', subscriberUID);
         
-        // Note: We don't have the symbol and interval here, so we can't unsubscribe directly
-        // This is a limitation of the TradingView datafeed interface
-        // The WebSocketService will handle cleanup when the component unmounts
+        // Get subscription info from our tracking
+        const subscription = activeSubscriptions.get(subscriberUID);
+        if (subscription) {
+            const { symbol, interval, callback } = subscription;
+            
+            // Unsubscribe from WebSocket service
+            const success = wsService.unsubscribeFromCandle(symbol, interval, callback);
+
+            // Remove from our tracking
+            activeSubscriptions.delete(subscriberUID);
+        } else {
+            console.warn(`📡 [unsubscribeBars]: No active subscription found for UID: ${subscriberUID}`);
+        }
     },
 
     getServerTime: (callback) => {

@@ -106,6 +106,7 @@ class WebSocketService {
     this.ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
 
     this.ws.onopen = () => {
+      console.log('✅ WebSocket connected');
       this.isConnected = true;
       this.reconnectAttempts = 0;
       WebSocketService.isConnecting = false; // Clear the connecting flag
@@ -120,6 +121,8 @@ class WebSocketService {
       } else {
         this.subscribeToPublicData();
       }
+      
+      console.log('🔌 [WebSocketService]: Connection established and ready for subscriptions');
     };
 
     this.ws.onmessage = (event) => {
@@ -1119,7 +1122,11 @@ class WebSocketService {
    * Unsubscribe from candle data
    */
   unsubscribeFromCandle(symbol, interval, callback) {
-    if (!this.isConnected) return false;
+    console.log(`🔌 [unsubscribeFromCandle]: Called for ${symbol} ${interval}, isConnected: ${this.isConnected}`);
+    if (!this.isConnected) {
+      console.warn(`❌ [unsubscribeFromCandle]: WebSocket not connected, cannot unsubscribe from ${symbol} ${interval}`);
+      return false;
+    }
     
     const channelString = `${symbol}_${interval}`;
     const candleKey = `candle:${channelString}`;
@@ -1128,22 +1135,69 @@ class WebSocketService {
     // Unsubscribe from the callback
     this.unsubscribe(candleKey, callback);
     
-    // If no more subscribers for this candle, unsubscribe from WebSocket
-    if (!this.subscribers.has(candleKey) || this.subscribers.get(candleKey).size === 0) {
-      if (this.activeSubscriptions.has(subscriptionKey)) {
-        const success = this.send({
-          method: 'unsubscribe',
-          subscription: { type: 'candle', coin: symbol, interval: interval }
-        });
-        
-        if (success) {
-          this.activeSubscriptions.delete(subscriptionKey);
-          return true;
-        }
+    // Check if there are still subscribers after removing this callback
+    const hasSubscribers = this.subscribers.has(candleKey) && this.subscribers.get(candleKey).size > 0;
+    const hasActiveSubscription = this.activeSubscriptions.has(subscriptionKey);
+    
+    console.log(`🔌 [unsubscribeFromCandle]: hasSubscribers: ${hasSubscribers}, hasActiveSubscription: ${hasActiveSubscription}`);
+    
+    // Always unsubscribe from WebSocket if there's an active subscription, regardless of subscriber count
+    // This ensures proper cleanup when switching symbols
+    if (hasActiveSubscription) {
+      console.log(`🔌 [unsubscribeFromCandle]: Sending unsubscribe message for ${symbol} ${interval}`);
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.delete(subscriptionKey);
+        console.log(`✅ [unsubscribeFromCandle]: Successfully unsubscribed from WebSocket for ${symbol} ${interval}`);
+        return true;
+      } else {
+        console.warn(`❌ [unsubscribeFromCandle]: Failed to send unsubscribe message for ${symbol} ${interval}`);
+        return false;
       }
+    } else {
+      console.log(`🔌 [unsubscribeFromCandle]: No active WebSocket subscription to unsubscribe from`);
     }
     
     return true;
+  }
+
+  /**
+   * Force unsubscribe from candle data (used when switching symbols)
+   */
+  forceUnsubscribeFromCandle(symbol, interval) {
+    console.log(`🔌 [forceUnsubscribeFromCandle]: Force unsubscribing from ${symbol} ${interval}, isConnected: ${this.isConnected}`);
+    if (!this.isConnected) {
+      console.warn(`❌ [forceUnsubscribeFromCandle]: WebSocket not connected, cannot unsubscribe from ${symbol} ${interval}`);
+      return false;
+    }
+    
+    const channelString = `${symbol}_${interval}`;
+    const subscriptionKey = `candle:${channelString}`;
+    
+    // Check if there's an active WebSocket subscription
+    if (this.activeSubscriptions.has(subscriptionKey)) {
+      console.log(`🔌 [forceUnsubscribeFromCandle]: Sending force unsubscribe message for ${symbol} ${interval}`);
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { type: 'candle', coin: symbol, interval: interval }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.delete(subscriptionKey);
+        console.log(`✅ [forceUnsubscribeFromCandle]: Successfully force unsubscribed from WebSocket for ${symbol} ${interval}`);
+        return true;
+      } else {
+        console.warn(`❌ [forceUnsubscribeFromCandle]: Failed to send force unsubscribe message for ${symbol} ${interval}`);
+        return false;
+      }
+    } else {
+      console.log(`🔌 [forceUnsubscribeFromCandle]: No active WebSocket subscription to unsubscribe from`);
+      return true;
+    }
   }
 }
 
