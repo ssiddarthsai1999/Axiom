@@ -11,6 +11,7 @@ import * as hl from "@nktkas/hyperliquid";
 import numeral from 'numeral';
 import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
 import { LuSettings2 } from "react-icons/lu";
+import { useWebSocketWallet } from '../hooks/useWebSocketWallet';
 
 
 const TradingPanel = ({ 
@@ -48,6 +49,11 @@ const [applyToAll, setApplyToAll] = useState(false);
   const { address, isConnected } = useAccount();
     const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
+  
+  // WebSocket integration
+  const { wsService } = useWebSocketWallet();
+  const [webData2Data, setWebData2Data] = useState(null);
+  const [activeAssetData, setActiveAssetData] = useState(null);
   const [isOnboarded, setIsOnboarded] = useState(false);
   
   // Debug: Log leverage changes
@@ -406,34 +412,30 @@ const [applyToAll, setApplyToAll] = useState(false);
     fetchWalletBalances();
   }, [isConnected, address, wallet]);
 
-  // Check actual leverage setting from Hyperliquid API
+  // Check actual leverage setting - now primarily uses websocket data
   const checkActualLeverage = async () => {
     if (!address || !selectedSymbol || !assetInfo) {
-
       return;
     }
     
     try {
       setIsFetchingLeverage(true);
 
-      
-      // Use the new API to get current leverage
+      // First try to get leverage from websocket data if available
+      // This is handled by handleActiveAssetDataUpdate, so we only need API fallback
+      // Use the API to get current leverage as fallback
       const leverageData = await getCurrentLeverage(address, selectedSymbol);
       
       if (leverageData) {
         const actualLeverage = leverageData.value;
         const actualMarginMode = leverageData.type;
         
-
-        
         // Update app leverage and margin mode if they don't match
         if (actualLeverage !== leverage) {
-
           setLeverage(actualLeverage);
         }
         
         if (actualMarginMode !== marginMode) {
-
           setMarginMode(actualMarginMode);
         }
         
@@ -475,6 +477,43 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     setCheckingOnboarding(true);
     try {
+      // First check if we have activeAssetData websocket data available (most accurate for available to trade)
+      if (activeAssetData && activeAssetData.availableToTrade && activeAssetData.availableToTrade.length > 0) {
+        setIsOnboarded(true);
+        
+        // Use activeAssetData as primary source for available to trade
+        const availableToTrade = parseFloat(activeAssetData.availableToTrade[0] || 0);
+        const accountValue = parseFloat(webData2Data?.clearinghouseState?.marginSummary?.accountValue || 0);
+        
+        setAccountData(prev => ({
+          ...prev,
+          availableMargin: availableToTrade,
+          accountValue: accountValue
+        }));
+        
+        setCheckingOnboarding(false);
+        return true;
+      }
+      
+      // Second check if we have webData2Data websocket data available
+      if (webData2Data && webData2Data.clearinghouseState) {
+        setIsOnboarded(true);
+        
+        // Use webData2Data as fallback source
+        const withdrawable = parseFloat(webData2Data.clearinghouseState.withdrawable || 0);
+        const accountValue = parseFloat(webData2Data.clearinghouseState.marginSummary?.accountValue || 0);
+        
+        setAccountData(prev => ({
+          ...prev,
+          availableMargin: withdrawable,
+          accountValue: accountValue
+        }));
+        
+        setCheckingOnboarding(false);
+        return true;
+      }
+      
+      // Fallback to API if no websocket data available
       const userState = await hyperliquidUtils.getUserAccountState(address, true);
      
       
@@ -527,10 +566,6 @@ const [applyToAll, setApplyToAll] = useState(false);
         }));
         
         
-        
-        // Check actual leverage after getting account data
-        await checkActualLeverage();
-        
         return true;
       } else {
         setIsOnboarded(false);
@@ -572,6 +607,89 @@ const [applyToAll, setApplyToAll] = useState(false);
       setMarginMode('isolated');
     }
   }, [isConnected, address, walletClient]);
+
+  // WebSocket subscription for real-time account data
+  useEffect(() => {
+    if (isConnected && address && wsService) {
+      // Subscribe to webData2 updates for real-time account data
+      wsService.subscribe('webData2', handleWebData2Update);
+      
+      // Subscribe to activeAssetData for leverage information
+      if (selectedSymbol) {
+        wsService.subscribeToActiveAssetData(selectedSymbol, address);
+        wsService.subscribe(`activeAssetData:${selectedSymbol}`, handleActiveAssetDataUpdate);
+      }
+      
+      return () => {
+        wsService.unsubscribe('webData2', handleWebData2Update);
+        if (selectedSymbol) {
+          wsService.unsubscribeFromActiveAssetData(selectedSymbol, address);
+          wsService.unsubscribe(`activeAssetData:${selectedSymbol}`, handleActiveAssetDataUpdate);
+        }
+      };
+    }
+  }, [isConnected, address, wsService, selectedSymbol]);
+
+  // Handle webData2 updates from websocket
+  const handleWebData2Update = (webData2Data) => {
+    if (!webData2Data || !webData2Data.clearinghouseState) return;
+    
+    setWebData2Data(webData2Data);
+    
+    // Update account data with real-time withdrawable amount
+    const withdrawable = parseFloat(webData2Data.clearinghouseState.withdrawable || 0);
+    const accountValue = parseFloat(webData2Data.clearinghouseState.marginSummary?.accountValue || 0);
+    
+    setAccountData(prev => ({
+      ...prev,
+      availableMargin: withdrawable,
+      accountValue: accountValue
+    }));
+  };
+
+  // Handle activeAssetData updates from websocket for leverage and available to trade information
+  const handleActiveAssetDataUpdate = (data) => {
+    if (!data || !data.data) return;
+    
+    const assetData = data.data;
+    setActiveAssetData(assetData);
+    
+    // Update leverage information if available
+    if (assetData.leverage) {
+      const leverageData = assetData.leverage;
+      const actualLeverage = leverageData.value;
+      const actualMarginMode = leverageData.type;
+      
+      // Update leverage and margin mode if they don't match
+      if (actualLeverage !== leverage) {
+        setLeverage(actualLeverage);
+      }
+      
+      if (actualMarginMode !== marginMode) {
+        setMarginMode(actualMarginMode);
+      }
+      
+      // Update last sync timestamp
+      setLastLeverageSync(new Date());
+    }
+    
+    // Update available to trade amount if available
+    if (assetData.availableToTrade && assetData.availableToTrade.length > 0) {
+      const availableToTrade = parseFloat(assetData.availableToTrade[0] || 0);
+      
+      setAccountData(prev => ({
+        ...prev,
+        availableMargin: availableToTrade
+      }));
+    }
+  };
+
+  // Trigger checkOnboardingStatus when webData2Data or activeAssetData changes
+  useEffect(() => {
+    if (address && ((webData2Data && webData2Data.clearinghouseState) || (activeAssetData && activeAssetData.availableToTrade))) {
+      checkOnboardingStatus();
+    }
+  }, [webData2Data, activeAssetData, address]);
 
   useEffect(() => {
     if (orderType === 'Limit' && marketData && !limitPrice) {
@@ -1332,7 +1450,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 <div className="my-4 px-4">
   <div className="flex justify-between items-center mb-2">
     <label className="text-[#919093] text-[11px] font-[500] fomt-mono ">
-      Available Margin: {accountData.availableMargin.toFixed(2)} USDC
+      Available to Trade: {accountData.availableMargin} USDC
     </label>
     
     {/* Half/Max Buttons */}
@@ -1715,7 +1833,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div> */}
           
           {/* <div className="flex justify-between">
-            <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available Margin</span>
+            <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available to Trade</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.availableMargin.toFixed(2)} USDC
             </span>
