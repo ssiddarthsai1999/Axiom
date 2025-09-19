@@ -1,5 +1,5 @@
 // components/TradingPanel.js - SIMPLIFIED VERSION WITH CONVERTED SIGNING UTILS
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
@@ -376,41 +376,41 @@ const [applyToAll, setApplyToAll] = useState(false);
   }, []);
 
 
-    useEffect(() => {
-    const fetchWalletBalances = async () => {
-      if (isConnected && address && wallet?.provider) {
-        try {
-          // Get ETH balance
-          const ethBalance = await wallet.provider.getBalance(address);
-          const ethBal = parseFloat(ethers.formatEther(ethBalance));
-          setEthBalance(ethBal);
+  //   useEffect(() => {
+  //   const fetchWalletBalances = async () => {
+  //     if (isConnected && address && wallet?.provider) {
+  //       try {
+  //         // Get ETH balance
+  //         const ethBalance = await wallet.provider.getBalance(address);
+  //         const ethBal = parseFloat(ethers.formatEther(ethBalance));
+  //         setEthBalance(ethBal);
           
-          // Get ETH price
-          const price = await getETHPrice();
-          setEthPrice(price);
+  //         // Get ETH price
+  //         const price = await getETHPrice();
+  //         setEthPrice(price);
 
-          // Get USDC balance from Arbitrum
-          const usdcContract = new ethers.Contract(
-            '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
-            ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
-            wallet.provider
-          );
+  //         // Get USDC balance from Arbitrum
+  //         const usdcContract = new ethers.Contract(
+  //           '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
+  //           ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+  //           wallet.provider
+  //         );
           
-          const usdcBalance = await usdcContract.balanceOf(address);
-          const usdcDecimals = await usdcContract.decimals();
-          const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
-          setUsdcBalance(usdcBal);
+  //         const usdcBalance = await usdcContract.balanceOf(address);
+  //         const usdcDecimals = await usdcContract.decimals();
+  //         const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
+  //         setUsdcBalance(usdcBal);
           
 
           
-        } catch (error) {
-          console.error('Error fetching balances:', error);
-        }
-      }
-    };
+  //       } catch (error) {
+  //         console.error('Error fetching balances:', error);
+  //       }
+  //     }
+  //   };
 
-    fetchWalletBalances();
-  }, [isConnected, address, wallet]);
+  //   fetchWalletBalances();
+  // }, [isConnected, address, wallet]);
 
   // Check actual leverage setting - now primarily uses websocket data
   const checkActualLeverage = async () => {
@@ -472,7 +472,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  const checkOnboardingStatus = async () => {
+  const checkOnboardingStatus = useCallback(async () => {
     if (!address) return false;
     
     setCheckingOnboarding(true);
@@ -579,12 +579,11 @@ const [applyToAll, setApplyToAll] = useState(false);
     } finally {
       setCheckingOnboarding(false);
     }
-  };
+  }, [address, activeAssetData, webData2Data]);
 
   useEffect(() => {
     if (isConnected && address && walletClient) {
-     
-      
+
       setAccountData(prev => ({
         ...prev,
         isConnected: true,
@@ -768,63 +767,9 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  const createSigner = async () => {
-    if (!walletClient || !address) {
-      console.error('No wallet client or address available');
-      setOrderError('Please connect your wallet');
-      return;
-    }
 
-    try {
-     
-      
-      if (walletClient.chain?.id !== 42161) {
-        setOrderError('Please switch to Arbitrum network');
-        return;
-      }
-      
-      const network = {
-        chainId: 42161,
-        name: 'arbitrum',
-        ensAddress: null
-      };
-      
-      const provider = new ethers.BrowserProvider(walletClient.transport, network);
-      const signer = await provider.getSigner();
-      const signerAddress = await signer.getAddress();
-      
-     
-      
-      const normalizedSignerAddress = signerAddress.toLowerCase();
-      const normalizedExpectedAddress = address.toLowerCase();
-      
-      if (normalizedSignerAddress !== normalizedExpectedAddress) {
-        console.error('❌ Address mismatch!');
-        setOrderError('Wallet address mismatch. Please reconnect your wallet.');
-        return;
-      }
-      
-     
-      
-      setWallet({
-        address: normalizedExpectedAddress,
-        signer: signer,
-        provider: provider,
-        walletClient: walletClient
-      });
-      
-     
-      
-      await checkOnboardingStatus();
-      await checkBuilderFeeStatus();
-      
-    } catch (error) {
-      console.error('Error creating signer:', error);
-      setOrderError('Failed to connect wallet: ' + error.message);
-    }
-  };
+  const checkBuilderFeeStatus = useCallback(async () => {
 
-  const checkBuilderFeeStatus = async () => {
     if (!wallet || !wallet.signer) return;
     
     setCheckingBuilderFee(true);
@@ -853,9 +798,50 @@ const [applyToAll, setApplyToAll] = useState(false);
     } finally {
       setCheckingBuilderFee(false);
     }
-  };
+  }, [wallet]);
 
+  const createSigner = useCallback(async () => {
+    if (!walletClient || !address) {
+      console.error('No wallet client or address available');
+      setOrderError('Please connect your wallet');
+      return;
+    }
 
+    try {
+      
+      let provider, signer, signerAddress;
+      try {
+        provider = new ethers.BrowserProvider(walletClient.transport);
+        signer = await provider.getSigner();
+        signerAddress = await signer.getAddress();
+      } catch (providerError) {
+        console.error('Error creating provider or signer:', providerError);
+        throw providerError;
+      }
+      const normalizedSignerAddress = signerAddress.toLowerCase();
+      const normalizedExpectedAddress = address.toLowerCase();
+
+      if (normalizedSignerAddress !== normalizedExpectedAddress) {
+        console.error('❌ Address mismatch! Expected:', normalizedExpectedAddress, 'Got:', normalizedSignerAddress);
+        setOrderError('Wallet address mismatch. Please reconnect your wallet.');
+        return;
+      }
+      
+
+      
+      setWallet({
+        address: normalizedExpectedAddress,
+        signer: signer,
+        provider: provider,
+        walletClient: walletClient
+      });
+      await checkOnboardingStatus();
+      await checkBuilderFeeStatus();
+    } catch (error) {
+      console.error('Error creating signer:', error);
+      setOrderError('Failed to connect wallet: ' + error.message);
+    }
+  }, [walletClient, address, checkOnboardingStatus, checkBuilderFeeStatus]);
 
   // UPDATED TRADE HANDLER WITH MERGED AGENT WALLET AND BUILDER FEE LOGIC
   const handleTrade = async () => {
@@ -1317,7 +1303,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     if (wallet && wallet.signer && isConnected && address) {
       checkBuilderFeeStatus();
     }
-  }, [wallet, address, isConnected]);
+  }, [wallet, address, isConnected, checkBuilderFeeStatus]);
 
   return (
     <>
