@@ -710,6 +710,18 @@ const [applyToAll, setApplyToAll] = useState(false);
     const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
     
     if (orderSize > 0 && currentPrice > 0) {
+      // Check if order size exceeds maxTradeSzs limit
+      if (activeAssetData && activeAssetData.maxTradeSzs && activeAssetData.maxTradeSzs.length > 0) {
+        const maxTradeSize = parseFloat(activeAssetData.maxTradeSzs[0]);
+        if (orderSize > maxTradeSize) {
+          setMarginRequirement(0);
+          setMaintenanceMarginRequirement(0);
+          setHasEnoughMargin(false);
+          setMarginErrorMessage(`Position size exceeds maximum allowed: ${maxTradeSize} ${selectedSymbol}`);
+          return;
+        }
+      }
+      
       const validation = validateMarginRequirement(
         orderSize, 
         currentPrice, 
@@ -729,7 +741,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       setHasEnoughMargin(true);
       setMarginErrorMessage('');
     }
-  }, [buyAmount, limitPrice, leverage, accountData.availableMargin, marketData?.price, orderType]);
+  }, [buyAmount, limitPrice, leverage, accountData.availableMargin, marketData?.price, orderType, activeAssetData, selectedSymbol]);
 
 
     const handlePercentageClick = (percent) => {
@@ -749,7 +761,22 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     // Calculate token amount based on current price
     if (marketData && marketData.price > 0) {
-      const tokenAmount = positionValue / marketData.price;
+      let tokenAmount = positionValue / marketData.price;
+      
+      // Check if we have maxTradeSzs limit from activeAssetData
+      if (activeAssetData && activeAssetData.maxTradeSzs && activeAssetData.maxTradeSzs.length > 0) {
+        const maxTradeSize = parseFloat(activeAssetData.maxTradeSzs[0]);
+        
+        // If calculated amount exceeds maxTradeSzs, cap it to the maximum allowed
+        if (tokenAmount > maxTradeSize) {
+          tokenAmount = maxTradeSize;
+          // setOrderError(`Position size capped at maximum allowed: ${maxTradeSize} ${selectedSymbol}`);
+        } else {
+          // Clear any previous error if we're within limits
+          setOrderError(null);
+        }
+      }
+      
       const amountStr = assetInfo ? formatSizeToMaxDecimals(tokenAmount.toString(), assetInfo.szDecimals) : tokenAmount.toFixed(6);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
