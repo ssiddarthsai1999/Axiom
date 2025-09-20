@@ -209,9 +209,11 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
       return;
     }
 
-    if (sizeValue > Math.abs(position.size)) {
-      alert(`Size cannot exceed position size of ${Math.abs(position.size)}`);
-      return;
+    // Cap the size to the exact position size if it exceeds due to floating-point precision
+    const positionSize = Math.abs(position.size);
+    if (sizeValue > positionSize) {
+      console.log('⚠️ Size exceeds position size, capping to exact position size');
+      sizeValue = positionSize;
     }
 
     if (onConfirm) {
