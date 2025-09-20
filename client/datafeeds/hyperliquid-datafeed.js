@@ -13,7 +13,7 @@ const configurationData = {
             desc: 'HyperLiquid Perpetuals Exchange'
         }
     ],
-    supported_resolutions: ['1', '5', '15', '30', '60', '240', '1D', '1W', '1M'],
+    supported_resolutions: ['1', '3', '5', '15', '30', '60', '120', '240', '480', '720', '1D', '3D', '1W', '1M'],
     supports_marks: false,
     supports_timescale_marks: false,
     supports_time: true,
@@ -38,12 +38,18 @@ const wsService = WebSocketService.getInstance();
 function resolutionToInterval(resolution) {
     const intervalMap = {
         '1': '1m',
-        '5': '5m', 
+        '3': '3m',
+        '5': '5m',
         '15': '15m',
         '30': '30m',
         '60': '1h',
+        '120': '2h',
         '240': '4h',
+        '480': '8h',
+        '720': '12h',
+        '3D': '3d',
         '1D': '1d',
+        '3D': '3d',
         '1W': '1w',
         '1M': '1M'
     };
