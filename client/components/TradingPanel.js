@@ -32,6 +32,7 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [limitPrice, setLimitPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
   const [assetInfo, setAssetInfo] = useState(null);
+  const [userClearedLimitPrice, setUserClearedLimitPrice] = useState(false);
     const percentageOptions = [0, 25, 50, 75, 100];
   // const maxLeverage = 50; // Maximum leverage allowed
   const [percentage, setPercentage] = useState(0);
@@ -340,6 +341,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setPercentage(0);
     setUsdEquivalent('0.00');
     setTpSlEnabled(false);
+    setUserClearedLimitPrice(false); // Reset the flag when symbol changes
 
   }, [selectedSymbol]);
 
@@ -683,6 +685,18 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
+  // Handle mid price button click
+  const handleMidPriceClick = () => {
+    const midPrice = marketData?.midPx;
+    if (midPrice && assetInfo) {
+      const formattedPrice = formatPriceToMaxDecimals(midPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot);
+      setLimitPrice(formattedPrice);
+      setUserClearedLimitPrice(false); // Reset the flag when user clicks Mid
+    } else {
+      console.log('⚠️ No mid price available or asset info missing');
+    }
+  };
+
   // Trigger checkOnboardingStatus when webData2Data or activeAssetData changes
   useEffect(() => {
     if (address && ((webData2Data && webData2Data.clearinghouseState) || (activeAssetData && activeAssetData.availableToTrade))) {
@@ -691,11 +705,18 @@ const [applyToAll, setApplyToAll] = useState(false);
   }, [webData2Data, activeAssetData, address]);
 
   useEffect(() => {
-    if (orderType === 'Limit' && marketData && !limitPrice) {
+    if (orderType === 'Limit' && marketData && !limitPrice && !userClearedLimitPrice) {
       const formattedPrice = assetInfo ? formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot) : marketData.price.toString();
       setLimitPrice(formattedPrice);
     }
-  }, [orderType, marketData, limitPrice, assetInfo]);
+  }, [orderType, marketData, limitPrice, assetInfo, userClearedLimitPrice]);
+
+  // Reset the user cleared flag when switching to Limit order type
+  useEffect(() => {
+    if (orderType === 'Limit') {
+      setUserClearedLimitPrice(false);
+    }
+  }, [orderType]);
 
   // Real-time margin validation whenever order parameters change
   useEffect(() => {
@@ -1254,13 +1275,35 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Validate decimal places for price input
   const handleLimitPriceChange = (value) => {
-    if (!assetInfo) {
-      setLimitPrice(value);
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setLimitPrice('');
+      setUserClearedLimitPrice(true); // Mark that user intentionally cleared the input
       return;
     }
     
-    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
-    setLimitPrice(formattedValue);
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setLimitPrice('0');
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+      return;
+    }
+    
+    if (!assetInfo) {
+      setLimitPrice(value);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setLimitPrice(formattedValue);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+    } else {
+      setLimitPrice(value);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+    }
   };
 
   // Validate decimal places for TP price input
@@ -1544,13 +1587,22 @@ const [applyToAll, setApplyToAll] = useState(false);
                   </span>
                 )}
               </div>
-              <input
-                type="number"
-                value={limitPrice}
-                onChange={(e) => handleLimitPriceChange(e.target.value)}
-                placeholder={marketData ? marketData.price.toString() : "0.0"}
-                className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  value={limitPrice}
+                  onChange={(e) => handleLimitPriceChange(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
+                />
+                <button
+                  type="button"
+                  onClick={handleMidPriceClick}
+                  className="absolute right-3 top-2 text-[#00D4AA] text-sm hover:text-[#00B894] cursor-pointer transition-colors"
+                >
+                  Mid
+                </button>
+              </div>
             </div>
           </div>
         )}
