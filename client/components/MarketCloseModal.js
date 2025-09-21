@@ -359,19 +359,6 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm, 
           </div>
         </div>
 
-        {/* Don't show again checkbox */}
-        <div className="mb-6 flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="dontShowAgain"
-            checked={dontShowAgain}
-            onChange={(e) => setDontShowAgain(e.target.checked)}
-            className="w-4 h-4 text-[#00D4AA] bg-[#1a1a1f] border-[#1F1E23] rounded focus:ring-[#00D4AA] focus:ring-2"
-          />
-          {/* <label htmlFor="dontShowAgain" className="text-gray-400 text-sm cursor-pointer">
-            Don&apos;t show this again
-          </label> */}
-        </div>
 
         {/* Market Close Button */}
         <button
