@@ -1549,6 +1549,7 @@ const UserPositions = ({ className = '' }) => {
         position={selectedPosition}
         currentPrice={modalCurrentPrice}
         onConfirm={handleClosePosition}
+        webData2Data={webData2Data}
       />
     </div>
   );
