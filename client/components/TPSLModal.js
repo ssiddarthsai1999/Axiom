@@ -533,15 +533,6 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
             />
             <span className="text-gray-400 text-sm">Configure Amount</span>
           </label>
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={limitPrice}
-              onChange={(e) => setLimitPrice(e.target.checked)}
-              className="form-checkbox h-4 w-4 text-blue-600 bg-[#1a1a1f] border-[#1F1E23] rounded focus:ring-blue-500"
-            />
-            <span className="text-gray-400 text-sm">Limit Price</span>
-          </label>
         </div>
 
         {/* Error Message */}
