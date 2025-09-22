@@ -37,11 +37,30 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     return withoutLeadingZeros.length;
   };
 
+  // Calculate HyperLiquid-compatible tick size based on szDecimals
+  const getHyperLiquidTickSize = (price, szDecimals) => {
+    // HyperLiquid tick size is 1 unit at the allowed decimal precision
+    const MAX_DECIMALS = 6; // For perpetuals (spot uses 8)
+    const maxPriceDecimals = MAX_DECIMALS - szDecimals;
+    const tickSize = Math.pow(10, -maxPriceDecimals);
+    return tickSize;
+  };
+
+  // Round price to HyperLiquid tick size
+  const roundToHyperLiquidTick = (price, szDecimals) => {
+    const tickSize = getHyperLiquidTickSize(price, szDecimals);
+    const rounded = Math.round(price / tickSize) * tickSize;
+    
+    // Ensure we don't have floating point precision issues
+    const maxPriceDecimals = 6 - szDecimals;
+    return parseFloat(rounded.toFixed(maxPriceDecimals));
+  };
+
   // Utility function to validate and format decimal places for PRICE (same as TradingPanel)
   const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
     if (!value || value === '') return value;
     
-    const num = parseFloat(value);
+    let num = parseFloat(value);
     if (isNaN(num)) return value;
     
     const valueStr = value.toString();
@@ -49,29 +68,27 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     // Check significant figures limit (max 5)
     const sigFigs = countSignificantFigures(valueStr);
     if (sigFigs > 5) {
-      // Truncate to 5 significant figures
-      const truncated = parseFloat(num.toPrecision(5));
-      return truncated.toString();
+      // Truncate to 5 significant figures - no recursion!
+      num = parseFloat(num.toPrecision(5));
     }
     
-    // Check decimal places limit: MAX_DECIMALS - szDecimals
-    const MAX_DECIMALS = isSpot ? 8 : 6;
-    const maxDecimalPlaces = MAX_DECIMALS - szDecimals;
+    // Apply HyperLiquid tick size rounding
+    const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-    const decimalIndex = valueStr.indexOf('.');
-    if (decimalIndex === -1) {
-      // No decimal point, return as is (integers are always allowed)
-      return valueStr;
+    // Check if the original value had trailing zeros after decimal point
+    // If so, preserve them in the result
+    const hasTrailingZeros = valueStr.includes('.') && valueStr.endsWith('0');
+    if (hasTrailingZeros) {
+      const decimalIndex = valueStr.indexOf('.');
+      const originalDecimalPlaces = valueStr.length - decimalIndex - 1;
+      const maxPriceDecimals = (isSpot ? 8 : 6) - szDecimals;
+      const preservedDecimalPlaces = Math.min(originalDecimalPlaces, maxPriceDecimals);
+      
+      // Return with preserved decimal places
+      return tickRounded.toFixed(preservedDecimalPlaces);
     }
     
-    const decimalPlaces = valueStr.length - decimalIndex - 1;
-    if (decimalPlaces <= maxDecimalPlaces) {
-      // Already within limits
-      return valueStr;
-    }
-    
-    // Truncate to max decimal places
-    return num.toFixed(maxDecimalPlaces);
+    return tickRounded.toString();
   };
 
   // Utility function to validate and format decimal places for SIZE (same as TradingPanel)
@@ -112,6 +129,66 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
 
     return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
   }
+
+  // Handle TP price change with proper decimal formatting
+  const handleTPPriceChange = (value) => {
+    lastUpdatedRef.current = 'tpPrice';
+    
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setTPPrice('');
+      return;
+    }
+    
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setTPPrice('0');
+      return;
+    }
+    
+    if (!assetInfo) {
+      setTPPrice(value);
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setTPPrice(formattedValue);
+    } else {
+      setTPPrice(value);
+    }
+  };
+
+  // Handle SL price change with proper decimal formatting
+  const handleSLPriceChange = (value) => {
+    lastUpdatedRef.current = 'slPrice';
+    
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setSLPrice('');
+      return;
+    }
+    
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setSLPrice('0');
+      return;
+    }
+    
+    if (!assetInfo) {
+      setSLPrice(value);
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setSLPrice(formattedValue);
+    } else {
+      setSLPrice(value);
+    }
+  };
 
   // Reset all states when modal opens and fetch asset info
   useEffect(() => {
@@ -463,13 +540,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                <input
                  type="number"
                  value={tpPrice}
-                 onChange={(e) => {
-                   lastUpdatedRef.current = 'tpPrice';
-                   const formattedValue = assetInfo ? 
-                     formatPriceToMaxDecimals(e.target.value, assetInfo.szDecimals, assetInfo.isSpot) : 
-                     e.target.value;
-                   setTPPrice(formattedValue);
-                 }}
+                 onChange={(e) => handleTPPriceChange(e.target.value)}
                  placeholder="0.00"
                  className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white font-mono focus:border-gray-500 focus:outline-none"
                />
@@ -506,13 +577,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                <input
                  type="number"
                  value={slPrice}
-                 onChange={(e) => {
-                   lastUpdatedRef.current = 'slPrice';
-                   const formattedValue = assetInfo ? 
-                     formatPriceToMaxDecimals(e.target.value, assetInfo.szDecimals, assetInfo.isSpot) : 
-                     e.target.value;
-                   setSLPrice(formattedValue);
-                 }}
+                 onChange={(e) => handleSLPriceChange(e.target.value)}
                  placeholder="0.00"
                  className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white font-mono focus:border-gray-500 focus:outline-none"
                />

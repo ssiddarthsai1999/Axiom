@@ -46,10 +46,10 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm, 
           onlyIsolated: asset.onlyIsolated || false,
           isSpot: false // Perpetuals are not spot
         });
-        console.log('✅ Asset info loaded from WebSocket for', position.coin, ':', {
-          szDecimals: asset.szDecimals,
-          onlyIsolated: asset.onlyIsolated
-        });
+        // console.log('✅ Asset info loaded from WebSocket for', position.coin, ':', {
+        //   szDecimals: asset.szDecimals,
+        //   onlyIsolated: asset.onlyIsolated
+        // });
       } else {
         // Fallback if asset not found in WebSocket data
         setAssetInfo({

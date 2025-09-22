@@ -1255,7 +1255,18 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Apply HyperLiquid tick size rounding
     const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-
+    // Check if the original value had trailing zeros after decimal point
+    // If so, preserve them in the result
+    const hasTrailingZeros = valueStr.includes('.') && valueStr.endsWith('0');
+    if (hasTrailingZeros) {
+      const decimalIndex = valueStr.indexOf('.');
+      const originalDecimalPlaces = valueStr.length - decimalIndex - 1;
+      const maxPriceDecimals = (isSpot ? 8 : 6) - szDecimals;
+      const preservedDecimalPlaces = Math.min(originalDecimalPlaces, maxPriceDecimals);
+      
+      // Return with preserved decimal places
+      return tickRounded.toFixed(preservedDecimalPlaces);
+    }
     
     return tickRounded.toString();
   };
