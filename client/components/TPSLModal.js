@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWalletClient } from 'wagmi';
 import { placeOrderWithTPSL, calculateTPSLPrices, getOrCreateSessionAgentWallet, getAssetId } from '@/utils/hyperLiquidSDK';
 import * as hl from '@nktkas/hyperliquid';
+import numeral from 'numeral';
 
 const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const [tpPrice, setTPPrice] = useState('');
@@ -98,6 +99,19 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     // Truncate to max decimal places
     return num.toFixed(szDecimals);
   };
+
+  const formatPrice = (num) => {
+    const number = Number(num);
+    if (isNaN(number)) return '';
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
+    }
+
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
 
   // Reset all states when modal opens and fetch asset info
   useEffect(() => {
@@ -420,16 +434,16 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
           <div className="flex justify-between">
             <span className="text-gray-400">Position</span>
             <span className={`font-medium ${position.side === 'Long' ? 'text-green-400' : 'text-red-400'}`}>
-              {position.size > 0 ? '' : '-'}{Math.abs(position.size).toFixed(4)} {position.coin}
+              {position.size > 0 ? '' : '-'}{formatPrice(position.size)} {position.coin}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Entry Price</span>
-            <span className="text-white font-mono">{position.entryPrice.toFixed(2)}</span>
+            <span className="text-white font-mono">{formatPrice(position.entryPrice)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Mark Price</span>
-            <span className="text-white font-mono">{currentPrice.toFixed(2)}</span>
+            <span className="text-white font-mono">{formatPrice(currentPrice)}</span>
           </div>
         </div>
 
@@ -442,7 +456,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                  <label className="block text-gray-400 text-sm">TP Price</label>
                  {assetInfo && (
                    <span className="text-xs text-gray-500">
-                     Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                     Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals
                    </span>
                  )}
                </div>
