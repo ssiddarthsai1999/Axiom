@@ -655,7 +655,7 @@ const UserPositions = ({ className = '' }) => {
     try {
       
       // Get asset index for the symbol
-      const assetIndex = getAssetId(symbol);
+      const assetIndex = webData2Data.meta.universe.findIndex(asset => asset.name === symbol);
       if (assetIndex === undefined) {
         throw new Error(`Unknown symbol: ${symbol}`);
       }
