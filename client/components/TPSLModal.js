@@ -732,10 +732,6 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
              If the order size is configured above, the TP/SL order will be for that size no matter
              how the position changes in the future.
            </p>
-           <p className="text-gray-500 text-xs bg-blue-900/20 border border-blue-700 rounded p-2 mt-2">
-             <strong>Note:</strong> TP/SL orders for existing positions are placed as individual trigger orders. 
-             They will function properly but may not group visually in the HyperLiquid UI like orders placed during initial position creation.
-           </p>
          </div>
       </div>
     </div>
