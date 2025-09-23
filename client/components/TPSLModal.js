@@ -11,6 +11,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const [gainPercent, setGainPercent] = useState('');
   const [lossPercent, setLossPercent] = useState('');
   const [configureAmount, setConfigureAmount] = useState(false);
+  const [configuredAmount, setConfiguredAmount] = useState(0); // Actual amount to close
   const [limitPrice, setLimitPrice] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -190,23 +191,8 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     }
   };
 
-  // Reset all states when modal opens and fetch asset info
-  useEffect(() => {
-    if (isOpen && position) {
-      setTPPrice('');
-      setSLPrice('');
-      setGainPercent('');
-      setLossPercent('');
-      setError('');
-      lastUpdatedRef.current = null;
-      
-      // Fetch asset info for proper decimal validation
-      fetchAssetInfo();
-    }
-  }, [isOpen, position]);
-
   // Fetch asset info for decimal validation
-  const fetchAssetInfo = async () => {
+  const fetchAssetInfo = useCallback(async () => {
     if (!position?.coin) return;
     
     try {
@@ -242,7 +228,24 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         isSpot: false
       });
     }
-  };
+  }, [position?.coin]);
+
+  // Reset all states when modal opens and fetch asset info
+  useEffect(() => {
+    if (isOpen && position) {
+      setTPPrice('');
+      setSLPrice('');
+      setGainPercent('');
+      setLossPercent('');
+      setConfigureAmount(false);
+      setConfiguredAmount(0);
+      setError('');
+      lastUpdatedRef.current = null;
+      
+      // Fetch asset info for proper decimal validation
+      fetchAssetInfo();
+    }
+  }, [isOpen, position, fetchAssetInfo]);
 
   // Calculate prices from percentages
   const updatePricesFromPercent = useCallback(() => {
@@ -304,6 +307,17 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const handleSubmit = async () => {
     if (!position || !walletClient) return;
     
+    // Validate configured amount
+    if (configureAmount && configuredAmount > Math.abs(position.size)) {
+      setError('Configured amount cannot exceed position size');
+      return;
+    }
+    
+    if (configureAmount && configuredAmount <= 0) {
+      setError('Configured amount must be greater than 0');
+      return;
+    }
+    
     setLoading(true);
     setError('');
     
@@ -356,11 +370,18 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     const isLongPosition = position.side === 'Long';
     const positionSize = Math.abs(position.size);
     
+    // Calculate the actual size to close based on configure amount setting
+    const sizeToClose = configureAmount 
+      ? configuredAmount
+      : positionSize;
+    
     console.log('📝 TP/SL Order preparation:', {
       coin: position.coin,
       assetId,
       isLongPosition,
       positionSize,
+      sizeToClose,
+      configuredAmount: configureAmount ? `${configuredAmount} ${position.coin}` : 'full position',
       assetInfo,
       tpSlParams
     });
@@ -380,7 +401,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         assetInfoForOrder.isSpot
       );
       const formattedSize = formatSizeToMaxDecimals(
-        positionSize.toString(), 
+        sizeToClose.toString(), 
         assetInfoForOrder.szDecimals
       );
       
@@ -402,7 +423,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
       console.log('🛡️ Stop Loss order formatted:', {
         originalPrice: tpSlParams.stopLossPrice,
         formattedPrice,
-        originalSize: positionSize,
+        originalSize: sizeToClose,
         formattedSize,
         order: slOrder
       });
@@ -419,7 +440,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         assetInfoForOrder.isSpot
       );
       const formattedSize = formatSizeToMaxDecimals(
-        positionSize.toString(), 
+        sizeToClose.toString(), 
         assetInfoForOrder.szDecimals
       );
       
@@ -441,7 +462,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
       console.log('🎯 Take Profit order formatted:', {
         originalPrice: tpSlParams.takeProfitPrice,
         formattedPrice,
-        originalSize: positionSize,
+        originalSize: sizeToClose,
         formattedSize,
         order: tpOrder
       });
@@ -491,6 +512,28 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-[#0d0c0e] border border-[#1F1E23] rounded-lg p-6 w-96 max-w-[90vw]">
+        <style jsx>{`
+          .slider::-webkit-slider-thumb {
+            appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #1dd1a1;
+            cursor: pointer;
+            border: 2px solid #0d0c0e;
+            box-shadow: 0 0 0 1px #1dd1a1;
+          }
+          
+          .slider::-moz-range-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #1dd1a1;
+            cursor: pointer;
+            border: 2px solid #0d0c0e;
+            box-shadow: 0 0 0 1px #1dd1a1;
+          }
+        `}</style>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-white font-medium text-lg">TP/SL for Position</h2>
@@ -612,6 +655,55 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
             />
             <span className="text-gray-400 text-sm">Configure Amount</span>
           </label>
+          
+          {/* Configure Amount Slider - Only show when checkbox is checked */}
+          {configureAmount && (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-400 text-sm">Position Size</span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    value={configuredAmount}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      const maxAmount = Math.abs(position.size);
+                      setConfiguredAmount(Math.min(maxAmount, Math.max(0, value)));
+                    }}
+                    className="w-20 bg-[#1a1a1f] border border-[#1F1E23] rounded px-2 py-1 text-white font-mono text-sm focus:border-gray-500 focus:outline-none"
+                    min="0"
+                    max={Math.abs(position.size)}
+                    // step="0.001"
+                  />
+                  <span className="text-gray-400 text-sm">{position.coin}</span>
+                </div>
+              </div>
+              
+              {/* Slider */}
+              <div className="relative">
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.abs(position.size)}
+                  value={configuredAmount}
+                  onChange={(e) => setConfiguredAmount(parseFloat(e.target.value))}
+                  // step="0.001"
+                  className="w-full h-2 bg-[#1F1E23] rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    background: `linear-gradient(to right, #1dd1a1 0%, #1dd1a1 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 100%)`
+                  }}
+                />
+              </div>
+              
+              {/* Amount Display */}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">Amount to close:</span>
+                <span className="text-white font-mono">
+                  {formatPrice(configuredAmount)} {position.coin}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Error Message */}
