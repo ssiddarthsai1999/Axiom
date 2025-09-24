@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWalletClient } from 'wagmi';
 import { placeOrderWithTPSL, calculateTPSLPrices, getOrCreateSessionAgentWallet, getAssetId } from '@/utils/hyperLiquidSDK';
 import * as hl from '@nktkas/hyperliquid';
+import numeral from 'numeral';
 
 const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const [tpPrice, setTPPrice] = useState('');
@@ -10,6 +11,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const [gainPercent, setGainPercent] = useState('');
   const [lossPercent, setLossPercent] = useState('');
   const [configureAmount, setConfigureAmount] = useState(false);
+  const [configuredAmount, setConfiguredAmount] = useState(0); // Actual amount to close
   const [limitPrice, setLimitPrice] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -36,11 +38,30 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     return withoutLeadingZeros.length;
   };
 
+  // Calculate HyperLiquid-compatible tick size based on szDecimals
+  const getHyperLiquidTickSize = (price, szDecimals) => {
+    // HyperLiquid tick size is 1 unit at the allowed decimal precision
+    const MAX_DECIMALS = 6; // For perpetuals (spot uses 8)
+    const maxPriceDecimals = MAX_DECIMALS - szDecimals;
+    const tickSize = Math.pow(10, -maxPriceDecimals);
+    return tickSize;
+  };
+
+  // Round price to HyperLiquid tick size
+  const roundToHyperLiquidTick = (price, szDecimals) => {
+    const tickSize = getHyperLiquidTickSize(price, szDecimals);
+    const rounded = Math.round(price / tickSize) * tickSize;
+    
+    // Ensure we don't have floating point precision issues
+    const maxPriceDecimals = 6 - szDecimals;
+    return parseFloat(rounded.toFixed(maxPriceDecimals));
+  };
+
   // Utility function to validate and format decimal places for PRICE (same as TradingPanel)
   const formatPriceToMaxDecimals = (value, szDecimals, isSpot = false) => {
     if (!value || value === '') return value;
     
-    const num = parseFloat(value);
+    let num = parseFloat(value);
     if (isNaN(num)) return value;
     
     const valueStr = value.toString();
@@ -48,29 +69,27 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     // Check significant figures limit (max 5)
     const sigFigs = countSignificantFigures(valueStr);
     if (sigFigs > 5) {
-      // Truncate to 5 significant figures
-      const truncated = parseFloat(num.toPrecision(5));
-      return truncated.toString();
+      // Truncate to 5 significant figures - no recursion!
+      num = parseFloat(num.toPrecision(5));
     }
     
-    // Check decimal places limit: MAX_DECIMALS - szDecimals
-    const MAX_DECIMALS = isSpot ? 8 : 6;
-    const maxDecimalPlaces = MAX_DECIMALS - szDecimals;
+    // Apply HyperLiquid tick size rounding
+    const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-    const decimalIndex = valueStr.indexOf('.');
-    if (decimalIndex === -1) {
-      // No decimal point, return as is (integers are always allowed)
-      return valueStr;
+    // Check if the original value had trailing zeros after decimal point
+    // If so, preserve them in the result
+    const hasTrailingZeros = valueStr.includes('.') && valueStr.endsWith('0');
+    if (hasTrailingZeros) {
+      const decimalIndex = valueStr.indexOf('.');
+      const originalDecimalPlaces = valueStr.length - decimalIndex - 1;
+      const maxPriceDecimals = (isSpot ? 8 : 6) - szDecimals;
+      const preservedDecimalPlaces = Math.min(originalDecimalPlaces, maxPriceDecimals);
+      
+      // Return with preserved decimal places
+      return tickRounded.toFixed(preservedDecimalPlaces);
     }
     
-    const decimalPlaces = valueStr.length - decimalIndex - 1;
-    if (decimalPlaces <= maxDecimalPlaces) {
-      // Already within limits
-      return valueStr;
-    }
-    
-    // Truncate to max decimal places
-    return num.toFixed(maxDecimalPlaces);
+    return tickRounded.toString();
   };
 
   // Utility function to validate and format decimal places for SIZE (same as TradingPanel)
@@ -99,23 +118,81 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     return num.toFixed(szDecimals);
   };
 
-  // Reset all states when modal opens and fetch asset info
-  useEffect(() => {
-    if (isOpen && position) {
-      setTPPrice('');
-      setSLPrice('');
-      setGainPercent('');
-      setLossPercent('');
-      setError('');
-      lastUpdatedRef.current = null;
-      
-      // Fetch asset info for proper decimal validation
-      fetchAssetInfo();
+  const formatPrice = (num) => {
+    const number = Number(num);
+    if (isNaN(number)) return '';
+    if (Number.isInteger(number)) {
+      return numeral(number).format('0,0');
     }
-  }, [isOpen, position]);
+
+    const parts = num.toString().split('.');
+    const decimalPlaces = parts[1]?.length || 0;
+
+    return numeral(number).format(`0,0.${'0'.repeat(decimalPlaces)}`);
+  }
+
+  // Handle TP price change with proper decimal formatting
+  const handleTPPriceChange = (value) => {
+    lastUpdatedRef.current = 'tpPrice';
+    
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setTPPrice('');
+      return;
+    }
+    
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setTPPrice('0');
+      return;
+    }
+    
+    if (!assetInfo) {
+      setTPPrice(value);
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setTPPrice(formattedValue);
+    } else {
+      setTPPrice(value);
+    }
+  };
+
+  // Handle SL price change with proper decimal formatting
+  const handleSLPriceChange = (value) => {
+    lastUpdatedRef.current = 'slPrice';
+    
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setSLPrice('');
+      return;
+    }
+    
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setSLPrice('0');
+      return;
+    }
+    
+    if (!assetInfo) {
+      setSLPrice(value);
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setSLPrice(formattedValue);
+    } else {
+      setSLPrice(value);
+    }
+  };
 
   // Fetch asset info for decimal validation
-  const fetchAssetInfo = async () => {
+  const fetchAssetInfo = useCallback(async () => {
     if (!position?.coin) return;
     
     try {
@@ -151,7 +228,24 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         isSpot: false
       });
     }
-  };
+  }, [position?.coin]);
+
+  // Reset all states when modal opens and fetch asset info
+  useEffect(() => {
+    if (isOpen && position) {
+      setTPPrice('');
+      setSLPrice('');
+      setGainPercent('');
+      setLossPercent('');
+      setConfigureAmount(false);
+      setConfiguredAmount(0);
+      setError('');
+      lastUpdatedRef.current = null;
+      
+      // Fetch asset info for proper decimal validation
+      fetchAssetInfo();
+    }
+  }, [isOpen, position, fetchAssetInfo]);
 
   // Calculate prices from percentages
   const updatePricesFromPercent = useCallback(() => {
@@ -213,6 +307,17 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   const handleSubmit = async () => {
     if (!position || !walletClient) return;
     
+    // Validate configured amount
+    if (configureAmount && configuredAmount > Math.abs(position.size)) {
+      setError('Configured amount cannot exceed position size');
+      return;
+    }
+    
+    if (configureAmount && configuredAmount <= 0) {
+      setError('Configured amount must be greater than 0');
+      return;
+    }
+    
     setLoading(true);
     setError('');
     
@@ -265,11 +370,18 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
     const isLongPosition = position.side === 'Long';
     const positionSize = Math.abs(position.size);
     
+    // Calculate the actual size to close based on configure amount setting
+    const sizeToClose = configureAmount 
+      ? configuredAmount
+      : positionSize;
+    
     console.log('📝 TP/SL Order preparation:', {
       coin: position.coin,
       assetId,
       isLongPosition,
       positionSize,
+      sizeToClose,
+      configuredAmount: configureAmount ? `${configuredAmount} ${position.coin}` : 'full position',
       assetInfo,
       tpSlParams
     });
@@ -289,7 +401,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         assetInfoForOrder.isSpot
       );
       const formattedSize = formatSizeToMaxDecimals(
-        positionSize.toString(), 
+        sizeToClose.toString(), 
         assetInfoForOrder.szDecimals
       );
       
@@ -311,7 +423,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
       console.log('🛡️ Stop Loss order formatted:', {
         originalPrice: tpSlParams.stopLossPrice,
         formattedPrice,
-        originalSize: positionSize,
+        originalSize: sizeToClose,
         formattedSize,
         order: slOrder
       });
@@ -328,7 +440,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
         assetInfoForOrder.isSpot
       );
       const formattedSize = formatSizeToMaxDecimals(
-        positionSize.toString(), 
+        sizeToClose.toString(), 
         assetInfoForOrder.szDecimals
       );
       
@@ -350,7 +462,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
       console.log('🎯 Take Profit order formatted:', {
         originalPrice: tpSlParams.takeProfitPrice,
         formattedPrice,
-        originalSize: positionSize,
+        originalSize: sizeToClose,
         formattedSize,
         order: tpOrder
       });
@@ -400,6 +512,28 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-[#0d0c0e] border border-[#1F1E23] rounded-lg p-6 w-96 max-w-[90vw]">
+        <style jsx>{`
+          .slider::-webkit-slider-thumb {
+            appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #1dd1a1;
+            cursor: pointer;
+            border: 2px solid #0d0c0e;
+            box-shadow: 0 0 0 1px #1dd1a1;
+          }
+          
+          .slider::-moz-range-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #1dd1a1;
+            cursor: pointer;
+            border: 2px solid #0d0c0e;
+            box-shadow: 0 0 0 1px #1dd1a1;
+          }
+        `}</style>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-white font-medium text-lg">TP/SL for Position</h2>
@@ -420,16 +554,16 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
           <div className="flex justify-between">
             <span className="text-gray-400">Position</span>
             <span className={`font-medium ${position.side === 'Long' ? 'text-green-400' : 'text-red-400'}`}>
-              {position.size > 0 ? '' : '-'}{Math.abs(position.size).toFixed(4)} {position.coin}
+              {position.size > 0 ? '' : '-'}{formatPrice(position.size)} {position.coin}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Entry Price</span>
-            <span className="text-white font-mono">{position.entryPrice.toFixed(2)}</span>
+            <span className="text-white font-mono">{formatPrice(position.entryPrice)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Mark Price</span>
-            <span className="text-white font-mono">{currentPrice.toFixed(2)}</span>
+            <span className="text-white font-mono">{formatPrice(currentPrice)}</span>
           </div>
         </div>
 
@@ -442,20 +576,14 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                  <label className="block text-gray-400 text-sm">TP Price</label>
                  {assetInfo && (
                    <span className="text-xs text-gray-500">
-                     Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals, 5 sig figs
+                     Max {(assetInfo.isSpot ? 8 : 6) - assetInfo.szDecimals} decimals
                    </span>
                  )}
                </div>
                <input
                  type="number"
                  value={tpPrice}
-                 onChange={(e) => {
-                   lastUpdatedRef.current = 'tpPrice';
-                   const formattedValue = assetInfo ? 
-                     formatPriceToMaxDecimals(e.target.value, assetInfo.szDecimals, assetInfo.isSpot) : 
-                     e.target.value;
-                   setTPPrice(formattedValue);
-                 }}
+                 onChange={(e) => handleTPPriceChange(e.target.value)}
                  placeholder="0.00"
                  className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white font-mono focus:border-gray-500 focus:outline-none"
                />
@@ -492,13 +620,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                <input
                  type="number"
                  value={slPrice}
-                 onChange={(e) => {
-                   lastUpdatedRef.current = 'slPrice';
-                   const formattedValue = assetInfo ? 
-                     formatPriceToMaxDecimals(e.target.value, assetInfo.szDecimals, assetInfo.isSpot) : 
-                     e.target.value;
-                   setSLPrice(formattedValue);
-                 }}
+                 onChange={(e) => handleSLPriceChange(e.target.value)}
                  placeholder="0.00"
                  className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white font-mono focus:border-gray-500 focus:outline-none"
                />
@@ -533,15 +655,55 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
             />
             <span className="text-gray-400 text-sm">Configure Amount</span>
           </label>
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={limitPrice}
-              onChange={(e) => setLimitPrice(e.target.checked)}
-              className="form-checkbox h-4 w-4 text-blue-600 bg-[#1a1a1f] border-[#1F1E23] rounded focus:ring-blue-500"
-            />
-            <span className="text-gray-400 text-sm">Limit Price</span>
-          </label>
+          
+          {/* Configure Amount Slider - Only show when checkbox is checked */}
+          {configureAmount && (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-400 text-sm">Position Size</span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    value={configuredAmount}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      const maxAmount = Math.abs(position.size);
+                      setConfiguredAmount(Math.min(maxAmount, Math.max(0, value)));
+                    }}
+                    className="w-20 bg-[#1a1a1f] border border-[#1F1E23] rounded px-2 py-1 text-white font-mono text-sm focus:border-gray-500 focus:outline-none"
+                    min="0"
+                    max={Math.abs(position.size)}
+                    // step="0.001"
+                  />
+                  <span className="text-gray-400 text-sm">{position.coin}</span>
+                </div>
+              </div>
+              
+              {/* Slider */}
+              <div className="relative">
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.abs(position.size)}
+                  value={configuredAmount}
+                  onChange={(e) => setConfiguredAmount(parseFloat(e.target.value))}
+                  // step="0.001"
+                  className="w-full h-2 bg-[#1F1E23] rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    background: `linear-gradient(to right, #1dd1a1 0%, #1dd1a1 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 100%)`
+                  }}
+                />
+              </div>
+              
+              {/* Amount Display */}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">Amount to close:</span>
+                <span className="text-white font-mono">
+                  {formatPrice(configuredAmount)} {position.coin}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Error Message */}
@@ -569,10 +731,6 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
            <p className="text-gray-500 text-xs">
              If the order size is configured above, the TP/SL order will be for that size no matter
              how the position changes in the future.
-           </p>
-           <p className="text-gray-500 text-xs bg-blue-900/20 border border-blue-700 rounded p-2 mt-2">
-             <strong>Note:</strong> TP/SL orders for existing positions are placed as individual trigger orders. 
-             They will function properly but may not group visually in the HyperLiquid UI like orders placed during initial position creation.
            </p>
          </div>
       </div>

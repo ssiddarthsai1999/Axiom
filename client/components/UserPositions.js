@@ -655,7 +655,7 @@ const UserPositions = ({ className = '' }) => {
     try {
       
       // Get asset index for the symbol
-      const assetIndex = getAssetId(symbol);
+      const assetIndex = webData2Data.meta.universe.findIndex(asset => asset.name === symbol);
       if (assetIndex === undefined) {
         throw new Error(`Unknown symbol: ${symbol}`);
       }
@@ -790,13 +790,18 @@ const UserPositions = ({ className = '' }) => {
         ? formatPriceToMaxDecimals(finalPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot)
         : parseFloat(finalPrice.toFixed(6)).toString();
 
+      // Format size to prevent floating point precision issues
+      const formattedSize = assetInfo 
+        ? formatSizeToMaxDecimals(orderData.size.toString(), assetInfo.szDecimals)
+        : orderData.size.toString();
+
       // Prepare order in nktkas SDK format
       const orderRequest = {
         orders: [{
           a: assetInfo.index, // asset index
           b: orderData.side === 'Buy', // isBuy
           p: formattedPrice, // Use properly formatted price to prevent deserialization errors
-          s: orderData.size.toString(), // size as string
+          s: formattedSize, // Use properly formatted size to prevent deserialization errors
           r: true, // reduceOnly for closing positions
           t: {
             limit: {
@@ -916,6 +921,32 @@ const UserPositions = ({ className = '' }) => {
     const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
     return tickRounded.toString();
+  };
+
+  // Utility function to validate and format decimal places for SIZE
+  const formatSizeToMaxDecimals = (value, szDecimals) => {
+    if (!value || value === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    
+    // Convert to string and check decimal places
+    const valueStr = value.toString();
+    const decimalIndex = valueStr.indexOf('.');
+    
+    if (decimalIndex === -1) {
+      // No decimal point, return as is
+      return valueStr;
+    }
+    
+    const decimalPlaces = valueStr.length - decimalIndex - 1;
+    if (decimalPlaces <= szDecimals) {
+      // Already within limits
+      return valueStr;
+    }
+    
+    // Truncate to max decimal places
+    return num.toFixed(szDecimals);
   };
 
   // Function to get TP/SL prices for a position
@@ -1518,6 +1549,7 @@ const UserPositions = ({ className = '' }) => {
         position={selectedPosition}
         currentPrice={modalCurrentPrice}
         onConfirm={handleClosePosition}
+        webData2Data={webData2Data}
       />
     </div>
   );

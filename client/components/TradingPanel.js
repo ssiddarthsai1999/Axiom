@@ -1,5 +1,5 @@
 // components/TradingPanel.js - SIMPLIFIED VERSION WITH CONVERTED SIGNING UTILS
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import hyperliquidUtils from '@/utils/hyperLiquidTrading'; // Your updated utils file with converted signing
 import { useAccount, useDisconnect, useWalletClient } from 'wagmi';
@@ -11,6 +11,7 @@ import * as hl from "@nktkas/hyperliquid";
 import numeral from 'numeral';
 import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
 import { LuSettings2 } from "react-icons/lu";
+import { useWebSocketWallet } from '../hooks/useWebSocketWallet';
 
 
 const TradingPanel = ({ 
@@ -31,6 +32,7 @@ const [applyToAll, setApplyToAll] = useState(false);
   const [limitPrice, setLimitPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
   const [assetInfo, setAssetInfo] = useState(null);
+  const [userClearedLimitPrice, setUserClearedLimitPrice] = useState(false);
     const percentageOptions = [0, 25, 50, 75, 100];
   // const maxLeverage = 50; // Maximum leverage allowed
   const [percentage, setPercentage] = useState(0);
@@ -48,6 +50,11 @@ const [applyToAll, setApplyToAll] = useState(false);
   const { address, isConnected } = useAccount();
     const [tpSlEnabled, setTpSlEnabled] = useState(false);
    const [leverage, setLeverage] = useState(10);
+  
+  // WebSocket integration
+  const { wsService } = useWebSocketWallet();
+  const [webData2Data, setWebData2Data] = useState(null);
+  const [activeAssetData, setActiveAssetData] = useState(null);
   const [isOnboarded, setIsOnboarded] = useState(false);
   
   // Debug: Log leverage changes
@@ -334,6 +341,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     setPercentage(0);
     setUsdEquivalent('0.00');
     setTpSlEnabled(false);
+    setUserClearedLimitPrice(false); // Reset the flag when symbol changes
 
   }, [selectedSymbol]);
 
@@ -370,70 +378,66 @@ const [applyToAll, setApplyToAll] = useState(false);
   }, []);
 
 
-    useEffect(() => {
-    const fetchWalletBalances = async () => {
-      if (isConnected && address && wallet?.provider) {
-        try {
-          // Get ETH balance
-          const ethBalance = await wallet.provider.getBalance(address);
-          const ethBal = parseFloat(ethers.formatEther(ethBalance));
-          setEthBalance(ethBal);
+  //   useEffect(() => {
+  //   const fetchWalletBalances = async () => {
+  //     if (isConnected && address && wallet?.provider) {
+  //       try {
+  //         // Get ETH balance
+  //         const ethBalance = await wallet.provider.getBalance(address);
+  //         const ethBal = parseFloat(ethers.formatEther(ethBalance));
+  //         setEthBalance(ethBal);
           
-          // Get ETH price
-          const price = await getETHPrice();
-          setEthPrice(price);
+  //         // Get ETH price
+  //         const price = await getETHPrice();
+  //         setEthPrice(price);
 
-          // Get USDC balance from Arbitrum
-          const usdcContract = new ethers.Contract(
-            '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
-            ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
-            wallet.provider
-          );
+  //         // Get USDC balance from Arbitrum
+  //         const usdcContract = new ethers.Contract(
+  //           '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
+  //           ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+  //           wallet.provider
+  //         );
           
-          const usdcBalance = await usdcContract.balanceOf(address);
-          const usdcDecimals = await usdcContract.decimals();
-          const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
-          setUsdcBalance(usdcBal);
+  //         const usdcBalance = await usdcContract.balanceOf(address);
+  //         const usdcDecimals = await usdcContract.decimals();
+  //         const usdcBal = parseFloat(ethers.formatUnits(usdcBalance, usdcDecimals));
+  //         setUsdcBalance(usdcBal);
           
 
           
-        } catch (error) {
-          console.error('Error fetching balances:', error);
-        }
-      }
-    };
+  //       } catch (error) {
+  //         console.error('Error fetching balances:', error);
+  //       }
+  //     }
+  //   };
 
-    fetchWalletBalances();
-  }, [isConnected, address, wallet]);
+  //   fetchWalletBalances();
+  // }, [isConnected, address, wallet]);
 
-  // Check actual leverage setting from Hyperliquid API
+  // Check actual leverage setting - now primarily uses websocket data
   const checkActualLeverage = async () => {
     if (!address || !selectedSymbol || !assetInfo) {
-
       return;
     }
     
     try {
       setIsFetchingLeverage(true);
 
-      
-      // Use the new API to get current leverage
+      // First try to get leverage from websocket data if available
+      // This is handled by handleActiveAssetDataUpdate, so we only need API fallback
+      // Use the API to get current leverage as fallback
       const leverageData = await getCurrentLeverage(address, selectedSymbol);
       
       if (leverageData) {
         const actualLeverage = leverageData.value;
         const actualMarginMode = leverageData.type;
         
-
-        
         // Update app leverage and margin mode if they don't match
         if (actualLeverage !== leverage) {
-
           setLeverage(actualLeverage);
         }
         
         if (actualMarginMode !== marginMode) {
-
           setMarginMode(actualMarginMode);
         }
         
@@ -470,11 +474,48 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  const checkOnboardingStatus = async () => {
+  const checkOnboardingStatus = useCallback(async () => {
     if (!address) return false;
     
     setCheckingOnboarding(true);
     try {
+      // First check if we have activeAssetData websocket data available (most accurate for available to trade)
+      if (activeAssetData && activeAssetData.availableToTrade && activeAssetData.availableToTrade.length > 0) {
+        setIsOnboarded(true);
+        
+        // Use activeAssetData as primary source for available to trade
+        const availableToTrade = parseFloat(activeAssetData.availableToTrade[0] || 0);
+        const accountValue = parseFloat(webData2Data?.clearinghouseState?.marginSummary?.accountValue || 0);
+        
+        setAccountData(prev => ({
+          ...prev,
+          availableMargin: availableToTrade,
+          accountValue: accountValue
+        }));
+        
+        setCheckingOnboarding(false);
+        return true;
+      }
+      
+      // Second check if we have webData2Data websocket data available
+      if (webData2Data && webData2Data.clearinghouseState) {
+        setIsOnboarded(true);
+        
+        // Use webData2Data as fallback source
+        const withdrawable = parseFloat(webData2Data.clearinghouseState.withdrawable || 0);
+        const accountValue = parseFloat(webData2Data.clearinghouseState.marginSummary?.accountValue || 0);
+        
+        setAccountData(prev => ({
+          ...prev,
+          availableMargin: withdrawable,
+          accountValue: accountValue
+        }));
+        
+        setCheckingOnboarding(false);
+        return true;
+      }
+      
+      // Fallback to API if no websocket data available
       const userState = await hyperliquidUtils.getUserAccountState(address, true);
      
       
@@ -527,10 +568,6 @@ const [applyToAll, setApplyToAll] = useState(false);
         }));
         
         
-        
-        // Check actual leverage after getting account data
-        await checkActualLeverage();
-        
         return true;
       } else {
         setIsOnboarded(false);
@@ -544,12 +581,11 @@ const [applyToAll, setApplyToAll] = useState(false);
     } finally {
       setCheckingOnboarding(false);
     }
-  };
+  }, [address, activeAssetData, webData2Data]);
 
   useEffect(() => {
     if (isConnected && address && walletClient) {
-     
-      
+
       setAccountData(prev => ({
         ...prev,
         isConnected: true,
@@ -573,12 +609,114 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   }, [isConnected, address, walletClient]);
 
+  // WebSocket subscription for real-time account data
   useEffect(() => {
-    if (orderType === 'Limit' && marketData && !limitPrice) {
+    if (isConnected && address && wsService) {
+      // Subscribe to webData2 updates for real-time account data
+      wsService.subscribe('webData2', handleWebData2Update);
+      
+      // Subscribe to activeAssetData for leverage information
+      if (selectedSymbol) {
+        wsService.subscribeToActiveAssetData(selectedSymbol, address);
+        wsService.subscribe(`activeAssetData:${selectedSymbol}`, handleActiveAssetDataUpdate);
+      }
+      
+      return () => {
+        wsService.unsubscribe('webData2', handleWebData2Update);
+        if (selectedSymbol) {
+          wsService.unsubscribeFromActiveAssetData(selectedSymbol, address);
+          wsService.unsubscribe(`activeAssetData:${selectedSymbol}`, handleActiveAssetDataUpdate);
+        }
+      };
+    }
+  }, [isConnected, address, wsService, selectedSymbol]);
+
+  // Handle webData2 updates from websocket
+  const handleWebData2Update = (webData2Data) => {
+    if (!webData2Data || !webData2Data.clearinghouseState) return;
+    
+    setWebData2Data(webData2Data);
+    
+    // Update account data with real-time withdrawable amount
+    const withdrawable = parseFloat(webData2Data.clearinghouseState.withdrawable || 0);
+    const accountValue = parseFloat(webData2Data.clearinghouseState.marginSummary?.accountValue || 0);
+    
+    setAccountData(prev => ({
+      ...prev,
+      availableMargin: withdrawable,
+      accountValue: accountValue
+    }));
+  };
+
+  // Handle activeAssetData updates from websocket for leverage and available to trade information
+  const handleActiveAssetDataUpdate = (data) => {
+    if (!data || !data.data) return;
+    
+    const assetData = data.data;
+    setActiveAssetData(assetData);
+    
+    // Update leverage information if available
+    if (assetData.leverage) {
+      const leverageData = assetData.leverage;
+      const actualLeverage = leverageData.value;
+      const actualMarginMode = leverageData.type;
+      
+      // Update leverage and margin mode if they don't match
+      if (actualLeverage !== leverage) {
+        setLeverage(actualLeverage);
+      }
+      
+      if (actualMarginMode !== marginMode) {
+        setMarginMode(actualMarginMode);
+      }
+      
+      // Update last sync timestamp
+      setLastLeverageSync(new Date());
+    }
+    
+    // Update available to trade amount if available
+    if (assetData.availableToTrade && assetData.availableToTrade.length > 0) {
+      const availableToTrade = parseFloat(assetData.availableToTrade[0] || 0);
+      
+      setAccountData(prev => ({
+        ...prev,
+        availableMargin: availableToTrade
+      }));
+    }
+  };
+
+  // Handle mid price button click
+  const handleMidPriceClick = () => {
+    const midPrice = marketData?.midPx;
+    if (midPrice && assetInfo) {
+      const formattedPrice = formatPriceToMaxDecimals(midPrice.toString(), assetInfo.szDecimals, assetInfo.isSpot);
+      setLimitPrice(formattedPrice);
+      setUserClearedLimitPrice(false); // Reset the flag when user clicks Mid
+    } else {
+      console.log('⚠️ No mid price available or asset info missing');
+    }
+  };
+
+  // Trigger checkOnboardingStatus when webData2Data or activeAssetData changes
+  useEffect(() => {
+    if (address && ((webData2Data && webData2Data.clearinghouseState) || (activeAssetData && activeAssetData.availableToTrade))) {
+      checkOnboardingStatus();
+    }
+  }, [webData2Data, activeAssetData, address]);
+
+  useEffect(() => {
+    if (orderType === 'Limit' && marketData && !limitPrice && !userClearedLimitPrice) {
       const formattedPrice = assetInfo ? formatPriceToMaxDecimals(marketData.price.toString(), assetInfo.szDecimals, assetInfo.isSpot) : marketData.price.toString();
       setLimitPrice(formattedPrice);
     }
-  }, [orderType, marketData, limitPrice, assetInfo]);
+  }, [orderType, marketData, limitPrice, assetInfo, userClearedLimitPrice]);
+
+  // Reset the user cleared flag when switching to Limit order type
+  useEffect(() => {
+    if (orderType === 'Limit') {
+      setUserClearedLimitPrice(false);
+    }
+  }, [orderType]);
 
   // Real-time margin validation whenever order parameters change
   useEffect(() => {
@@ -593,6 +731,18 @@ const [applyToAll, setApplyToAll] = useState(false);
     const currentPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : marketData.price;
     
     if (orderSize > 0 && currentPrice > 0) {
+      // Check if order size exceeds maxTradeSzs limit
+      if (activeAssetData && activeAssetData.maxTradeSzs && activeAssetData.maxTradeSzs.length > 0) {
+        const maxTradeSize = parseFloat(activeAssetData.maxTradeSzs[0]);
+        if (orderSize > maxTradeSize) {
+          setMarginRequirement(0);
+          setMaintenanceMarginRequirement(0);
+          setHasEnoughMargin(false);
+          setMarginErrorMessage(`Position size exceeds maximum allowed: ${maxTradeSize} ${selectedSymbol}`);
+          return;
+        }
+      }
+      
       const validation = validateMarginRequirement(
         orderSize, 
         currentPrice, 
@@ -612,7 +762,7 @@ const [applyToAll, setApplyToAll] = useState(false);
       setHasEnoughMargin(true);
       setMarginErrorMessage('');
     }
-  }, [buyAmount, limitPrice, leverage, accountData.availableMargin, marketData?.price, orderType]);
+  }, [buyAmount, limitPrice, leverage, accountData.availableMargin, marketData?.price, orderType, activeAssetData, selectedSymbol]);
 
 
     const handlePercentageClick = (percent) => {
@@ -632,7 +782,22 @@ const [applyToAll, setApplyToAll] = useState(false);
     
     // Calculate token amount based on current price
     if (marketData && marketData.price > 0) {
-      const tokenAmount = positionValue / marketData.price;
+      let tokenAmount = positionValue / marketData.price;
+      
+      // Check if we have maxTradeSzs limit from activeAssetData
+      if (activeAssetData && activeAssetData.maxTradeSzs && activeAssetData.maxTradeSzs.length > 0) {
+        const maxTradeSize = parseFloat(activeAssetData.maxTradeSzs[0]);
+        
+        // If calculated amount exceeds maxTradeSzs, cap it to the maximum allowed
+        if (tokenAmount > maxTradeSize) {
+          tokenAmount = maxTradeSize;
+          // setOrderError(`Position size capped at maximum allowed: ${maxTradeSize} ${selectedSymbol}`);
+        } else {
+          // Clear any previous error if we're within limits
+          setOrderError(null);
+        }
+      }
+      
       const amountStr = assetInfo ? formatSizeToMaxDecimals(tokenAmount.toString(), assetInfo.szDecimals) : tokenAmount.toFixed(6);
       setBuyAmount(amountStr);
       calculateUSDValue(amountStr);
@@ -650,63 +815,9 @@ const [applyToAll, setApplyToAll] = useState(false);
     }
   };
 
-  const createSigner = async () => {
-    if (!walletClient || !address) {
-      console.error('No wallet client or address available');
-      setOrderError('Please connect your wallet');
-      return;
-    }
 
-    try {
-     
-      
-      if (walletClient.chain?.id !== 42161) {
-        setOrderError('Please switch to Arbitrum network');
-        return;
-      }
-      
-      const network = {
-        chainId: 42161,
-        name: 'arbitrum',
-        ensAddress: null
-      };
-      
-      const provider = new ethers.BrowserProvider(walletClient.transport, network);
-      const signer = await provider.getSigner();
-      const signerAddress = await signer.getAddress();
-      
-     
-      
-      const normalizedSignerAddress = signerAddress.toLowerCase();
-      const normalizedExpectedAddress = address.toLowerCase();
-      
-      if (normalizedSignerAddress !== normalizedExpectedAddress) {
-        console.error('❌ Address mismatch!');
-        setOrderError('Wallet address mismatch. Please reconnect your wallet.');
-        return;
-      }
-      
-     
-      
-      setWallet({
-        address: normalizedExpectedAddress,
-        signer: signer,
-        provider: provider,
-        walletClient: walletClient
-      });
-      
-     
-      
-      await checkOnboardingStatus();
-      await checkBuilderFeeStatus();
-      
-    } catch (error) {
-      console.error('Error creating signer:', error);
-      setOrderError('Failed to connect wallet: ' + error.message);
-    }
-  };
+  const checkBuilderFeeStatus = useCallback(async () => {
 
-  const checkBuilderFeeStatus = async () => {
     if (!wallet || !wallet.signer) return;
     
     setCheckingBuilderFee(true);
@@ -735,9 +846,50 @@ const [applyToAll, setApplyToAll] = useState(false);
     } finally {
       setCheckingBuilderFee(false);
     }
-  };
+  }, [wallet]);
 
+  const createSigner = useCallback(async () => {
+    if (!walletClient || !address) {
+      console.error('No wallet client or address available');
+      setOrderError('Please connect your wallet');
+      return;
+    }
 
+    try {
+      
+      let provider, signer, signerAddress;
+      try {
+        provider = new ethers.BrowserProvider(walletClient.transport);
+        signer = await provider.getSigner();
+        signerAddress = await signer.getAddress();
+      } catch (providerError) {
+        console.error('Error creating provider or signer:', providerError);
+        throw providerError;
+      }
+      const normalizedSignerAddress = signerAddress.toLowerCase();
+      const normalizedExpectedAddress = address.toLowerCase();
+
+      if (normalizedSignerAddress !== normalizedExpectedAddress) {
+        console.error('❌ Address mismatch! Expected:', normalizedExpectedAddress, 'Got:', normalizedSignerAddress);
+        setOrderError('Wallet address mismatch. Please reconnect your wallet.');
+        return;
+      }
+      
+
+      
+      setWallet({
+        address: normalizedExpectedAddress,
+        signer: signer,
+        provider: provider,
+        walletClient: walletClient
+      });
+      await checkOnboardingStatus();
+      await checkBuilderFeeStatus();
+    } catch (error) {
+      console.error('Error creating signer:', error);
+      setOrderError('Failed to connect wallet: ' + error.message);
+    }
+  }, [walletClient, address, checkOnboardingStatus, checkBuilderFeeStatus]);
 
   // UPDATED TRADE HANDLER WITH MERGED AGENT WALLET AND BUILDER FEE LOGIC
   const handleTrade = async () => {
@@ -1103,7 +1255,18 @@ const [applyToAll, setApplyToAll] = useState(false);
     // Apply HyperLiquid tick size rounding
     const tickRounded = roundToHyperLiquidTick(num, szDecimals);
     
-
+    // Check if the original value had trailing zeros after decimal point
+    // If so, preserve them in the result
+    const hasTrailingZeros = valueStr.includes('.') && valueStr.endsWith('0');
+    if (hasTrailingZeros) {
+      const decimalIndex = valueStr.indexOf('.');
+      const originalDecimalPlaces = valueStr.length - decimalIndex - 1;
+      const maxPriceDecimals = (isSpot ? 8 : 6) - szDecimals;
+      const preservedDecimalPlaces = Math.min(originalDecimalPlaces, maxPriceDecimals);
+      
+      // Return with preserved decimal places
+      return tickRounded.toFixed(preservedDecimalPlaces);
+    }
     
     return tickRounded.toString();
   };
@@ -1123,13 +1286,35 @@ const [applyToAll, setApplyToAll] = useState(false);
 
   // Validate decimal places for price input
   const handleLimitPriceChange = (value) => {
-    if (!assetInfo) {
-      setLimitPrice(value);
+    // Allow empty string or just whitespace
+    if (value === '' || value === null || value === undefined) {
+      setLimitPrice('');
+      setUserClearedLimitPrice(true); // Mark that user intentionally cleared the input
       return;
     }
     
-    const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
-    setLimitPrice(formattedValue);
+    // Allow user to type "0" without it being formatted immediately
+    if (value === '0') {
+      setLimitPrice('0');
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+      return;
+    }
+    
+    if (!assetInfo) {
+      setLimitPrice(value);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+      return;
+    }
+    
+    // Only format if the value is not empty and not just "0"
+    if (value && value !== '0') {
+      const formattedValue = formatPriceToMaxDecimals(value, assetInfo.szDecimals, assetInfo.isSpot);
+      setLimitPrice(formattedValue);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+    } else {
+      setLimitPrice(value);
+      setUserClearedLimitPrice(false); // Reset the flag when user types something
+    }
   };
 
   // Validate decimal places for TP price input
@@ -1199,7 +1384,7 @@ const [applyToAll, setApplyToAll] = useState(false);
     if (wallet && wallet.signer && isConnected && address) {
       checkBuilderFeeStatus();
     }
-  }, [wallet, address, isConnected]);
+  }, [wallet, address, isConnected, checkBuilderFeeStatus]);
 
   return (
     <>
@@ -1332,7 +1517,7 @@ const [applyToAll, setApplyToAll] = useState(false);
 <div className="my-4 px-4">
   <div className="flex justify-between items-center mb-2">
     <label className="text-[#919093] text-[11px] font-[500] fomt-mono ">
-      Available Margin: {accountData.availableMargin.toFixed(2)} USDC
+      Available to Trade: {accountData.availableMargin} USDC
     </label>
     
     {/* Half/Max Buttons */}
@@ -1413,13 +1598,22 @@ const [applyToAll, setApplyToAll] = useState(false);
                   </span>
                 )}
               </div>
-              <input
-                type="number"
-                value={limitPrice}
-                onChange={(e) => handleLimitPriceChange(e.target.value)}
-                placeholder={marketData ? marketData.price.toString() : "0.0"}
-                className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  value={limitPrice}
+                  onChange={(e) => handleLimitPriceChange(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full  rounded  text-white text-[14px] leading-[100%] font-[400]  font-mono outline-none "
+                />
+                <button
+                  type="button"
+                  onClick={handleMidPriceClick}
+                  className="absolute right-3 top-2 text-[#00D4AA] text-sm hover:text-[#00B894] cursor-pointer transition-colors"
+                >
+                  Mid
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1715,7 +1909,7 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div> */}
           
           {/* <div className="flex justify-between">
-            <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available Margin</span>
+            <span className="text-[#919093] text-[13px] leading-[13px] font-[500] font-mono">Available to Trade</span>
             <span className="text-white text-[13px] leading-[13px] font-[500]  font-mono">
               {accountData.availableMargin.toFixed(2)} USDC
             </span>

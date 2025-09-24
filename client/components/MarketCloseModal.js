@@ -1,61 +1,72 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import numeral from 'numeral';
 
-const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }) => {
+const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm, webData2Data }) => {
   const [sizePercentage, setSizePercentage] = useState(100);
   const [customSize, setCustomSize] = useState('');
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [assetInfo, setAssetInfo] = useState(null);
-  const [sizeUnit, setSizeUnit] = useState('coin'); // 'coin' or 'usd'
+  const [sizeUnit, setSizeUnit] = useState('usd'); // 'coin' or 'usd'
 
+  // Convert between coin size and USD value
+  const convertSizeToCoin = useCallback((usdValue) => {
+    if (!currentPrice || !usdValue) return 0;
+    return usdValue / currentPrice;
+  }, [currentPrice]);
+
+  const convertSizeToUSD = useCallback((coinValue) => {
+    if (!currentPrice || !coinValue) return 0;
+    return coinValue * currentPrice;
+  }, [currentPrice]);
+
+  // Initialize modal state when it opens
   useEffect(() => {
     if (isOpen && position) {
       setSizePercentage(100);
-      setCustomSize(Math.abs(position.size).toString());
       setDontShowAgain(false);
-      // Fetch asset info for decimal validation
-      fetchAssetInfo();
-    }
-  }, [isOpen, position]);
-
-  // Fetch asset info for decimal validation
-  const fetchAssetInfo = async () => {
-    if (!position?.coin) return;
-    
-    try {
-      // Fetch market metadata to get szDecimals for the asset
-      const response = await fetch('https://api.hyperliquid.xyz/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'meta' })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const asset = data.universe.find(token => token.name === position.coin);
-        
-        if (asset) {
-          setAssetInfo({
-            szDecimals: asset.szDecimals,
-            onlyIsolated: asset.onlyIsolated || false,
-            isSpot: false // Perpetuals are not spot
-          });
-          console.log('✅ Asset info loaded for', position.coin, ':', {
-            szDecimals: asset.szDecimals,
-            onlyIsolated: asset.onlyIsolated
-          });
-        }
+      
+      // Set USD value by default
+      if (currentPrice) {
+        const usdValue = convertSizeToUSD(Math.abs(position.size));
+        setCustomSize(usdValue.toFixed(2));
+      } else {
+        // Fallback to coin size if no current price
+        setCustomSize(Math.abs(position.size).toString());
       }
-    } catch (error) {
-      console.error('❌ Error fetching asset info:', error);
-      // Set fallback values
+    }
+  }, [isOpen, position, currentPrice, convertSizeToUSD]);
+
+  // Get asset info from WebSocket data (only when position changes, not on every WS update)
+  useEffect(() => {
+    if (position?.coin && webData2Data?.meta?.universe) {
+      const asset = webData2Data.meta.universe.find(token => token.name === position.coin);
+      if (asset) {
+        setAssetInfo({
+          szDecimals: asset.szDecimals,
+          onlyIsolated: asset.onlyIsolated || false,
+          isSpot: false // Perpetuals are not spot
+        });
+        // console.log('✅ Asset info loaded from WebSocket for', position.coin, ':', {
+        //   szDecimals: asset.szDecimals,
+        //   onlyIsolated: asset.onlyIsolated
+        // });
+      } else {
+        // Fallback if asset not found in WebSocket data
+        setAssetInfo({
+          szDecimals: 3,
+          onlyIsolated: false,
+          isSpot: false
+        });
+      }
+    } else if (position?.coin) {
+      // Fallback if WebSocket data not available
       setAssetInfo({
         szDecimals: 3,
         onlyIsolated: false,
         isSpot: false
       });
     }
-  };
+  }, [position?.coin, webData2Data?.meta?.universe]);
 
   // Utility function to validate and format decimal places for SIZE
   const formatSizeToMaxDecimals = (value, szDecimals) => {
@@ -83,17 +94,6 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
     return num.toFixed(szDecimals);
   };
 
-  // Convert between coin size and USD value
-  const convertSizeToCoin = (usdValue) => {
-    if (!currentPrice || !usdValue) return 0;
-    return usdValue / currentPrice;
-  };
-
-  const convertSizeToUSD = (coinValue) => {
-    if (!currentPrice || !coinValue) return 0;
-    return coinValue * currentPrice;
-  };
-
   const handlePercentageChange = (percentage) => {
     setSizePercentage(percentage);
     if (position) {
@@ -102,6 +102,7 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
       if (sizeUnit === 'usd') {
         // Calculate USD value based on percentage of position
         const usdValue = convertSizeToUSD(newCoinSize);
+        console.log('✅ USD value:', usdValue);
         setCustomSize(usdValue.toFixed(2)); // USD typically uses 2 decimal places
       } else {
         // Calculate coin size based on percentage
@@ -114,75 +115,74 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
   };
 
   const handleSizeChange = (value) => {
-    if (!assetInfo) {
-      // Format the value based on the selected unit
-      let formattedValue = value;
-      if (sizeUnit === 'usd') {
-        // For USD, allow up to 2 decimal places
-        const num = parseFloat(value);
-        if (!isNaN(num)) {
-          formattedValue = num.toFixed(2);
-        }
-      }
-      setCustomSize(formattedValue);
-      
-      if (position) {
-        let coinSize = parseFloat(value);
-        if (sizeUnit === 'usd') {
-          coinSize = convertSizeToCoin(parseFloat(value));
-        }
-        const percentage = (coinSize / Math.abs(position.size)) * 100;
-        setSizePercentage(Math.min(100, Math.max(0, percentage)));
-      }
-      return;
-    }
+    console.log('✅ Size value:', value);
     
-    // Format the value based on the selected unit and asset info
-    let formattedValue;
-    if (sizeUnit === 'usd') {
-      // For USD, allow up to 2 decimal places
-      const num = parseFloat(value);
-      if (!isNaN(num)) {
-        formattedValue = num.toFixed(2);
-      } else {
-        formattedValue = value;
-      }
-    } else {
-      // For coin, use asset-specific decimal formatting
-      formattedValue = formatSizeToMaxDecimals(value, assetInfo.szDecimals);
-    }
-    setCustomSize(formattedValue);
+    // Allow free typing - don't format immediately
+    setCustomSize(value);
     
     if (position) {
-      let coinSize = parseFloat(formattedValue);
+      let coinSize = parseFloat(value);
       if (sizeUnit === 'usd') {
-        coinSize = convertSizeToCoin(parseFloat(formattedValue));
+        coinSize = convertSizeToCoin(parseFloat(value));
       }
       const percentage = (coinSize / Math.abs(position.size)) * 100;
       setSizePercentage(Math.min(100, Math.max(0, percentage)));
     }
   };
 
+  const handleSizeBlur = () => {
+    // Format the value when user finishes typing (on blur)
+    if (!customSize || customSize === '') return;
+    
+    let formattedValue = customSize;
+    if (sizeUnit === 'usd') {
+      // For USD, format to 2 decimal places
+      const num = parseFloat(customSize);
+      if (!isNaN(num)) {
+        formattedValue = num.toFixed(2);
+      }
+    } else if (assetInfo) {
+      // For coin, use asset-specific decimal formatting if available
+      formattedValue = formatSizeToMaxDecimals(customSize, assetInfo.szDecimals);
+    }
+    
+    setCustomSize(formattedValue);
+  };
+
   const handleSizeUnitChange = (unit) => {
-    setSizeUnit(unit);
-    if (customSize && position) {
-      let newValue;
-      if (unit === 'usd') {
-        // Convert current coin size to USD
-        const coinSize = parseFloat(customSize);
-        const usdValue = convertSizeToUSD(coinSize);
-        newValue = usdValue.toFixed(2); // USD uses 2 decimal places
+    if (!customSize || !position) {
+      setSizeUnit(unit);
+      return;
+    }
+
+    let newValue;
+    const currentValue = parseFloat(customSize);
+    
+    if (unit === 'usd') {
+      // Converting from coin to USD
+      if (sizeUnit === 'coin') {
+        const usdValue = convertSizeToUSD(currentValue);
+        newValue = usdValue.toFixed(2);
       } else {
-        // Convert current USD value to coin size
-        const usdValue = parseFloat(customSize);
-        const coinSize = convertSizeToCoin(usdValue);
+        // Already USD, keep as is
+        newValue = customSize;
+      }
+    } else {
+      // Converting from USD to coin
+      if (sizeUnit === 'usd') {
+        const coinSize = convertSizeToCoin(currentValue);
         // Format with proper decimal places for the coin
         newValue = assetInfo 
           ? formatSizeToMaxDecimals(coinSize.toString(), assetInfo.szDecimals)
           : coinSize.toString();
+      } else {
+        // Already coin, keep as is
+        newValue = customSize;
       }
-      setCustomSize(newValue);
     }
+    
+    setSizeUnit(unit);
+    setCustomSize(newValue);
   };
 
   const formatNumber = (value, decimals = 2) => {
@@ -209,9 +209,11 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
       return;
     }
 
-    if (sizeValue > Math.abs(position.size)) {
-      alert(`Size cannot exceed position size of ${Math.abs(position.size)}`);
-      return;
+    // Cap the size to the exact position size if it exceeds due to floating-point precision
+    const positionSize = Math.abs(position.size);
+    if (sizeValue > positionSize) {
+      console.log('⚠️ Size exceeds position size, capping to exact position size');
+      sizeValue = positionSize;
     }
 
     if (onConfirm) {
@@ -270,6 +272,7 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
                 type="number"
                 value={customSize}
                 onChange={(e) => handleSizeChange(e.target.value)}
+                onBlur={handleSizeBlur}
                 className="w-full bg-[#1a1a1f] border border-[#1F1E23] rounded px-3 py-2 text-white focus:outline-none focus:border-[#00D4AA] pr-16"
                 placeholder="0.00"
                 step="0.0001"
@@ -356,19 +359,6 @@ const MarketCloseModal = ({ isOpen, onClose, position, currentPrice, onConfirm }
           </div>
         </div>
 
-        {/* Don't show again checkbox */}
-        <div className="mb-6 flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="dontShowAgain"
-            checked={dontShowAgain}
-            onChange={(e) => setDontShowAgain(e.target.checked)}
-            className="w-4 h-4 text-[#00D4AA] bg-[#1a1a1f] border-[#1F1E23] rounded focus:ring-[#00D4AA] focus:ring-2"
-          />
-          {/* <label htmlFor="dontShowAgain" className="text-gray-400 text-sm cursor-pointer">
-            Don&apos;t show this again
-          </label> */}
-        </div>
 
         {/* Market Close Button */}
         <button

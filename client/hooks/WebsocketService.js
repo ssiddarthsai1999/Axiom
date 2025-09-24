@@ -169,6 +169,12 @@ class WebSocketService {
           return;
         }
 
+        // Handle activeAssetData updates for leverage information
+        if (data.channel === 'activeAssetData' && data.data) {
+          this.handleActiveAssetDataUpdate(data.data);
+          return;
+        }
+
         // Handle different channel types and route messages properly
         if (data.channel === 'l2Book' && data.data && data.data.coin) {
           const coin = data.data.coin;
@@ -476,6 +482,64 @@ class WebSocketService {
     }
   }
 
+  // Subscribe to activeAssetData for a specific symbol and user
+  subscribeToActiveAssetData(symbol, userAddress) {
+    if (!this.isConnected) {
+      return false;
+    }
+    
+    const activeAssetDataKey = `activeAssetData:${symbol}:${userAddress}`;
+    
+    if (!this.activeSubscriptions.has(activeAssetDataKey)) {
+      const subscriptionMessage = {
+        method: 'subscribe',
+        subscription: { 
+          type: 'activeAssetData', 
+          coin: symbol,
+          user: userAddress
+        }
+      };
+      
+      const success = this.send(subscriptionMessage);
+      
+      if (success) {
+        this.activeSubscriptions.add(activeAssetDataKey);
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return true;
+    }
+  }
+
+  // Unsubscribe from activeAssetData for a specific symbol and user
+  unsubscribeFromActiveAssetData(symbol, userAddress) {
+    if (!this.isConnected) return false;
+    
+    const activeAssetDataKey = `activeAssetData:${symbol}:${userAddress}`;
+    
+    if (this.activeSubscriptions.has(activeAssetDataKey)) {
+      const success = this.send({
+        method: 'unsubscribe',
+        subscription: { 
+          type: 'activeAssetData', 
+          coin: symbol,
+          user: userAddress
+        }
+      });
+      
+      if (success) {
+        this.activeSubscriptions.delete(activeAssetDataKey);
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return true;
+    }
+  }
+
   // Unsubscribe from activeAssetCtx for a specific symbol
   unsubscribeFromAssetCtx(symbol) {
     if (!this.isConnected) return false;
@@ -517,6 +581,14 @@ class WebSocketService {
     
     // Broadcast the asset context update directly to components
     this.broadcast(`assetCtx:${assetCtxData.coin}`, { data: assetCtxData });
+  }
+
+  // Handle activeAssetData updates for leverage information
+  handleActiveAssetDataUpdate(assetData) {
+    if (!assetData.coin) return;
+    
+    // Broadcast the asset data update to components that subscribe to specific symbols
+    this.broadcast(`activeAssetData:${assetData.coin}`, { data: assetData });
   }
 
   // Subscribe to public data (zero address) for market data
