@@ -1193,3 +1193,72 @@ export async function approveBuilderFee(signer, maxFeeRate, isMainnet = true, bu
     throw error;
   }
 }
+
+/**
+ * Transfer USDC between Perps and Spot accounts
+ * @param {Object} signer - The wallet signer
+ * @param {boolean} isPerpsToSpot - true for perps to spot, false for spot to perps
+ * @param {number} amount - Amount to transfer in USDC
+ * @param {boolean} isMainnet - Whether to use mainnet or testnet
+ * @returns {Promise<Object>} Transfer result
+ */
+export async function transferUSDC(signer, isPerpsToSpot, amount, isMainnet = true) {
+  try {
+
+    const nonce = Date.now();
+    const action = {
+      type: "usdClassTransfer",
+      hyperliquidChain: isMainnet ? "Mainnet" : "Testnet",
+      signatureChainId: "0xa4b1", // Arbitrum mainnet
+      amount: amount.toString(),
+      toPerp: !isPerpsToSpot, // true for spot to perps, false for perps to spot
+      nonce
+    };
+
+    // Get the user's address
+    const address = await signer.getAddress();
+    // Sign the action
+    const signature = await signUserSignedAction({
+      wallet: signer,
+      action,
+      types: userSignedActionEip712Types.usdClassTransfer,
+      chainId: 42161, // Arbitrum mainnet
+    });
+
+    // Prepare the request body
+    const requestBody = {
+      action,
+      nonce,
+      signature,
+    };
+
+    // Make the API call
+    const apiUrl = isMainnet 
+      ? 'https://api.hyperliquid.xyz/exchange'
+      : 'https://api.hyperliquid-testnet.xyz/exchange';
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Transfer failed: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+
+    if (result.status !== 'ok') {
+      throw new Error(result.response?.data?.status?.error || 'Transfer failed');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error transferring USDC:', error);
+    throw error;
+  }
+}
