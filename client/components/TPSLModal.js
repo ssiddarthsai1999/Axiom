@@ -238,7 +238,7 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
       setGainPercent('');
       setLossPercent('');
       setConfigureAmount(false);
-      setConfiguredAmount(0);
+      setConfiguredAmount(Math.abs(position.size)); // Initialize with full position size
       setError('');
       lastUpdatedRef.current = null;
       
@@ -668,12 +668,13 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                     onChange={(e) => {
                       const value = parseFloat(e.target.value) || 0;
                       const maxAmount = Math.abs(position.size);
-                      setConfiguredAmount(Math.min(maxAmount, Math.max(0, value)));
+                      const clampedValue = Math.min(maxAmount, Math.max(0, value));
+                      setConfiguredAmount(clampedValue);
                     }}
-                    className="w-20 bg-[#1a1a1f] border border-[#1F1E23] rounded px-2 py-1 text-white font-mono text-sm focus:border-gray-500 focus:outline-none"
+                    className="w-40 bg-[#1a1a1f] border border-[#1F1E23] rounded px-2 py-1 text-white font-mono text-sm focus:border-gray-500 focus:outline-none"
                     min="0"
                     max={Math.abs(position.size)}
-                    // step="0.001"
+                    step={Math.pow(10, -(assetInfo?.szDecimals || 3))}
                   />
                   <span className="text-gray-400 text-sm">{position.coin}</span>
                 </div>
@@ -686,8 +687,13 @@ const TPSLModal = ({ isOpen, onClose, position, currentPrice }) => {
                   min="0"
                   max={Math.abs(position.size)}
                   value={configuredAmount}
-                  onChange={(e) => setConfiguredAmount(parseFloat(e.target.value))}
-                  // step="0.001"
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value);
+                    const maxAmount = Math.abs(position.size);
+                    const clampedValue = Math.min(maxAmount, Math.max(0, value));
+                    setConfiguredAmount(clampedValue);
+                  }}
+                  step={Math.pow(10, -(assetInfo?.szDecimals || 3))}
                   className="w-full h-2 bg-[#1F1E23] rounded-lg appearance-none cursor-pointer slider"
                   style={{
                     background: `linear-gradient(to right, #1dd1a1 0%, #1dd1a1 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 ${(configuredAmount / Math.abs(position.size)) * 100}%, #1F1E23 100%)`
