@@ -12,6 +12,7 @@ import numeral from 'numeral';
 import { getCurrentLeverage } from '@/utils/hyperLiquidApi';
 import { LuSettings2 } from "react-icons/lu";
 import { useWebSocketWallet } from '../hooks/useWebSocketWallet';
+import TransferModal from './TransferModal';
 
 
 const TradingPanel = ({ 
@@ -66,6 +67,10 @@ const [applyToAll, setApplyToAll] = useState(false);
     setTempLeverage(leverage);
   }, [leverage]);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+  
+  // Transfer modal state
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [spotData, setSpotData] = useState(null);
   const [builderFeeApproved, setBuilderFeeApproved] = useState(false);
   const [checkingBuilderFee, setCheckingBuilderFee] = useState(false);
   const [approvingBuilderFee, setApprovingBuilderFee] = useState(false);
@@ -646,6 +651,11 @@ const [applyToAll, setApplyToAll] = useState(false);
       availableMargin: withdrawable,
       accountValue: accountValue
     }));
+
+    // Handle spot data if available
+    if (webData2Data.spotState) {
+      setSpotData(webData2Data.spotState);
+    }
   };
 
   // Handle activeAssetData updates from websocket for leverage and available to trade information
@@ -2162,6 +2172,22 @@ const [applyToAll, setApplyToAll] = useState(false);
           </div>
         )}
 
+        {/* Transfer Button */}
+        {isConnected && isOnboarded && (
+          <div className="mt-4 px-4">
+            <button
+              onClick={() => setShowTransferModal(true)}
+              className="w-full flex items-center justify-center gap-2 bg-[#2D3748] hover:bg-[#4A5568] border border-[#00D4AA] text-[#00D4AA] py-3 px-4 rounded-lg transition-colors"
+            >
+              <span className="text-sm font-medium">Perps</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className="text-sm font-medium">Spot</span>
+            </button>
+          </div>
+        )}
+
          {/* Leverage Modal */}
    {showLeverageModal && (
   <div className="fixed inset-0 backdrop-blur-sm bg-black/60 flex items-center justify-center z-50">
@@ -2329,6 +2355,17 @@ const [applyToAll, setApplyToAll] = useState(false);
 
 
       </div>
+
+      {/* Transfer Modal */}
+      <TransferModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        webData2Data={webData2Data}
+        spotData={spotData}
+        userAddress={address}
+        signer={wallet?.signer}
+        isMainnet={true}
+      />
     </>
   );
 };
